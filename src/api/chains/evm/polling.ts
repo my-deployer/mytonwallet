@@ -4,6 +4,7 @@ import type {
   ApiActivityTimestamps,
   ApiBalanceBySlug,
   ApiChain,
+  ApiNetwork,
   EVMChain,
   OnApiUpdate,
   OnUpdatingStatusChange,
@@ -103,7 +104,7 @@ function setupActivityPolling(
   let lastEmptyTimestamp: number | undefined;
   let balanceCatchUpGeneration = 0;
 
-  async function rawUpdate(): Promise<boolean> {
+  async function rawUpdate(isForced?: boolean): Promise<boolean> {
     if (newestConfirmedActivityTimestamp !== undefined && newestConfirmedActivityTimestamp === lastEmptyTimestamp) {
       return false;
     }
@@ -112,7 +113,7 @@ function setupActivityPolling(
 
     try {
       if (newestConfirmedActivityTimestamp === undefined) {
-        const result = await loadInitialActivities(chain, accountId, onUpdate);
+        const result = await loadInitialActivities(chain, accountId, onUpdate, isForced);
         const timestamps = compact(Object.values(result));
 
         newestConfirmedActivityTimestamp = timestamps.length ? Math.max(...timestamps) : undefined;
@@ -153,7 +154,9 @@ function setupActivityPolling(
           return;
         }
         lastEmptyTimestamp = undefined;
-        const found = await rawUpdate();
+        // A socket event is proof that something landed on chain, so it overrides the
+        // "this address has nothing here" verdict the poll path is allowed to trust.
+        const found = await rawUpdate(source === 'socket');
 
         if (source === 'poll') {
           return;
@@ -335,14 +338,53 @@ export function setupInactivePolling<C extends EVMChain>(
   return balancePolling.stop;
 }
 
+// The gate is a cost optimisation, so a probe that cannot answer does not get to decide. It
+// reads from the RPC provider, which is separate from the history provider, and an outage there
+// says nothing about whether history exists - blanking the feed on it would trade a saved request
+// for a wallet that looks empty while its history is perfectly reachable.
+async function canSkipInitialActivities(network: ApiNetwork, chain: EVMChain, address: string) {
+  try {
+    return !(await getIsWalletActive(network, chain, address));
+  } catch (err) {
+    logDebugError('canSkipInitialActivities', err);
+    return false;
+  }
+}
+
 async function loadInitialActivities(
   chain: EVMChain,
   accountId: string,
   onUpdate: OnApiUpdate,
+  isForced?: boolean,
 ): Promise<ApiActivityTimestamps> {
   try {
     const { network } = parseAccountId(accountId);
     const { address } = await fetchStoredWallet(accountId, chain);
+
+    // An address with no balance and no inbound transfer on this chain has no history to
+    // return, so the load is skipped rather than paid for. This matters most on an account
+    // that holds every EVM chain but uses none of them: an empty chain records no newest
+    // timestamp, so it takes this full-load path on every launch rather than an incremental
+    // poll. The probe answers from the RPC provider, not the history provider, and already
+    // gates balance polling for the same address. A socket event is evidence that something
+    // landed on chain, so it forces the load past this check.
+    if (!isForced && await canSkipInitialActivities(network, chain, address)) {
+      // The feed waits on `areInitialActivitiesLoaded[chain]`, so staying silent hangs it.
+      // `mainHistoryHasMore: false` is what separates this from the failure path below, which
+      // emits the same shape without it: an omitted flag reads as "this attempt told us
+      // nothing", leaves the chain's end state undefined and sends the UI to
+      // `fetchPastActivities` - straight back to the history call this skip exists to avoid.
+      onUpdate({
+        type: 'initialActivities',
+        chain,
+        accountId,
+        mainActivities: [],
+        mainHistoryHasMore: false,
+        bySlug: {},
+      });
+
+      return {};
+    }
 
     const { activities: rawActivities, hasMore: mainHistoryHasMore } = await getTokenActivitySlice(
       chain,

@@ -9,8 +9,9 @@ It searches for patterns like: lang("key_name"
 Note: No closing parenthesis as per iOS usage pattern.
 
 Usage:
-    python find_unused_localization_keys.py --ios-path ../../../..
-    python find_unused_localization_keys.py --ios-path ../../../.. --verbose
+    python find_unused_localization_keys.py
+    python find_unused_localization_keys.py --verbose
+    python find_unused_localization_keys.py --ios-path /path/to/repo
 
 The script will:
 1. Scan all Swift files in the iOS folder
@@ -33,6 +34,17 @@ import os
 import re
 import yaml
 from typing import Dict, Set, List, Any
+
+# This file lives at <repo>/mobile/ios/Air/scripts/strings, so the root is five
+# levels up. Anchoring on __file__ keeps the default correct from any directory.
+DEFAULT_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), *[os.pardir] * 5))
+
+# The Swift sources live under this subtree; walking the whole repository would
+# also descend into node_modules, build output and .git for no benefit.
+SWIFT_SUBTREE = os.path.join('mobile', 'ios')
+
+# Pruned during the walk in case the scan is pointed at a wider tree.
+SKIP_DIRS = {'.git', 'node_modules', 'Pods', '.build', 'build', 'DerivedData'}
 
 
 def load_yaml_file(file_path: str) -> Dict[str, Any]:
@@ -76,10 +88,17 @@ def flatten_keys(data: Dict[str, Any], prefix: str = "") -> Set[str]:
     return keys
 
 
-def find_swift_files(ios_path: str) -> List[str]:
-    """Find all Swift files in the iOS directory."""
+def swift_search_root(repo_root: str) -> str:
+    """Narrow the scan to the Swift subtree, falling back to whatever was passed in."""
+    subtree = os.path.join(repo_root, SWIFT_SUBTREE)
+    return subtree if os.path.isdir(subtree) else repo_root
+
+
+def find_swift_files(search_root: str) -> List[str]:
+    """Find all Swift files under the given root."""
     swift_files = []
-    for root, dirs, files in os.walk(ios_path):
+    for root, dirs, files in os.walk(search_root):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for file in files:
             if file.endswith('.swift'):
                 swift_files.append(os.path.join(root, file))
@@ -107,10 +126,10 @@ def extract_localization_keys_from_file(file_path: str) -> Set[str]:
     return keys
 
 
-def extract_all_keys_from_swift(ios_path: str) -> Dict[str, Set[str]]:
+def extract_all_keys_from_swift(search_root: str) -> Dict[str, Set[str]]:
     """Extract all localization keys from all Swift files, tracking which file each key came from."""
     all_keys = {}
-    swift_files = find_swift_files(ios_path)
+    swift_files = find_swift_files(search_root)
 
     print(f"Scanning {len(swift_files)} Swift files...")
 
@@ -133,8 +152,8 @@ def main():
     )
     parser.add_argument(
         "--ios-path",
-        default="../../../..",
-        help="Path to the iOS directory (default: ../../../..)"
+        default=DEFAULT_REPO_ROOT,
+        help="Repository root; --main-i18n is resolved against it and Swift sources are scanned under its mobile/ios subtree (default: the repository this script lives in)"
     )
     parser.add_argument(
         "--main-i18n",
@@ -154,8 +173,10 @@ def main():
     main_i18n_path = os.path.join(ios_path, args.main_i18n)
 
     if not os.path.exists(ios_path):
-        print(f"Error: iOS path '{ios_path}' does not exist.")
+        print(f"Error: repository root '{ios_path}' does not exist.")
         return 1
+
+    search_root = swift_search_root(ios_path)
 
     print("🔍 Swift Localization Key Scanner")
     print("=================================")
@@ -163,11 +184,14 @@ def main():
 
     # Extract keys from Swift files
     print("📱 Extracting localization keys from Swift files...")
-    swift_keys_dict = extract_all_keys_from_swift(ios_path)
+    swift_keys_dict = extract_all_keys_from_swift(search_root)
 
     if not swift_keys_dict:
-        print("❌ No localization keys found in Swift files.")
-        return 0
+        # Every scan of a real checkout finds keys, so an empty result means the
+        # scan looked in the wrong place. Returning success here would report a
+        # green run that verified nothing.
+        print(f"❌ No localization keys found under '{search_root}'.")
+        return 1
 
     print(f"Found {len(swift_keys_dict)} unique localization keys in Swift code.")
 
@@ -223,7 +247,7 @@ def main():
         print("(showing first 5 examples):")
 
         examples_shown = 0
-        for swift_file in find_swift_files(ios_path):
+        for swift_file in find_swift_files(search_root):
             if examples_shown >= 5:
                 break
 

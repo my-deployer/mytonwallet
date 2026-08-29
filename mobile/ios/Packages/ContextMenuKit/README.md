@@ -25,8 +25,6 @@ It is packaged as a standalone Swift package with:
 - `Package.swift`: Swift package manifest
 - `Sources/ContextMenuKit`: library sources
 - `Examples/ContextMenuDemoApp`: checked-in example app with a local package dependency
-- `TECHNICAL_OVERVIEW.md`: architecture notes and Telegram parity references
-- `REFACTOR_PLAN.md`: refactor history and package-prep checklist
 
 ## Public API
 
@@ -185,4 +183,4 @@ The example project is checked in directly and does not depend on `xcodegen` or 
 
 - `ContextMenuKit` is intentionally narrower than Telegram's full menu framework.
 - The current public model supports standard list rows, submenus, separators, and custom rows inside list pages.
-- Telegram-style fully custom/dynamic content pages are still documented in `TECHNICAL_OVERVIEW.md` as future work.
+- Telegram-style fully custom/dynamic content pages are not supported yet and remain future work.

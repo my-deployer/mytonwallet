@@ -97,6 +97,8 @@ public func getFullStakingBalance(state: ApiStakingState) -> BigInt {
     switch state.type {
     case .jetton:
         return state.balance + (state.unclaimedRewards ?? 0)
+    case .liquid:
+        return state.balance + (state.loyaltyBalance ?? 0)
     case .ethena:
         return state.balance + (state.unstakeRequestAmount ?? 0)
     default:

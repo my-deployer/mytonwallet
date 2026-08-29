@@ -38,6 +38,7 @@ firebaseMessaging = "25.0.1" # Sync with capacitor app
 workRuntimeKtx = "2.10.5"
 browser = "1.10.0"
 tweetnacl = "1.1.3"
+installReferrer = "2.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -86,6 +87,7 @@ firebase-messaging = { group = "com.google.firebase", name = "firebase-messaging
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntimeKtx" }
 androidx-browser = { group = "androidx.browser", name = "browser", version.ref = "browser" }
 tweetnacl = { group = "org.purejava", name = "tweetnacl-java", version.ref = "tweetnacl" }
+install-referrer = { group = "com.android.installreferrer", name = "installreferrer", version.ref = "installReferrer" }
 
 [plugins]
 jetbrains-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }

@@ -21,6 +21,7 @@ class NftDetailsMainHeaderView: UIView {
     private var selectedModel: NftDetailsItemModel
     private var models: [NftDetailsItemModel]
     private var fullScreenOverlay: NftDetailsFullScreenOverlay?
+    private var isLottiePlaybackEnabled = false
     weak var overlayParentView: UIView?
 
     struct LayoutGeometry: Equatable {
@@ -177,35 +178,51 @@ class NftDetailsMainHeaderView: UIView {
         scheduledAction.cancel()
         preview.cancelLottiePlayback()
 
+        scheduleExpandedPreviewUpdate(for: model)
+    }
+
+    func setLottiePlaybackEnabled(_ isEnabled: Bool) {
+        guard isLottiePlaybackEnabled != isEnabled else { return }
+        isLottiePlaybackEnabled = isEnabled
+        coverFlowView.setLottiePlaybackEnabled(isEnabled)
+
+        guard isEnabled else {
+            scheduledAction.cancel()
+            preview.cancelLottiePlayback()
+            return
+        }
+
+        scheduleExpandedPreviewUpdate(for: selectedModel)
+    }
+
+    private func scheduleExpandedPreviewUpdate(for model: NftDetailsItemModel) {
         let hasLottie = model.item.lottieUrl != nil
         let isLoading = model.processedImageState.isLoading
-            
-        // Let's schedule Lottie auto-start OR self-appearance from hidden state (to show a spinner)
-        if state.isExpanded, hasLottie || isLoading {
-            scheduledAction.schedule(after: 0.5) { [weak self] in
-                guard let self, self.selectedModel === model, self.state.isExpanded, self.state.canShowPreview else { return }
-                
-                // We still loading, just appear itself
-                let isLoading = self.selectedModel.processedImageState.isLoading
-                if isLoading {
-                    if self.state.isHidden {
-                        self.makePreviewVisible()
-                        self.delegate?.headerDidChangePreviewVisibilityInternaly(self)
-                    }
-                    return
+        guard isLottiePlaybackEnabled, state.isExpanded, (hasLottie || isLoading) else { return }
+
+        // Schedule Lottie auto-start or reveal the preview while its static image is loading.
+        scheduledAction.schedule(after: 0.5) { [weak self] in
+            guard let self, self.isLottiePlaybackEnabled, self.selectedModel === model,
+                  self.state.isExpanded, self.state.canShowPreview else { return }
+
+            if self.selectedModel.processedImageState.isLoading {
+                if self.state.isHidden {
+                    self.makePreviewVisible()
+                    self.delegate?.headerDidChangePreviewVisibilityInternaly(self)
                 }
-                
-                // We have Lottie: start it
-                if hasLottie  {
-                    if self.state.isHidden  {
-                        self.makePreviewVisible()
-                        self.delegate?.headerDidChangePreviewVisibilityInternaly(self)
-                    }
-                    
-                    // Have no idea why but this helps prevents flushes
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-                        _ = self.preview.startLottiePlayback()
-                    }
+                return
+            }
+
+            if hasLottie {
+                if self.state.isHidden {
+                    self.makePreviewVisible()
+                    self.delegate?.headerDidChangePreviewVisibilityInternaly(self)
+                }
+
+                // Have no idea why but this helps prevents flushes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                    guard self.isLottiePlaybackEnabled else { return }
+                    _ = self.preview.startLottiePlayback()
                 }
             }
         }
@@ -307,7 +324,7 @@ class NftDetailsMainHeaderView: UIView {
         previewExpandAnimator?.addCompletion { _ in
             if !isExpanded {
                 self.setPreviewAndTileHidden(true)
-            } else {
+            } else if self.isLottiePlaybackEnabled {
                 _ = self.preview.startLottiePlayback()
             }
         }

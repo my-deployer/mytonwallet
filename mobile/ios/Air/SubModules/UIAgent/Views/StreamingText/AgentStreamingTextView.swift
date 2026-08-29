@@ -666,17 +666,10 @@ final class AgentStreamingTextView: UIView {
             let revealCount = min(remaining, lineCount)
 
             if revealCount > 0 {
-                var revealedMaxX: CGFloat = 0
                 for index in 0..<revealCount {
-                    revealedMaxX = max(revealedMaxX, line.characterRects[index].maxX)
-                }
-                if revealedMaxX > 0 {
-                    path.append(UIBezierPath(rect: CGRect(
-                        x: 0,
-                        y: line.frame.minY,
-                        width: ceil(revealedMaxX),
-                        height: line.frame.height
-                    )))
+                    let rect = line.characterRects[index]
+                    guard !rect.isEmpty else { continue }
+                    path.append(UIBezierPath(rect: rect.integral))
                 }
             }
 
@@ -690,7 +683,7 @@ final class AgentStreamingTextView: UIView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
-        revealMaskLayer.fillRule = .evenOdd
+        revealMaskLayer.fillRule = .nonZero
         revealMaskLayer.path = path.cgPath
         revealMaskLayer.frame = CGRect(origin: .zero, size: layout.fullSize)
         renderContainer.layer.mask = revealMaskLayer

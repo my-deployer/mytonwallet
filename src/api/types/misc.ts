@@ -37,6 +37,7 @@ export interface ApiInitArgs {
   isAndroidApp?: boolean;
   langCode?: LangCode;
   referrer?: string;
+  channel?: string;
   accountIds?: string[];
   storage?: ApiStorageConfig;
 }
@@ -235,6 +236,12 @@ export type ApiNominatorsStakingState = BaseStakingState & {
 export type ApiLiquidStakingState = BaseStakingState & {
   type: 'liquid';
   tokenBalance: bigint;
+  /**
+   * Accrued loyalty bonus. Kept outside the STAKED jetton and paid as a separate transfer on
+   * unstake. Optional: the backend omits it for addresses below the visible-stake threshold, and
+   * state persisted by an older build has no such field at all.
+   */
+  loyaltyBalance?: bigint;
   instantAvailable: bigint;
   start: number;
   end: number;
@@ -285,6 +292,7 @@ export interface ApiBackendStakingState {
   type?: ApiBackendStakingType;
   nominatorsPool: ApiNominatorsPool;
   loyaltyType?: ApiLoyaltyType;
+  loyaltyBalance?: bigint;
   shouldUseNominators?: boolean;
   stakedAt?: number;
   ethena: {
@@ -379,6 +387,17 @@ export enum ApiLiquidUnstakeMode {
 export type ApiLoyaltyType = 'black' | 'platinum' | 'gold' | 'silver' | 'standard';
 
 export type ApiBalanceBySlug = Record<string, bigint>;
+
+/**
+ * A balance snapshot together with the instant its source observed the values, in unix ms. A
+ * consumer merging several sources for one wallet ranks them by that instant instead of by arrival.
+ * `asOf` is absent when the transport cannot tell (a chain whose API states nothing, or a gateway
+ * that predates the header), and such a snapshot is ordered by arrival as before.
+ */
+export interface StampedBalances {
+  balances: ApiBalanceBySlug;
+  asOf?: number;
+}
 
 export type ApiWalletInfo = {
   /** The user-friendly address of this wallet (may differ from the requested address) */

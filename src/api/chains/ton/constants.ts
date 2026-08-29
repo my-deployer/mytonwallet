@@ -383,6 +383,68 @@ export const KnownContracts: Record<ContractName, ContractInfo> = {
     hash: 'f91c43d395d0f7d955515ab24a55098b68fed2e708f80a79c95ecaa4fcc102b8',
     isSwapAllowed: true,
   },
+  // STON.fi publishes its router fleet at https://api.ston.fi/v1/routers: one code per router type and
+  // build, and the fleet below is the whole v2.2 set as of this entry, not only the routers seen in the wild.
+  // STON.fi router v2.2 (release), ConstantProduct. Example: https://tonviewer.com/EQBwpBGEAb-NgjUxpmARAgVl8C4F_5GsXxZ3dpsA1qzQerNl
+  stonRouterV2_2_cpi1: {
+    name: 'stonRouterV2_2_cpi1',
+    hash: '8b65670dcd47a8a04383c27cd883a0794d52db87538ec3f8ec5572f09da8319e',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (release), ConstantProduct. Example: https://tonviewer.com/EQCiz74FCV2lYlvFPEYhL3Jql8WwIO7QvbvYT-LQH0SmtCgI
+  stonRouterV2_2_cpi2: {
+    name: 'stonRouterV2_2_cpi2',
+    hash: '2caa6153534276cd894fec8730cdc92ed1b3baeaa7f0781987191413a63a0322',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (release), ConstantProduct. Example: https://tonviewer.com/EQD11suHkrO_1Mb5IIdYFx5ZPy38MuHoeHx6dA-QRaD8w0UJ
+  stonRouterV2_2_cpi3: {
+    name: 'stonRouterV2_2_cpi3',
+    hash: '5c327aefd0f71a8c71a907f95e4655e4e72d403e118f255356075a0e8d6db547',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (release), ConstantProduct. Example: https://tonviewer.com/EQC67o2-2UzR1cJFrUGL5M7OAnLgG8oY_tHaTgGmR63LQNV-
+  stonRouterV2_2_cpi4: {
+    name: 'stonRouterV2_2_cpi4',
+    hash: 'f9502b55cf962dac6d86af158405af50b281fb110cabfafb9a198db46f75b154',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (rev1), ConstantProduct. Example: https://tonviewer.com/EQAsa5p_UWxUDaU9n9bo3CAv2xRNrNFjadhm70JQAesdVt_5
+  stonRouterV2_2_cpi5: {
+    name: 'stonRouterV2_2_cpi5',
+    hash: 'c39a85ac98055c68309bcc6570432d88cc68a586e0dec124b607564a12cec3eb',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (rev1), ConstantProduct. Example: https://tonviewer.com/EQBd9vfWfn6MOqBYEEYFeyFqliOYln1znFklfp8B02zlS_Lq
+  stonRouterV2_2_cpi6: {
+    name: 'stonRouterV2_2_cpi6',
+    hash: '5a19635c1dc8780c352c18b7cd6c2b0e6835ca4b9926608119cb032d12719aaa',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (release), WeightedConstProduct. Example: https://tonviewer.com/EQACn16m9OrZ-mw186M4NlIpVP8Tb3q6SV9aX8NjSgVfJTo9
+  stonRouterV2_2_wcpi: {
+    name: 'stonRouterV2_2_wcpi',
+    hash: '29a542d36e4196a8719faf33e58e855c8f07bdb0b25897bf3a283ca017c97965',
+    isSwapAllowed: true,
+  },
+  // STON.fi router v2.2 (release), WeightedStableSwap. Example: https://tonviewer.com/EQAGV9vw11tKW2QOCYCXEmIdyufM3p5CfcgHcY9NiiBLfZGH
+  stonRouterV2_2_wstable: {
+    name: 'stonRouterV2_2_wstable',
+    hash: 'f451dd294a06530b6e4ec99790a595c1ac421829f78b9231245f8b51cba72556',
+    isSwapAllowed: true,
+  },
+  // swap.coffee TON vault, the single native-asset entry point of the DEX. Example: https://tonviewer.com/EQDbLqT_zhxpERj0EnXG2iqr1g71ODb_Xoc74R8RzUSElKGD
+  swapCoffeeVaultNative: {
+    name: 'swapCoffeeVaultNative',
+    hash: 'd143135bc56a2f2b031c58ebc89bb747dfe31f9df98326117c1b547037897895',
+    isSwapAllowed: true,
+  },
+  // swap.coffee jetton vault, one per jetton, all deployed by the factory with the same code. Example: https://tonviewer.com/EQD_PJnmYQsM3jeMAAOOiWpz1XRrR7G_5tx9ZuU6nYRkLCAW
+  swapCoffeeVaultJetton: {
+    name: 'swapCoffeeVaultJetton',
+    hash: '01be8cfa5a62c758fbd7e5602b598cdcbbd1f6bd050397f8b4b959c016e71244',
+    isSwapAllowed: true,
+  },
   // `oldHash` should no longer be used for new contracts; it is retained for backwards compatibility with
   // contracts for which retrieving the new hash is difficult due to missing address tracking in past.
   // The `hash` field has been added for new contracts. It is a hex hash of the code,

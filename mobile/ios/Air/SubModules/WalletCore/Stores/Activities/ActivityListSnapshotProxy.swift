@@ -144,8 +144,13 @@ struct ActivityListSnapshotProxy {
         }
 
         if let idsByDate, idsByDate.isEmpty {
-            snapshot.appendSections([.emptyPlaceholder])
-            snapshot.appendItems([.emptyPlaceholder])
+            if isEndReached == true {
+                snapshot.appendSections([.emptyPlaceholder])
+                snapshot.appendItems([.emptyPlaceholder])
+            } else {
+                snapshot.appendSections([.placeholderTransactionsSection])
+                snapshot.appendItems([.loadingMore])
+            }
         } else if let idsByDate, !idsByDate.isEmpty, visibleActivityCount == loadedActivityIds.count, isEndReached != true {
             snapshot.appendItems([.loadingMore])
         }

@@ -52,6 +52,7 @@ import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.uihome.home.WalletNameMenuHelper
@@ -165,11 +166,13 @@ class TabletSidePanelView(
     val isHeightLocked: Boolean
         get() = headerView.isHeightLocked
 
-    private fun bottomBlurHeight(): Int =
-        ViewConstants.TOOLBAR_RADIUS.dp.roundToInt() + bottomInset()
+    private fun bottomBlurHeight(): Int = bottomBlurReversedCornerView.cornerHeight + bottomInset()
 
-    private fun bottomInset(): Int =
-        (window?.systemBars?.bottom ?: 0) + bottomBlurReversedCornerView.extraTopHeight
+    private fun shouldShowBottomBlur(): Boolean = !WGlobalStorage.isGradientNavigationBarActive() ||
+        (window?.systemBars?.bottom ?: 0) > 0
+
+    private fun bottomInset(): Int = (window?.systemBars?.bottom ?: 0) +
+        if (shouldShowBottomBlur()) bottomBlurReversedCornerView.extraTopHeight else 0
 
     val contentBottomInset: Int
         get() = bottomInset()
@@ -533,7 +536,7 @@ class TabletSidePanelView(
     }
 
     private fun updateBottomBlur() {
-        if (recyclerView.canScrollVertically(1)) {
+        if (bottomBlurReversedCornerView.isVisible && recyclerView.canScrollVertically(1)) {
             if (bottomBlurReversedCornerView.isPlaying &&
                 !bottomBlurReversedCornerView.isGone
             ) {
@@ -553,14 +556,17 @@ class TabletSidePanelView(
     private var appliedBottomInset = -1
 
     private fun applyBottomInset() {
+        bottomBlurReversedCornerView.isVisible = shouldShowBottomBlur()
         val blurHeight = bottomBlurHeight()
         if (bottomBlurReversedCornerView.layoutParams?.height != blurHeight) {
             bottomBlurReversedCornerView.updateLayoutParams { height = blurHeight }
         }
         val bottomInset = bottomInset()
-        if (appliedBottomInset == bottomInset) return
-        appliedBottomInset = bottomInset
-        updateSpacerHeight()
+        if (appliedBottomInset != bottomInset) {
+            appliedBottomInset = bottomInset
+            updateSpacerHeight()
+        }
+        updateBottomBlur()
     }
 
     fun onDestroy() {

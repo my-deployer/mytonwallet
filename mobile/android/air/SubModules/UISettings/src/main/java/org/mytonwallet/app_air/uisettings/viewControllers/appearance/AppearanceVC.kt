@@ -11,10 +11,8 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.animation.AccelerateDecelerateInterpolator
-import android.widget.ScrollView
 import androidx.constraintlayout.widget.ConstraintLayout
 import java.lang.ref.WeakReference
-import kotlin.math.max
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.KeyValueRowView
@@ -165,12 +163,9 @@ class AppearanceVC(context: Context) :
             pendingThemeChange = true
             WalletContextManager.delegate?.get()?.themeChanged()
             syncBottomCornerRadius()
-            scrollingContentView.setPadding(
-                scrollingContentView.paddingLeft,
-                scrollingContentView.paddingTop,
-                scrollingContentView.paddingRight,
-                max(scrollingContentView.paddingBottom, navigationController?.bottomInset ?: 0)
-            )
+            bottomReversedCornerView?.updateTheme()
+            refreshBottomCornerRadiusHeight()
+            updateScrollingContentBottomPadding()
         }
     )
 
@@ -397,6 +392,17 @@ class AppearanceVC(context: Context) :
         v
     }
 
+    private fun updateScrollingContentBottomPadding() {
+        val bottomPadding = navigationController?.bottomInset ?: 0
+        if (scrollingContentView.paddingBottom == bottomPadding) return
+        scrollingContentView.setPadding(
+            scrollingContentView.paddingLeft,
+            scrollingContentView.paddingTop,
+            scrollingContentView.paddingRight,
+            bottomPadding
+        )
+    }
+
     private val scrollView: WScrollView by lazy {
         WScrollView(WeakReference(this)).apply {
             isVerticalScrollBarEnabled = false
@@ -458,6 +464,7 @@ class AppearanceVC(context: Context) :
             ViewConstants.HORIZONTAL_PADDINGS.dp + systemBarEndInset,
             0
         )
+        updateScrollingContentBottomPadding()
     }
 
     override fun onDestroy() {

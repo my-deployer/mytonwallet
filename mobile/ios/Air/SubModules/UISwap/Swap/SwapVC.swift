@@ -68,10 +68,6 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
             _ = account.id
             updateLeftNavigationItem()
         }
-        
-        Task {
-            _ = try? await TokenStore.updateSwapAssets()
-        }
     }
 
     public override func viewWillAppear(_ animated: Bool) {

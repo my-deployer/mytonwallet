@@ -45,7 +45,7 @@ final class TokenInfoCell: FirstRowCell {
         heightAnimator?.invalidate()
         heightAnimator = nil
         model?.onToggleRequested = nil
-        setHeight(targetHeight, notify: false)
+        synchronizeHeight(notify: false)
     }
 
     func configure(model: TokenInfoModel, onHeightChange: @escaping () -> Void) {
@@ -59,15 +59,17 @@ final class TokenInfoCell: FirstRowCell {
         model.onToggleRequested = { [weak self] in
             self?.toggleExpanded()
         }
-        hostingHeightConstraint?.constant = model.measuredExpandedHeight
-        setHeight(targetHeight, notify: false)
+        hostingHeightConstraint?.constant = presentationHostingHeight(for: model)
+        if model.pendingPresentationRevision == nil {
+            synchronizeHeight(notify: false)
+        } else {
+            synchronizeTransitionStartHeight(notify: false)
+        }
     }
 
     func modelStateDidChange() {
-        heightAnimator?.invalidate()
-        heightAnimator = nil
-        let newHeight = targetHeight
-        setHeight(newHeight, notify: abs(currentHeight - newHeight) > 0.5)
+        guard heightAnimator == nil, model?.pendingPresentationRevision == nil else { return }
+        synchronizeHeight(notify: true)
     }
 
     private func installHostingView(model: TokenInfoModel) {
@@ -77,13 +79,13 @@ final class TokenInfoCell: FirstRowCell {
 
         let hostingView = HostingView { [weak self, weak model] in
             if let model {
-                TokenInfoView(model: model) { [weak self] height in
-                    self?.updateExpandedHeight(height)
+                TokenInfoView(model: model) { [weak self] height, revision in
+                    self?.updateContentMeasurement(height: height, revision: revision)
                 }
             }
         }
         let hostingHeightConstraint = hostingView.heightAnchor.constraint(
-            equalToConstant: model.measuredExpandedHeight
+            equalToConstant: presentationHostingHeight(for: model)
         )
         self.hostingView = hostingView
         self.hostingHeightConstraint = hostingHeightConstraint
@@ -105,57 +107,168 @@ final class TokenInfoCell: FirstRowCell {
             : TokenInfoModel.collapsedHeight
     }
 
+    private func presentationHostingHeight(for model: TokenInfoModel) -> CGFloat {
+        switch model.presentationOverlay {
+        case .skeleton:
+            TokenInfoModel.collapsedHeight
+        case .content(let snapshot) where snapshot.state.canExpand && snapshot.expansionProgress > 0:
+            snapshot.expandedHeight
+        case .content, nil:
+            model.state.isLoading
+                ? TokenInfoModel.collapsedHeight
+                : model.measuredExpandedHeight
+        }
+    }
+
     private func toggleExpanded() {
         guard let model, heightAnimator == nil, model.canExpand else { return }
 
         let willExpand = !model.isExpanded
         model.setExpanded(willExpand)
+        let targetExpansionProgress = model.targetExpansionProgress
 
         if UIAccessibility.isReduceMotionEnabled {
-            setHeight(targetHeight, notify: true)
+            setHeight(
+                targetHeight,
+                expansionProgress: targetExpansionProgress,
+                notify: true
+            )
             return
         }
 
+        animateHeight(
+            to: targetHeight,
+            targetExpansionProgress: targetExpansionProgress
+        )
+    }
+
+    private func animateHeight(
+        to targetHeight: CGFloat,
+        targetExpansionProgress: CGFloat
+    ) {
+        heightAnimator?.invalidate()
+        let startHeight = currentHeight
+        let startExpansionProgress = model?.expansionProgress ?? targetExpansionProgress
         let animator = ValueAnimator(
-            startValue: currentHeight,
+            startValue: startHeight,
             endValue: targetHeight,
             duration: TokenInfoModel.animationDuration,
             dampingRatio: 0.93
         )
         heightAnimator = animator
-        animator.addUpdateBlock { [weak self] _, height in
-            self?.setHeight(height, notify: true)
+        animator.addUpdateBlock { [weak self] progress, height in
+            let expansionProgress = startExpansionProgress
+                + (targetExpansionProgress - startExpansionProgress) * progress
+            self?.setHeight(
+                height,
+                expansionProgress: expansionProgress,
+                notify: abs(height - startHeight) > 0.01
+            )
         }
         animator.addCompletionBlock { [weak self, weak animator] in
             guard let self, heightAnimator === animator else { return }
-            setHeight(targetHeight, notify: true)
+            setHeight(
+                targetHeight,
+                expansionProgress: targetExpansionProgress,
+                notify: abs(currentHeight - targetHeight) > 0.01
+            )
             heightAnimator = nil
         }
         animator.start()
     }
 
-    private func setHeight(_ height: CGFloat, notify: Bool) {
+    private func setHeight(
+        _ height: CGFloat,
+        expansionProgress: CGFloat? = nil,
+        notify: Bool
+    ) {
+        let heightChanged = abs(currentHeight - height) > 0.01
         currentHeight = height
-        if let model {
-            let heightRange = max(model.measuredExpandedHeight - TokenInfoModel.collapsedHeight, 1)
-            model.setExpansionProgress((height - TokenInfoModel.collapsedHeight) / heightRange)
+        if let expansionProgress {
+            model?.setExpansionProgress(expansionProgress)
         }
-        if notify {
+        if notify, heightChanged {
             onHeightChange?()
         }
     }
 
-    private func updateExpandedHeight(_ height: CGFloat) {
+    private func updateContentMeasurement(height: CGFloat, revision: Int) {
         guard let model else { return }
-        let height = max(height, TokenInfoModel.collapsedHeight)
-        guard abs(model.measuredExpandedHeight - height) > 0.5 else { return }
+        guard revision == model.layoutRevision else { return }
+        if model.isConfiguringState {
+            Task { @MainActor [weak self] in
+                self?.updateContentMeasurement(height: height, revision: revision)
+            }
+            return
+        }
 
-        model.measuredExpandedHeight = height
-        hostingHeightConstraint?.constant = height
+        if model.canExpand {
+            model.updateMeasuredExpandedHeight(height)
+            hostingHeightConstraint?.constant = model.measuredExpandedHeight
+        }
 
-        if heightAnimator == nil {
-            let newHeight = targetHeight
-            setHeight(newHeight, notify: abs(currentHeight - newHeight) > 0.5)
+        if model.pendingPresentationRevision == revision {
+            beginPresentationTransition(revision: revision)
+        } else if heightAnimator == nil {
+            synchronizeHeight(notify: true)
+        }
+    }
+
+    private func beginPresentationTransition(revision: Int) {
+        guard let model else { return }
+        let animated = !UIAccessibility.isReduceMotionEnabled
+        let newHeight = targetHeight
+        let targetExpansionProgress = model.targetExpansionProgress
+
+        model.beginPresentationTransition(revision: revision, animated: animated)
+
+        if animated && (
+            abs(currentHeight - newHeight) > 0.01
+                || abs(model.expansionProgress - targetExpansionProgress) > 0.001
+        ) {
+            animateHeight(
+                to: newHeight,
+                targetExpansionProgress: targetExpansionProgress
+            )
+        } else {
+            setHeight(
+                newHeight,
+                expansionProgress: targetExpansionProgress,
+                notify: true
+            )
+        }
+    }
+
+    private func synchronizeHeight(notify: Bool) {
+        guard let model else { return }
+        let newHeight = targetHeight
+        setHeight(
+            newHeight,
+            expansionProgress: model.targetExpansionProgress,
+            notify: notify
+        )
+    }
+
+    private func synchronizeTransitionStartHeight(notify: Bool) {
+        guard let model else { return }
+        switch model.presentationOverlay {
+        case .skeleton:
+            setHeight(
+                TokenInfoModel.collapsedHeight,
+                expansionProgress: 0,
+                notify: notify
+            )
+        case .content(let snapshot):
+            let height = snapshot.state.canExpand && snapshot.expansionProgress > 0
+                ? snapshot.expandedHeight
+                : TokenInfoModel.collapsedHeight
+            setHeight(
+                height,
+                expansionProgress: snapshot.expansionProgress,
+                notify: notify
+            )
+        case nil:
+            synchronizeHeight(notify: notify)
         }
     }
 }

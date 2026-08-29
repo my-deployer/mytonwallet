@@ -111,7 +111,7 @@ function setupBalancePolling(
     address,
     sendUpdateTokens: () => sendUpdateTokens(onUpdate),
     fallbackPollingOptions: isActive ? activeSolanaWalletTiming : inactiveSolanaWalletTiming,
-    fetchBalancesCb: fetchAccountAssets,
+    fetchBalancesCb: async (...args) => ({ balances: await fetchAccountAssets(...args) }),
     fetchCrosschainBalancesCb: undefined,
     importUnknownTokens: undefined,
     loadingConcurrencyLimiter: isActive ? undefined : getConcurrencyLimiter('solana', network),

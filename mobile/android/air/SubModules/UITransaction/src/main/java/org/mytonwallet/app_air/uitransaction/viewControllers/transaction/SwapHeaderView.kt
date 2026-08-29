@@ -21,7 +21,6 @@ import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSensitiveDataContainer
-import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.signSpace
@@ -55,7 +54,6 @@ class SwapHeaderView(
         id = generateViewId()
         layoutParams = LayoutParams(24.dp, 24.dp)
         setImageResource(R.drawable.ic_arrow_right_24)
-        scaleX = LocaleController.rtlMultiplier.toFloat()
     }
 
     private val tokenToSendTextView = WSensitiveDataContainer(

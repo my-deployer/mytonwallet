@@ -15,6 +15,8 @@ public struct ApiStakingStateLiquid: MBaseStakingState, Equatable, Hashable, Cod
 
     public var type = "liquid"
     public var tokenBalance: BigInt
+    /// Accrued loyalty bonus. Held outside the STAKED jetton and paid as a separate transfer on unstake.
+    public var loyaltyBalance: BigInt?
     public var instantAvailable: BigInt
     public var start: Int
     public var end: Int

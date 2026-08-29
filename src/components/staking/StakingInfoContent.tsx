@@ -147,6 +147,7 @@ function StakingInfoContent({
   const unclaimedRewards = stakingState?.type === 'jetton'
     ? stakingState.unclaimedRewards
     : undefined;
+  const loyaltyBalance = (stakingState?.type === 'liquid' ? stakingState.loyaltyBalance : 0n) ?? 0n;
 
   // Updates the unstaking countdown
   useInterval(forceUpdate, unstakeRequestAmount ? UPDATE_UNSTAKE_DATE_INTERVAL_MS : undefined);
@@ -175,8 +176,15 @@ function StakingInfoContent({
   let stakingResult = '0';
   let balanceResult = '0';
   if (amount) {
-    stakingResult = toBig(amount, decimals).round(SHORT_FRACTION_DIGITS).toString();
-    balanceResult = toBig(amount, decimals).mul((annualYield / 100) + 1).round(SHORT_FRACTION_DIGITS).toString();
+    // Unlike the jetton rewards above, the loyalty bonus has no field of its own, so the tile is
+    // the only place it can be seen. It is not held in the STAKED jetton and does not compound
+    // with the rate, hence it is added to the year projection rather than multiplied by the yield.
+    stakingResult = toBig(amount + loyaltyBalance, decimals).round(SHORT_FRACTION_DIGITS).toString();
+    balanceResult = toBig(amount, decimals)
+      .mul((annualYield / 100) + 1)
+      .add(toBig(loyaltyBalance, decimals))
+      .round(SHORT_FRACTION_DIGITS)
+      .toString();
   }
 
   const handleCheckEligibility = useLastCallback(() => {

@@ -690,6 +690,9 @@ class PasscodeScreenView(
     var delegate: Delegate? = null
 
     interface Delegate {
+        val extraAuthUsages: Int
+            get() = 0
+
         fun onEnterPasscode(
             passcode: String,
             callback: (wasCorrect: Boolean, cooldownDate: Long?) -> Unit
@@ -783,7 +786,8 @@ class PasscodeScreenView(
                 if ((passcodeViewState as? PasscodeViewState.Default)?.isUnlockScreen == true) {
                     showIndicator(animateToGreen = false)
                 }
-            }
+            },
+            extraUsages = delegate?.extraAuthUsages ?: 0
         ) { token ->
             if (token != null) {
                 Logger.d(Logger.LogTag.PASSCODE_CONFIRM, "tryBiometrics: Biometric success")
@@ -845,6 +849,8 @@ class PasscodeScreenView(
         passcodeInputView.hideIndicator(false)
         passcodeInputView.passcode = ""
         passcodeKeyboardView.updateButtons(isEmpty = true)
+        isLoading.animatedValue = false
+        inBiometry.animatedValue = false
     }
 
     // Rate Limit //////////

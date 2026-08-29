@@ -86,7 +86,10 @@ export type ContractName = ApiTonWalletVersion
   | 'dedustPool' | 'dedustVaultNative' | 'dedustVaultJetton'
   | 'stonPtonWallet' | 'stonRouter' | 'stonRouterV2_1' | 'stonPoolV2_1'
   | 'stonRouterV2_2' | 'stonRouterV2_2_alt' | 'stonPoolV2_2' | 'stonPtonWalletV2'
-  | 'toncoRouter' | 'wrappedToncoTonWallet' | 'dedustVaultNativeV2' | 'omnistonEscrowMinter';
+  | 'toncoRouter' | 'wrappedToncoTonWallet' | 'dedustVaultNativeV2' | 'omnistonEscrowMinter'
+  | 'stonRouterV2_2_cpi1' | 'stonRouterV2_2_cpi2' | 'stonRouterV2_2_cpi3' | 'stonRouterV2_2_cpi4'
+  | 'stonRouterV2_2_cpi5' | 'stonRouterV2_2_cpi6' | 'stonRouterV2_2_wcpi' | 'stonRouterV2_2_wstable'
+  | 'swapCoffeeVaultNative' | 'swapCoffeeVaultJetton';
 
 export type ContractInfo = {
   name: ContractName;

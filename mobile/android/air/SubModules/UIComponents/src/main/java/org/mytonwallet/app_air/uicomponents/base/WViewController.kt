@@ -105,6 +105,22 @@ abstract class WViewController(val context: Context) :
         get() {
             return window?.isWideLayout == true && !isInCenteredWindow
         }
+
+    private val systemBarBottomInset: Int
+        get() = if (isInCenteredWindow) 0 else window?.systemBars?.bottom ?: 0
+
+    private val bottomCornerInset: Int
+        get() = if (bottomReversedCornerView?.isGradientMode == true) {
+            navigationController?.getSystemBars()?.bottom ?: 0
+        } else {
+            systemBarBottomInset
+        }
+
+    private val shouldShowBottomCornerRadius: Boolean
+        get() = shouldDisplayBottomBar &&
+            !isInCenteredWindow &&
+            systemBarBottomInset > 0
+
     open val forceBlurBottomView = false
     open val bottomBlurRootView: ViewGroup? by lazy {
         topBarConfiguration.blurRootView
@@ -193,7 +209,6 @@ abstract class WViewController(val context: Context) :
     open fun insetsUpdated() {
         if (!isViewConfigured) return
         isKeyboardOpen = (window?.imeInsets?.bottom ?: 0) > 0
-        updateBlurPaddings()
         navigationBar?.insetsUpdated()
         activeDialogs.forEach { it.insetsUpdated() }
         if (isInCenteredWindow && !centeredWindowCloseButtonAdded) {
@@ -203,6 +218,7 @@ abstract class WViewController(val context: Context) :
             navigationBar?.removeCloseButton()
         }
         syncBottomCornerRadius()
+        updateBlurPaddings()
         refreshBottomCornerRadiusHeight()
     }
 
@@ -507,7 +523,7 @@ abstract class WViewController(val context: Context) :
 
     open fun didSetupViews() {
         if (overrideShowTopBlurView ?: shouldDisplayTopBar) addTopCornerRadius()
-        if (shouldDisplayBottomBar && !isInCenteredWindow) addBottomCornerRadius()
+        if (shouldShowBottomCornerRadius) addBottomCornerRadius()
         updateBlurPaddings()
     }
 
@@ -746,9 +762,7 @@ abstract class WViewController(val context: Context) :
 
     var bottomReversedCornerView: ReversedCornerViewUpsideDown? = null
 
-    protected fun syncBottomCornerRadius(
-        shouldShow: Boolean = shouldDisplayBottomBar && !isInCenteredWindow
-    ) {
+    protected fun syncBottomCornerRadius(shouldShow: Boolean = shouldShowBottomCornerRadius) {
         val existing = bottomReversedCornerView
         if (shouldShow && existing == null) {
             addBottomCornerRadius()
@@ -787,10 +801,10 @@ abstract class WViewController(val context: Context) :
     }
 
     private fun bottomReversedCornerViewHeight(): Int {
-        val extra = bottomReversedCornerView?.extraTopHeight ?: 0
-        return ViewConstants.TOOLBAR_RADIUS.dp.roundToInt() +
-            (navigationController?.getSystemBars()?.bottom ?: 0) +
-            extra
+        val bottomView = bottomReversedCornerView
+        return (bottomView?.cornerHeight ?: 0) +
+            bottomCornerInset +
+            (bottomView?.extraTopHeight ?: 0)
     }
 
     protected fun refreshBottomCornerRadiusHeight() {

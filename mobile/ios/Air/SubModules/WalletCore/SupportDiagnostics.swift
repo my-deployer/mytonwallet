@@ -1,5 +1,4 @@
 import Foundation
-import NativeEnclave
 import WalletContext
 import ZIPFoundation
 
@@ -10,16 +9,27 @@ public enum SupportDiagnostics {
     public static let supportURL = URL(string: "https://t.me/\(SUPPORT_USERNAME)")!
 
     public static func prepareLogsExportFile() async throws -> URL {
-        await captureCurrentState()
+        let diagnosticsData = await collectDiagnostics()
         let sdkLogs = await collectSDKLogs()
         let nativeLogsURL = try await LogStore.shared.exportFile()
         defer { try? FileManager.default.removeItem(at: nativeLogsURL) }
 
         return try SupportDiagnosticsArchive.create(
             nativeLogsURL: nativeLogsURL,
+            diagnosticsData: diagnosticsData,
             sdkLogsData: sdkLogs.data,
             sdkLogsError: sdkLogs.error
         )
+    }
+
+    private static func collectDiagnostics() async -> Data {
+        let diagnostics = await captureCurrentState()
+        do {
+            return try SupportDiagnosticsArchive.encodeDiagnostics(diagnostics)
+        } catch {
+            log.error("failed to encode diagnostics: \(error, .public)")
+            return Data("{\"error\":\"diagnostics encoding failed\"}\n".utf8)
+        }
     }
 
     private static func collectSDKLogs() async -> SDKLogsCollection {
@@ -32,134 +42,67 @@ public enum SupportDiagnostics {
         }
     }
 
-    private static func captureCurrentState() async {
+    private static func captureCurrentState() async -> SupportDiagnosticsReport {
         log.info("support diagnostics export requested")
-        logKeychainState()
-        logAccountState()
-        await logSecretMigrationState()
+        let report = await SupportDiagnosticsReport.collect()
+        logAppAndDeviceState(report)
+        logKeychainState(report)
+        logAccountState(report)
+        logSecurityState(report)
+        return report
     }
 
-    private static func logKeychainState() {
+    private static func logAppAndDeviceState(_ report: SupportDiagnosticsReport) {
+        log.info("app and device state:")
+        log.info("app=\(report.app.name, .public) version=\(report.app.version, .public)")
+        log.info("build=\(report.app.build, .public) distribution=\(report.app.distribution, .public)")
+        log.info("bundle=\(report.app.bundleIdentifier, .public)")
+        log.info("device=\(report.device.hardwareModel, .public) family=\(report.device.deviceFamily, .public)")
+        log.info("system=\(report.device.systemName, .public) \(report.device.systemVersion, .public)")
+        log.info("locale=\(report.device.localeIdentifier, .public) timeZone=\(report.device.timeZone, .public)")
+    }
+
+    private static func logKeychainState(_ report: SupportDiagnosticsReport) {
         log.info("keychain state:")
-        log.info("keys = \(KeychainStorageProvider.keys() as Any, .public)")
-        log.info("stateVersion = \(KeychainStorageProvider.get(key: "stateVersion") as Any, .public)")
-        log.info("currentAccountId = \(KeychainStorageProvider.get(key: "currentAccountId") as Any, .public)")
-        log.info("clientId = \(KeychainStorageProvider.get(key: "clientId") as Any, .public)")
-        log.info("baseCurrency = \(KeychainStorageProvider.get(key: "baseCurrency") as Any, .public)")
-        let accounts = KeychainStorageProvider.get(key: "accounts")
-        var accountIdsInKeychain: [String]?
-        if let value = accounts.1, let keys = try? (JSONSerialization.jsonObject(withString: value) as? [String: Any])?.keys {
-            accountIdsInKeychain = Array(keys)
+        log.info("keys = \(report.installation.keychainKeys, .public)")
+        log.info("stateVersion = \(report.installation.stateVersion as Any, .public)")
+        log.info("keychain currentAccountId = \(report.installation.keychainCurrentAccountId as Any, .public)")
+        log.info("clientId = \(report.installation.clientId as Any, .public)")
+        log.info("baseCurrency = \(report.installation.baseCurrency as Any, .public)")
+        log.info("credentials state = \(report.security.credentials.state, .public)")
+        log.info("credentials has username = \(report.security.credentials.hasUsername as Any, .public)")
+        log.info("credentials password length = \(report.security.credentials.passwordLength as Any, .public)")
+        log.info("credentials valid format = \(report.security.credentials.hasValidPasscodeFormat as Any, .public)")
+        if let error = report.security.credentials.error {
+            log.error("credentials inspection failed: \(error, .public)")
         }
-        log.info("accounts = \(accounts.0 as Any) length=\(accounts.1?.count ?? -1)")
-        log.info("accountIds in keychain = \(accountIdsInKeychain?.jsonString() ?? "<accounts is not a valid dict>", .public)")
-
-        let areCredentialsValid: Bool
-        if let credentials = CapacitorCredentialsStorage.getCredentials() {
-            log.info("credentials discovered username = \(credentials.username, .public) password.count = \(credentials.password.count)")
-            areCredentialsValid = credentials.password.wholeMatch(of: /[0-9]{4}/) != nil || credentials.password.wholeMatch(of: /[0-9]{6}/) != nil
-        } else {
-            log.info("credentials do not exist")
-            areCredentialsValid = false
-        }
-        log.info("areCredentialsValid = \(areCredentialsValid)")
     }
 
-    private static func logAccountState() {
+    private static func logAccountState(_ report: SupportDiagnosticsReport) {
         log.info("account state:")
-        log.info("currentAccountId = \(AccountStore.accountId ?? "<AccountStore.accountId is nil>", .public)")
-        let orderedAccountIds = AccountStore.orderedAccountIds
-        log.info("orderedAccountIds = #\(orderedAccountIds.count) \(orderedAccountIds.jsonString(), .public)")
-        let accountsById = AccountStore.accountsById
-        log.info("accountsById = #\(accountsById.count) \(accountsById.jsonString(), .public)")
-    }
-
-    private static func logSecretMigrationState() async {
-        let accountsById = AccountStore.accountsById
-        let databaseAccountIds = Set(accountsById.keys)
-        let storedEncryptedAccountIds = Set(
-            accountsById.values
-                .filter { $0.type.isStoredEncrypted }
-                .map(\.id)
-        )
-        let recoveryRequiredAccountIds = Set(
-            accountsById.values
-                .filter { $0.type.isStoredEncrypted && $0.secretState?.isRecoveryRequired == true }
-                .map(\.id)
-        )
-
-        log.info("secret migration state:")
-        log.info(
-            "database encrypted accounts count=\(storedEncryptedAccountIds.count) ids=\(storedEncryptedAccountIds.sorted(), .public)"
-        )
-        if recoveryRequiredAccountIds.isEmpty {
-            log.info("database recovery-required accounts count=0")
+        log.info("currentAccountId = \(report.accounts.currentAccountId as Any, .public)")
+        log.info("orderedAccountIds = #\(report.accounts.orderedAccountIds.count) \(report.accounts.orderedAccountIds, .public)")
+        log.info("databaseAccountIds = #\(report.accounts.databaseAccountIds.count) \(report.accounts.databaseAccountIds, .public)")
+        log.info("keychainAccountIds = \(report.accounts.keychainAccountIds as Any, .public)")
+        if report.accounts.health.issues.isEmpty {
+            log.info("account health = \(report.accounts.health.status, .public)")
         } else {
             log.fault(
-                "database recovery-required accounts count=\(recoveryRequiredAccountIds.count) ids=\(recoveryRequiredAccountIds.sorted(), .public)"
+                "account health = \(report.accounts.health.status, .public) issues=\(report.accounts.health.issues, .public)"
             )
         }
+    }
 
-        do {
-            let keychainAccounts = try KeychainHelper.loadAccounts() ?? [:]
-            let keychainAccountIds = Set(keychainAccounts.keys)
-            let legacyCiphertextAccountIds: Set<String> = Set(
-                keychainAccounts.compactMap { accountId, account in
-                    guard let ciphertext = account["mnemonicEncrypted"] as? String,
-                          !ciphertext.isEmpty else {
-                        return nil
-                    }
-                    return accountId
-                }
-            )
-            let malformedLegacySecretAccountIds: Set<String> = Set(
-                keychainAccounts.compactMap { accountId, account in
-                    guard account.keys.contains("mnemonicEncrypted") else {
-                        return nil
-                    }
-                    if let ciphertext = account["mnemonicEncrypted"] as? String,
-                       !ciphertext.isEmpty {
-                        return nil
-                    }
-                    return accountId
-                }
-            )
-
-            log.info(
-                "legacy ciphertext accounts count=\(legacyCiphertextAccountIds.count) ids=\(legacyCiphertextAccountIds.sorted(), .public)"
-            )
-            if !malformedLegacySecretAccountIds.isEmpty {
-                log.fault(
-                    "malformed legacy secret fields count=\(malformedLegacySecretAccountIds.count) ids=\(malformedLegacySecretAccountIds.sorted(), .public)"
-                )
-            }
-            let keychainOnlyAccountIds = keychainAccountIds.subtracting(databaseAccountIds)
-            let databaseOnlyAccountIds = databaseAccountIds.subtracting(keychainAccountIds)
-            log.info(
-                "account storage mismatch keychainOnly=\(keychainOnlyAccountIds.sorted(), .public) databaseOnly=\(databaseOnlyAccountIds.sorted(), .public)"
-            )
-        } catch {
-            log.error("failed to inspect legacy keychain accounts for support export: \(error, .public)")
-        }
-
-        let configuredAuthTypes = EnclaveManager.configuredAuthTypes()
-        log.info(
-            "enclave configuredAuthTypes=\(configuredAuthTypes.map(\.rawValue).sorted(), .public) legacyMigrationAllowed=\(EnclaveManager.isLegacyMigrationAllowed())"
-        )
-        guard !configuredAuthTypes.isEmpty else {
-            return
-        }
-
-        do {
-            let enclaveSecretAccountIds = try await EnclaveManager.shared.existingSecretIds(
-                in: storedEncryptedAccountIds
-            )
-            let missingEnclaveSecretAccountIds = storedEncryptedAccountIds.subtracting(enclaveSecretAccountIds)
-            log.info(
-                "enclave database-secret coverage present=\(enclaveSecretAccountIds.sorted(), .public) missing=\(missingEnclaveSecretAccountIds.sorted(), .public)"
-            )
-        } catch {
-            log.error("failed to inspect enclave secret coverage for support export: \(error, .public)")
+    private static func logSecurityState(_ report: SupportDiagnosticsReport) {
+        log.info("secret migration state:")
+        log.info("legacy ciphertext ids=\(report.security.legacyCiphertextAccountIds, .public)")
+        log.info("malformed legacy secret ids=\(report.security.malformedLegacySecretAccountIds, .public)")
+        log.info("enclave configuredAuthTypes=\(report.security.configuredAuthTypes, .public)")
+        log.info("legacyMigrationAllowed=\(report.security.isLegacyMigrationAllowed)")
+        log.info("enclave present ids=\(report.security.enclaveSecretAccountIds as Any, .public)")
+        log.info("enclave missing ids=\(report.security.missingEnclaveSecretAccountIds as Any, .public)")
+        for (inspection, error) in report.security.inspectionErrors.sorted(by: { $0.key < $1.key }) {
+            log.error("\(inspection, .public) inspection failed: \(error, .public)")
         }
     }
 }
@@ -171,8 +114,16 @@ private struct SDKLogsCollection {
 
 struct SupportDiagnosticsArchive {
     static let nativeLogsFilename = "native-logs.tsv"
+    static let diagnosticsFilename = "diagnostics.json"
     static let sdkLogsFilename = "sdk-logs.json"
     static let sdkLogsErrorFilename = "sdk-logs-error.txt"
+
+    static func encodeDiagnostics<T: Encodable>(_ diagnostics: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
+        return try encoder.encode(diagnostics) + Data("\n".utf8)
+    }
 
     static func encodeSDKLogs(_ logs: Any) throws -> Data {
         guard JSONSerialization.isValidJSONObject(logs) else {
@@ -186,6 +137,7 @@ struct SupportDiagnosticsArchive {
 
     static func create(
         nativeLogsURL: URL,
+        diagnosticsData: Data,
         sdkLogsData: Data,
         sdkLogsError: String?,
         destinationDirectory: URL = FileManager.default.temporaryDirectory,
@@ -199,6 +151,10 @@ struct SupportDiagnosticsArchive {
         try fileManager.copyItem(
             at: nativeLogsURL,
             to: stagingDirectory.appending(component: nativeLogsFilename)
+        )
+        try diagnosticsData.write(
+            to: stagingDirectory.appending(component: diagnosticsFilename),
+            options: .atomic
         )
         try sdkLogsData.write(
             to: stagingDirectory.appending(component: sdkLogsFilename),

@@ -139,14 +139,32 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
         verticalOverScrollBounceEffectDecorator?.detach()
         verticalOverScrollBounceEffectDecorator = VerticalOverScrollBounceEffectDecorator(
             object : RecyclerViewOverScrollDecorAdapter(this) {
+                // canScrollVertically() works off the estimated scroll range, which is unreliable
+                // with mixed item heights (smooth scrollbar); the edges are decided from the laid-out
+                // children instead.
                 override fun isInAbsoluteStart(): Boolean {
                     if (layoutManager?.canScrollVertically() == false) return false
-                    return super.isInAbsoluteStart()
+                    val lm = layoutManager as? LinearLayoutManager
+                        ?: return super.isInAbsoluteStart()
+                    if ((adapter?.itemCount ?: 0) == 0) return true
+                    val first = lm.findFirstVisibleItemPosition()
+                    if (first == NO_POSITION) return super.isInAbsoluteStart()
+                    if (first != 0) return false
+                    val child = lm.findViewByPosition(0) ?: return super.isInAbsoluteStart()
+                    return lm.getDecoratedTop(child) >= paddingTop
                 }
 
                 override fun isInAbsoluteEnd(): Boolean {
                     if (layoutManager?.canScrollVertically() == false) return false
-                    return super.isInAbsoluteEnd()
+                    val lm = layoutManager as? LinearLayoutManager
+                        ?: return super.isInAbsoluteEnd()
+                    val lastIndex = (adapter?.itemCount ?: 0) - 1
+                    if (lastIndex < 0) return true
+                    val last = lm.findLastVisibleItemPosition()
+                    if (last == NO_POSITION) return super.isInAbsoluteEnd()
+                    if (last != lastIndex) return false
+                    val child = lm.findViewByPosition(lastIndex) ?: return super.isInAbsoluteEnd()
+                    return lm.getDecoratedBottom(child) <= height - paddingBottom
                 }
             },
             OverScrollBounceEffectDecoratorBase.DEFAULT_DECELERATE_FACTOR

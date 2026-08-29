@@ -212,6 +212,7 @@ public actor ActivityListViewModel: WalletCoreData.EventsObserver {
             } catch {
                 log.error("requestMoreIfNeeded: \(error)")
             }
+            await getState(updatedIds: [], replacedIds: [:])
             self.loadMoreTask = nil
         }
     }

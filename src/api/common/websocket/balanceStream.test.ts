@@ -1,4 +1,5 @@
 import type { ApiBalanceBySlug } from '../../types';
+import type { StampedBalances } from '../../types';
 import type {
   AbstractWebsocketClient,
   BalanceUpdateCallback,
@@ -51,7 +52,7 @@ describe('BalanceStream', () => {
     const wsClient = {
       watchWallets: jest.fn(() => watcher),
     } as unknown as AbstractWebsocketClient<any, any, any, any, any>;
-    const fetchBalances = jest.fn(() => Promise.resolve({ toncoin: 123n }));
+    const fetchBalances = jest.fn(() => Promise.resolve({ balances: { toncoin: 123n } }));
     const loadingEvents: boolean[] = [];
     const updateEvents: unknown[] = [];
 
@@ -93,7 +94,7 @@ describe('BalanceStream', () => {
     const wsClient = {
       watchWallets: jest.fn(() => watcher),
     } as unknown as AbstractWebsocketClient<any, any, any, any, any>;
-    const fetchBalances = jest.fn(() => Promise.resolve({ toncoin: 123n }));
+    const fetchBalances = jest.fn(() => Promise.resolve({ balances: { toncoin: 123n } }));
 
     const stream = new BalanceStream({
       chain: 'ton',
@@ -124,7 +125,7 @@ describe('BalanceStream', () => {
     const ensureIsPollingNeeded = jest.fn()
       .mockResolvedValueOnce(false)
       .mockResolvedValueOnce(true);
-    const fetchBalances = jest.fn(() => Promise.resolve({ bnb: 123n }));
+    const fetchBalances = jest.fn(() => Promise.resolve({ balances: { bnb: 123n } }));
     const updateEvents: unknown[] = [];
 
     const stream = new BalanceStream({
@@ -170,7 +171,7 @@ describe('BalanceStream', () => {
       watchWallets: jest.fn(() => watcher),
     } as unknown as AbstractWebsocketClient<any, any, any, any, any>;
     const ensureIsPollingNeeded = jest.fn().mockResolvedValue(false);
-    const fetchBalances = jest.fn(() => Promise.resolve({ 'bnb-0x8ac76a51': 456n }));
+    const fetchBalances = jest.fn(() => Promise.resolve({ balances: { 'bnb-0x8ac76a51': 456n } }));
     const updateEvents: unknown[] = [];
 
     const stream = new BalanceStream({
@@ -217,8 +218,8 @@ describe('BalanceStream', () => {
     } as unknown as AbstractWebsocketClient<any, any, any, any, any>;
     const ensureIsPollingNeeded = jest.fn().mockResolvedValue(false);
     const fetchBalances = jest.fn()
-      .mockResolvedValueOnce({ bnb: 1n })
-      .mockResolvedValueOnce({ bnb: 2n });
+      .mockResolvedValueOnce({ balances: { bnb: 1n } })
+      .mockResolvedValueOnce({ balances: { bnb: 2n } });
     const updateEvents: unknown[] = [];
 
     const stream = new BalanceStream({
@@ -280,11 +281,15 @@ describe('BalanceStream freshness guard', () => {
   }
 
   /**
-   * Builds a `'ton'` BalanceStream wired so the test can drive the socket path. The socket
+   * Builds a BalanceStream on the given chain, wired so the test can drive the socket path. The socket
    * `onBalanceUpdate` callback registered in the constructor is captured from the `watchWallets`
    * mock so the test can simulate live deltas arriving out of order with HTTP polls.
    */
-  function createSocketScenario(fetchBalancesCb: jest.Mock): SocketScenario {
+  function createSocketScenario(
+    fetchBalancesCb: jest.Mock,
+    chain: 'ton' | 'polygon' = 'ton',
+    address = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
+  ): SocketScenario {
     let onBalanceUpdate: BalanceUpdateCallback | undefined;
 
     const watcher: WalletWatcher = {
@@ -301,10 +306,10 @@ describe('BalanceStream freshness guard', () => {
     const updateEvents: Array<{ balances: ApiBalanceBySlug; source: string }> = [];
 
     const stream = new BalanceStream({
-      chain: 'ton',
+      chain,
       wsClient,
       network: 'mainnet',
-      address: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ',
+      address,
       sendUpdateTokens: jest.fn(),
       fallbackPollingOptions: FAST_POLLING_OPTIONS,
       fetchBalancesCb,
@@ -313,8 +318,8 @@ describe('BalanceStream freshness guard', () => {
     stream.onUpdate((balances, source) => updateEvents.push({ balances: { ...balances }, source }));
 
     const deliverNativeSocketBalance = async (balance: bigint) => {
-      // `tokenAddress: undefined` denotes the chain native token (toncoin).
-      onBalanceUpdate!({ address: 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ', balance, finality: 'confirmed' });
+      // `tokenAddress: undefined` denotes the chain native token.
+      onBalanceUpdate!({ address, balance, finality: 'confirmed' });
       // The socket handler is throttled by 100ms, then awaits token preload before committing.
       await jest.advanceTimersByTimeAsync(SOCKET_THROTTLE_DELAY);
     };
@@ -325,10 +330,10 @@ describe('BalanceStream freshness guard', () => {
   it('keeps a fresher socket balance when an older poll (started before the delta) resolves later', async () => {
     jest.useFakeTimers();
 
-    const firstPoll = Deferred.resolved<ApiBalanceBySlug>({ toncoin: 100n });
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { toncoin: 100n } });
     // The second poll is slow: it captures its freshness version, then a socket delta arrives,
     // and only afterwards does the poll resolve with a now-stale value for `toncoin`.
-    const slowPoll = new Deferred<ApiBalanceBySlug>();
+    const slowPoll = new Deferred<StampedBalances>();
     const fetchBalances = jest.fn()
       .mockReturnValueOnce(firstPoll.promise)
       .mockReturnValueOnce(slowPoll.promise);
@@ -349,7 +354,7 @@ describe('BalanceStream freshness guard', () => {
     expect(await stream.getBalances()).toEqual({ toncoin: 555n });
 
     // The slow poll finally resolves with a stale `toncoin` plus a genuinely new slug.
-    slowPoll.resolve({ toncoin: 100n, 'ton-fresh': 999n });
+    slowPoll.resolve({ balances: { toncoin: 100n, 'ton-fresh': 999n } });
     await jest.advanceTimersByTimeAsync(1);
 
     const balances = await stream.getBalances();
@@ -359,13 +364,112 @@ describe('BalanceStream freshness guard', () => {
     stream.destroy();
   });
 
+  it('applies a socket delta on a non-standard EVM chain once the stream has its own balances', async () => {
+    jest.useFakeTimers();
+
+    // A polygon stream (standard chain: ethereum) that has completed its own poll. The
+    // cross-chain assets map is untouched, as for an account whose ethereum stream is inactive.
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { pol: 100n } });
+    const fetchBalances = jest.fn().mockReturnValueOnce(firstPoll.promise);
+
+    const { stream, deliverNativeSocketBalance, updateEvents } = createSocketScenario(
+      fetchBalances, 'polygon', '0x41835810168DEaf5B36c2F38c0fE24a87675Ae49',
+    );
+    stream.start();
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(updateEvents.at(-1)).toEqual({ balances: { pol: 100n }, source: 'poll' });
+
+    await deliverNativeSocketBalance(555n);
+
+    expect(updateEvents.at(-1)).toEqual({ balances: { pol: 555n }, source: 'socket' });
+
+    stream.destroy();
+  });
+
+  it('does not let a snapshot observed before a delta overwrite the slug that delta refreshed', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-08-26T10:02:09.000Z'));
+
+    // The measured production case: a delta lands, then a poll STARTS (so it wins on the client
+    // clock) and returns a page the gateway observed a minute earlier, before the transaction.
+    const observedBeforeTheDelta = Date.now() - 60_000;
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { toncoin: 100n } });
+    const fetchBalances = jest.fn()
+      .mockReturnValueOnce(firstPoll.promise)
+      .mockResolvedValueOnce({ balances: { toncoin: 100n }, asOf: observedBeforeTheDelta });
+
+    const { stream, deliverNativeSocketBalance, updateEvents } = createSocketScenario(fetchBalances);
+    stream.start();
+
+    await jest.advanceTimersByTimeAsync(1);
+    await deliverNativeSocketBalance(555n);
+    expect(await stream.getBalances()).toEqual({ toncoin: 555n });
+
+    stream.markWalletActiveAndForcePoll();
+    await jest.advanceTimersByTimeAsync(1);
+
+    expect(await stream.getBalances()).toEqual({ toncoin: 555n });
+    expect(updateEvents.at(-1)).toEqual({ balances: { toncoin: 555n }, source: 'socket' });
+
+    stream.destroy();
+  });
+
+  it('ranks a slug an unstamped snapshot rewrote by the clock, not by the instant it used to carry',
+    async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-08-26T10:02:09.000Z'));
+
+      const observedByTheFirstPoll = Date.now() - 120_000;
+      const firstPoll = Deferred.resolved<StampedBalances>({
+        balances: { toncoin: 100n, 'ton-tok': 5n },
+        asOf: observedByTheFirstPoll,
+      });
+      // The gateway degrades and answers without an instant, so `ton-tok` loses its provenance.
+      const unstampedPoll = new Deferred<StampedBalances>();
+      const laterPoll = Deferred.resolved<StampedBalances>({
+        balances: { toncoin: 555n, 'ton-tok': 9n },
+        asOf: observedByTheFirstPoll - 30_000,
+      });
+      const fetchBalances = jest.fn()
+        .mockReturnValueOnce(firstPoll.promise)
+        .mockReturnValueOnce(unstampedPoll.promise)
+        .mockReturnValueOnce(laterPoll.promise);
+
+      const { stream, deliverNativeSocketBalance } = createSocketScenario(fetchBalances);
+      stream.start();
+
+      await jest.advanceTimersByTimeAsync(1);
+      expect(await stream.getBalances()).toEqual({ toncoin: 100n, 'ton-tok': 5n });
+
+      stream.markWalletActiveAndForcePoll();
+      await Promise.resolve();
+      expect(fetchBalances).toHaveBeenCalledTimes(2);
+
+      // A delta on `toncoin` lands while the unstamped poll is in flight, so the merge runs
+      // per-slug and `ton-tok` is written by a source that states no instant.
+      await deliverNativeSocketBalance(555n);
+      unstampedPoll.resolve({ balances: { toncoin: 100n, 'ton-tok': 7n } });
+      await jest.advanceTimersByTimeAsync(1);
+      expect(await stream.getBalances()).toEqual({ toncoin: 555n, 'ton-tok': 7n });
+
+      stream.markWalletActiveAndForcePoll();
+      await jest.advanceTimersByTimeAsync(1);
+
+      // `toncoin` still carries the delta's instant and holds against this older page, while
+      // `ton-tok`, whose stored value has no instant, is ranked by the clock and updates.
+      expect(await stream.getBalances()).toEqual({ toncoin: 555n, 'ton-tok': 9n });
+
+      stream.destroy();
+    });
+
   it('lets a poll that started after a socket delta overwrite that slug', async () => {
     jest.useFakeTimers();
 
-    const firstPoll = Deferred.resolved<ApiBalanceBySlug>({ toncoin: 100n });
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { toncoin: 100n } });
     const fetchBalances = jest.fn()
       .mockReturnValueOnce(firstPoll.promise)
-      .mockResolvedValueOnce({ toncoin: 777n });
+      .mockResolvedValueOnce({ balances: { toncoin: 777n } });
 
     const { stream, deliverNativeSocketBalance, updateEvents } = createSocketScenario(fetchBalances);
     stream.start();
@@ -389,8 +493,8 @@ describe('BalanceStream freshness guard', () => {
   it('does not let a stale poll drop a slug a newer socket delta added', async () => {
     jest.useFakeTimers();
 
-    const firstPoll = Deferred.resolved<ApiBalanceBySlug>({ toncoin: 100n });
-    const slowPoll = new Deferred<ApiBalanceBySlug>();
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { toncoin: 100n } });
+    const slowPoll = new Deferred<StampedBalances>();
     const fetchBalances = jest.fn()
       .mockReturnValueOnce(firstPoll.promise)
       .mockReturnValueOnce(slowPoll.promise);
@@ -407,7 +511,7 @@ describe('BalanceStream freshness guard', () => {
     await deliverNativeSocketBalance(555n);
 
     // The stale poll's snapshot omits `toncoin` entirely (e.g. it predates the change).
-    slowPoll.resolve({ 'ton-other': 42n });
+    slowPoll.resolve({ balances: { 'ton-other': 42n } });
     await jest.advanceTimersByTimeAsync(1);
 
     const balances = await stream.getBalances();
@@ -421,8 +525,8 @@ describe('BalanceStream freshness guard', () => {
     jest.useFakeTimers();
 
     const fetchBalances = jest.fn()
-      .mockResolvedValueOnce({ toncoin: 100n, 'ton-gone': 5n })
-      .mockResolvedValueOnce({ toncoin: 100n });
+      .mockResolvedValueOnce({ balances: { toncoin: 100n, 'ton-gone': 5n } })
+      .mockResolvedValueOnce({ balances: { toncoin: 100n } });
 
     const { stream, updateEvents } = createSocketScenario(fetchBalances);
     stream.start();
@@ -444,8 +548,8 @@ describe('BalanceStream freshness guard', () => {
     jest.useFakeTimers();
 
     const fetchBalances = jest.fn()
-      .mockResolvedValueOnce({ toncoin: 1n, 'ton-aaa': 2n })
-      .mockResolvedValueOnce({ toncoin: 3n, 'ton-bbb': 4n });
+      .mockResolvedValueOnce({ balances: { toncoin: 1n, 'ton-aaa': 2n } })
+      .mockResolvedValueOnce({ balances: { toncoin: 3n, 'ton-bbb': 4n } });
 
     const { stream, updateEvents } = createSocketScenario(fetchBalances);
     stream.start();
@@ -473,8 +577,8 @@ describe('BalanceStream freshness guard', () => {
     // O(1) fast path (`#clock === pollVersion`). The first poll is a full replace that fires one
     // update; the identical second poll is short-circuited by `areDeepEqual` and fires nothing.
     const fetchBalances = jest.fn()
-      .mockResolvedValueOnce({ toncoin: 1n, 'ton-aaa': 2n })
-      .mockResolvedValueOnce({ toncoin: 1n, 'ton-aaa': 2n });
+      .mockResolvedValueOnce({ balances: { toncoin: 1n, 'ton-aaa': 2n } })
+      .mockResolvedValueOnce({ balances: { toncoin: 1n, 'ton-aaa': 2n } });
 
     const { stream, updateEvents } = createSocketScenario(fetchBalances);
     stream.start();
@@ -500,10 +604,10 @@ describe('BalanceStream freshness guard', () => {
   it('does not let a no-op socket re-emit block a genuinely fresher in-flight poll', async () => {
     jest.useFakeTimers();
 
-    const firstPoll = Deferred.resolved<ApiBalanceBySlug>({ toncoin: 100n });
+    const firstPoll = Deferred.resolved<StampedBalances>({ balances: { toncoin: 100n } });
     // The second poll is slow: it captures its freshness version, then a no-op socket delta arrives
     // (the same value already stored), and only afterwards does the poll resolve with a fresher value.
-    const slowPoll = new Deferred<ApiBalanceBySlug>();
+    const slowPoll = new Deferred<StampedBalances>();
     const fetchBalances = jest.fn()
       .mockReturnValueOnce(firstPoll.promise)
       .mockReturnValueOnce(slowPoll.promise);
@@ -528,7 +632,7 @@ describe('BalanceStream freshness guard', () => {
     expect(updateEvents.length).toBe(eventsBeforeNoop);
 
     // The slow poll resolves with a genuinely fresher `toncoin`; the no-op delta must not block it.
-    slowPoll.resolve({ toncoin: 200n });
+    slowPoll.resolve({ balances: { toncoin: 200n } });
     await jest.advanceTimersByTimeAsync(1);
 
     expect(await stream.getBalances()).toEqual({ toncoin: 200n });

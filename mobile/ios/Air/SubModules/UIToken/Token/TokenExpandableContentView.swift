@@ -91,13 +91,14 @@ final class TokenExpandableContentView: WTouchPassView {
         let m = metrics
         let expansionProgress = m.getExpansionProgress(from: scrollOffset, clamped: true)
         let positionalOffset = max(0, scrollOffset)
+        let topOverscroll = -min(0, scrollOffset)
         
-        iconTopConstraint.constant = max(m.iconTopCollapsed, m.iconTopExpanded - positionalOffset * m.iconScrollModifier)
+        iconTopConstraint.constant = max(m.iconTopCollapsed, m.iconTopExpanded - positionalOffset * m.iconScrollModifier) + topOverscroll
         let blurProgress = 1 - min(1, max(0, (150 - scrollOffset) / 150))
         iconBlurView.blurRadius = blurProgress * 30
         iconView.alpha = min(1, max(0, (180 - scrollOffset) / 40))
         
-        balanceCenterConstraint.constant = interpolate(from: 0, to: m.balanceExpandedCenterY, progress: expansionProgress) - navBarShift
+        balanceCenterConstraint.constant = interpolate(from: 0, to: m.balanceExpandedCenterY, progress: expansionProgress) - navBarShift + topOverscroll
         balanceHeightConstraint.constant = interpolate(
             from: m.balanceHostingExpandedHeight,
             to: m.balanceHostingCollapsedHeight,

@@ -90,6 +90,13 @@ extension MStakingData {
         bySlug(tokenSlug) ?? byStakedSlug(tokenSlug)
     }
 
+    public func hasStakingPosition(forTokenSlug tokenSlug: String? = nil) -> Bool {
+        if let tokenSlug {
+            return byTokenSlug(tokenSlug).map(getHasStakingPosition(state:)) == true
+        }
+        return stateById.values.contains(where: getHasStakingPosition(state:))
+    }
+
     public func stakingTokenPresentation(tokenSlug: String, isStaking: Bool) -> StakingTokenPresentation? {
         guard let state = byTokenSlug(tokenSlug) else { return nil }
 

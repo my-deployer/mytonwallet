@@ -39,6 +39,9 @@ class WLineChartView(context: Context, labeled: Boolean) :
 
     var onHighlightChange: ((h: Highlight?) -> Unit)? = null
 
+    private val viewPortOffsetRight = if (labeled) 20f.dp else 0f
+    private val viewPortOffsetBottom = if (labeled) 16f.dp else 0f
+
     init {
         id = generateViewId()
 
@@ -50,7 +53,6 @@ class WLineChartView(context: Context, labeled: Boolean) :
         if (labeled) {
             xAxis.setLabelCount(5)
             xAxis.position = XAxis.XAxisPosition.BOTTOM
-            setViewPortOffsets(0f, 0f, 20f.dp, 16f.dp)
             xAxis.valueFormatter = object : ValueFormatter() {
                 override fun getFormattedValue(value: Float): String {
                     val date = Date(value.toLong() * 1000)
@@ -62,9 +64,9 @@ class WLineChartView(context: Context, labeled: Boolean) :
             xAxis.setDrawAxisLine(false)
             xAxis.setDrawGridLines(false)
         } else {
-            setViewPortOffsets(0f, 0f, 0f, 0f)
             xAxis.isEnabled = false
         }
+        setViewPortOffsets(0f, 0f, viewPortOffsetRight, viewPortOffsetBottom)
         axisLeft.isEnabled = false
         axisLeft.spaceTop = 1f.dp
         axisLeft.spaceBottom = 0f
@@ -143,6 +145,13 @@ class WLineChartView(context: Context, labeled: Boolean) :
         setMarker(marker)
 
         updateTheme()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        mViewPortHandler.restrainViewPort(0f, 0f, viewPortOffsetRight, viewPortOffsetBottom)
+        prepareOffsetMatrix()
+        prepareValuePxMatrix()
     }
 
     override fun updateTheme() {

@@ -66,7 +66,7 @@ func _getNewestActivitiesBySlug(
 
 func getIsIdSuitableForFetchingTimestamp(activity: ApiActivity?) -> Bool {
     guard let activity else { return false }
-    return !getIsIdLocal(activity.id) && !getIsBackendSwapId(activity.id) && activity.isCompleted
+    return !getIsIdLocal(activity.id) && !getIsBackendSwapId(activity.id) && !getIsActivityPending(activity)
 }
 
 public func getIsActivityPending(_ activity: ApiActivity) -> Bool {

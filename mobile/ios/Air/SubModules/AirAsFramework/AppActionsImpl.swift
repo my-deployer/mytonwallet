@@ -503,6 +503,21 @@ private class AppActionsImpl: AppActionsProtocol {
     }
     
     static func showEarn(accountContext: AccountContext, tokenSlug: String?) {
+        let config = StakingConfig.config(forTokenSlug: tokenSlug ?? TONCOIN_SLUG)
+        if accountContext.account.supportsEarn,
+           let stakingData = accountContext.stakingData,
+           !stakingData.hasStakingPosition(forTokenSlug: tokenSlug),
+           let config,
+           config.canAddStake,
+           let stakingState = config.stakingState(stakingData: stakingData) {
+            let addStakeVC = AddStakeVC(
+                config: config,
+                stakingState: stakingState,
+                accountContext: accountContext
+            )
+            topViewController()?.present(WNavigationController(rootViewController: addStakeVC), animated: true)
+            return
+        }
         showEarn(accountContext: accountContext, tokenSlug: tokenSlug, initialAction: nil)
     }
 

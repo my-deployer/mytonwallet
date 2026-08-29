@@ -8,7 +8,7 @@ import WalletContext
 struct SignDataViewOrPlaceholder: View {
     var update: ApiUpdate.DappSignData?
     var accountContext: AccountContext
-    var onConfirm: () -> ()
+    var onConfirm: () async -> ()
     var onCancel: () -> ()
 
     var body: some View {
@@ -31,9 +31,10 @@ struct SignDataView: View {
 
     var update: ApiUpdate.DappSignData
     var accountContext: AccountContext
-    var onConfirm: () -> ()
+    var onConfirm: () async -> ()
     var onCancel: () -> ()
-    
+
+    @State private var isSubmitting = false
     @Namespace private var ns
 
     var body: some View {
@@ -187,14 +188,25 @@ struct SignDataView: View {
                 Text(lang("Cancel"))
             }
             .buttonStyle(.airSecondary)
-            Button(action: onConfirm) {
+            Button(action: confirm) {
                 Text(lang("Sign"))
             }
             .buttonStyle(.airPrimary)
+            .environment(\.isLoading, isSubmitting)
+            .disabled(isSubmitting)
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
+    }
+
+    private func confirm() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        Task { @MainActor in
+            await onConfirm()
+            isSubmitting = false
+        }
     }
 }
 

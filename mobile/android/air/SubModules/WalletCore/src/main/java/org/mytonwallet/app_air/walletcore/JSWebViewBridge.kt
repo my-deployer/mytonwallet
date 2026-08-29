@@ -3,6 +3,7 @@ package org.mytonwallet.app_air.walletcore
 import android.annotation.SuppressLint
 import android.app.ActivityManager
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -37,6 +38,7 @@ import org.mytonwallet.app_air.walletbasecontext.utils.takeIfNotBlank
 import org.mytonwallet.app_air.walletbasecontext.utils.toHashMapLong
 import org.mytonwallet.app_air.walletbasecontext.utils.toHashMapString
 import org.mytonwallet.app_air.walletbasecontext.utils.toJSONString
+import org.mytonwallet.app_air.walletbasecontext.utils.toUriOrNull
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.sdkStorage.WSdkStorage
@@ -159,6 +161,7 @@ class JSWebViewBridge(context: Context) : WebView(context) {
                 injected = true
                 onBridgeReady()
                 EnvironmentStore.loadEnvVariable()
+                deliverInstallChannelIfNeeded()
             } else {
                 injecting = false
                 Handler(context.mainLooper).postDelayed({
@@ -166,6 +169,19 @@ class JSWebViewBridge(context: Context) : WebView(context) {
                 }, 500)
             }
         }
+    }
+
+    private var installChannelDelivered: Boolean = false
+
+    // Read the Play Install Referrer once per bridge instance and hand the
+    // channel to the JS claim path. Runs after the page has loaded and
+    // airBridge is initialised; the referrer read itself is async (a bound
+    // service) so it never blocks boot. The JS claim is idempotent across
+    // launches, so a one-shot guard here is enough.
+    private fun deliverInstallChannelIfNeeded() {
+        if (installChannelDelivered) return
+        installChannelDelivered = true
+        InstallReferrerChannel.deliver(context, this)
     }
 
     internal fun dispose() {
@@ -321,7 +337,41 @@ class JSWebViewBridge(context: Context) : WebView(context) {
             }
         }
 
+        private fun readArePricesFresh(updateString: String): Boolean? {
+            val reader = JsonReader.of(Buffer().writeUtf8(updateString))
+            return try {
+                if (reader.peek() != JsonReader.Token.BEGIN_OBJECT) return null
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    if (reader.nextName() == "arePricesFresh") {
+                        return if (reader.peek() == JsonReader.Token.BOOLEAN) {
+                            reader.nextBoolean()
+                        } else {
+                            null
+                        }
+                    }
+                    reader.skipValue()
+                }
+                null
+            } catch (_: Exception) {
+                null
+            } finally {
+                try {
+                    reader.close()
+                } catch (_: Exception) {
+                }
+            }
+        }
+
         private fun streamUpdateTokens(updateString: String) {
+            val arePricesFresh = readArePricesFresh(updateString)
+            if (arePricesFresh == null) {
+                Logger.e(
+                    Logger.LogTag.JS_WEBVIEW_BRIDGE,
+                    "updateTokens: missing arePricesFresh"
+                )
+                return
+            }
             val reader = JsonReader.of(Buffer().writeUtf8(updateString))
             try {
                 reader.beginObject()
@@ -340,7 +390,7 @@ class JSWebViewBridge(context: Context) : WebView(context) {
                         val tokenJsonString = reader.nextSource().readUtf8()
                         try {
                             val token = MToken(JSONObject(tokenJsonString))
-                            TokenStore.setToken(slug, token)
+                            TokenStore.setToken(slug, token, arePricesFresh)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
@@ -775,9 +825,11 @@ class JSWebViewBridge(context: Context) : WebView(context) {
                 } catch (e: Exception) {
                     Logger.w(
                         Logger.LogTag.JS_WEBVIEW_BRIDGE,
-                        "onUpdate: Moshi rejected type=${peekUpdateType(
-                            updateString
-                        )} error=${e.javaClass.simpleName}"
+                        "onUpdate: Moshi rejected type=${
+                            peekUpdateType(
+                                updateString
+                            )
+                        } error=${e.javaClass.simpleName}"
                     )
                 }
             }
@@ -832,6 +884,24 @@ class JSWebViewBridge(context: Context) : WebView(context) {
                         .toJSONString
                     val script =
                         "window.airBridge.nativeCallCallbacks[$requestNumber]?.({ok: true, result: $resultInJs})"
+                    bridge.post {
+                        bridge.evaluateJavascript(script) {}
+                    }
+                }
+
+                "openWalletConnectUrl" -> {
+                    val didOpen = arg0.toUriOrNull()
+                        ?.takeIf { it.scheme?.lowercase() == "https" }
+                        ?.let { uri ->
+                            runCatching {
+                                bridge.context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, uri)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }.isSuccess
+                        } == true
+                    val script =
+                        "window.airBridge.nativeCallCallbacks[$requestNumber]?.({ok: true, result: $didOpen})"
                     bridge.post {
                         bridge.evaluateJavascript(script) {}
                     }

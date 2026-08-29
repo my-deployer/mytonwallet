@@ -7,8 +7,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_PATH="$SCRIPT_DIR/check_localization_completeness.py"
 
-# Base paths (adjust these if your project structure is different)
-BASE_DIR="/Users/nikstar/Developer/mytonwallet-dev"
+# Repository root, derived from this script's location
+# (<repo>/mobile/ios/Air/scripts/strings). Set BASE_DIR explicitly if the
+# scripts were copied outside the repository.
+BASE_DIR="${BASE_DIR:-$(cd "$SCRIPT_DIR/../../../../.." && pwd)}"
 MAIN_I18N_DIR="$BASE_DIR/src/i18n"
 
 # Colors for output
@@ -17,6 +19,15 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Set by any check that fails; the script exits non-zero at the end so CI and
+# automation can tell a real pass from a run that only printed its banners.
+failed=0
+
+# Counts checks that actually ran. Success requires at least one, so no
+# combination of missing inputs can produce a green run: a skipped check is a
+# check that did not pass.
+checks_run=0
 
 echo "🔍 Localization Completeness Checker"
 echo "====================================="
@@ -44,10 +55,12 @@ check_localization() {
 
     if python3 "$SCRIPT_PATH" --base "$base_file" --compare "$compare_file"; then
         echo -e "${GREEN}✅ $description check passed${NC}"
+        echo
     else
         echo -e "${RED}❌ $description check failed${NC}"
+        echo
+        return 1
     fi
-    echo
 }
 
 # Check main localizations
@@ -57,27 +70,48 @@ if [ -d "$MAIN_I18N_DIR" ]; then
 
     # Check Russian
     if [ -f "$MAIN_I18N_DIR/ru.yaml" ]; then
-        check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/ru.yaml" "Russian (main)"
+        checks_run=$((checks_run + 1))
+        check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/ru.yaml" "Russian (main)" || failed=1
+    else
+        echo -e "${RED}❌ Expected localization not found: $MAIN_I18N_DIR/ru.yaml${NC}"
+        echo
+        failed=1
     fi
 
     # Add more languages here as they become available
-    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/de.yaml" "German (main)"
-    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/fr.yaml" "French (main)"
+    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/de.yaml" "German (main)" || failed=1
+    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/fr.yaml" "French (main)" || failed=1
+else
+    echo -e "${RED}❌ Localization directory not found: $MAIN_I18N_DIR${NC}"
+    echo -e "${RED}   Set BASE_DIR to the repository root and re-run.${NC}"
+    exit 1
 fi
 
-echo "🎯 All localization checks completed!"
+echo "🎯 Localization checks done."
 echo
 
 echo "📱 Checking Swift localization usage..."
 echo
+checks_run=$((checks_run + 1))
 if python3 "$SCRIPT_DIR/find_unused_localization_keys.py" --ios-path "$BASE_DIR"; then
     echo -e "${GREEN}✅ Swift localization check passed${NC}"
 else
     echo -e "${RED}❌ Swift localization check failed${NC}"
+    failed=1
 fi
 echo
 
-echo "🎯 All checks completed!"
+if [ "$checks_run" -eq 0 ]; then
+    echo -e "${RED}❌ No checks ran${NC}"
+    exit 1
+fi
+
+if [ "$failed" -ne 0 ]; then
+    echo -e "${RED}❌ Some checks failed${NC}"
+    exit 1
+fi
+
+echo "🎯 All checks passed!"
 echo
 echo "💡 Tips:"
 echo "   - Run localization checks with --verbose for detailed statistics"

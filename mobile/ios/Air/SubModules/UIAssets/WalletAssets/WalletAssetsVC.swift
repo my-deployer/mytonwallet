@@ -424,6 +424,6 @@ import WalletContext
 
 extension WalletAssetsVC: WalletAssetsViewModelDelegate {
     public func walletAssetModelDidChangeDisplayTabs(dueToAccountSwitch: Bool) {
-        _displayTabsChanged(force: false, animated: dueToAccountSwitch)
+        _displayTabsChanged(force: dueToAccountSwitch, animated: dueToAccountSwitch)
     }
 }

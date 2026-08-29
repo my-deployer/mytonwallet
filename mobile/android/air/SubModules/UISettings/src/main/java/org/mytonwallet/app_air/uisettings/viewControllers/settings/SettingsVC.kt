@@ -527,7 +527,12 @@ class SettingsVC(context: Context) :
             }
 
             SettingsItem.Identifier.SUBWALLETS -> {
-                pushProtectedScreen("Subwallets") { passcode -> SubWalletsVC(context, passcode) }
+                pushProtectedScreen(
+                    "Subwallets",
+                    // Listing the variants reads the secret, and creating the one that was picked
+                    // reads it again
+                    extraAuthUsages = 1
+                ) { enclaveToken -> SubWalletsVC(context, enclaveToken) }
             }
 
             SettingsItem.Identifier.WALLET_VERSIONS -> {
@@ -643,6 +648,7 @@ class SettingsVC(context: Context) :
 
     private fun pushProtectedScreen(
         destinationTitle: String,
+        extraAuthUsages: Int = 0,
         destinationBuilder: (String) -> WViewController
     ) {
         val nav = navigationController?.tabBarController?.mainNavigationController
@@ -661,11 +667,12 @@ class SettingsVC(context: Context) :
                 ),
                 LocaleController.getString(destinationTitle)
             ),
-            task = { passcode ->
-                nav?.push(destinationBuilder(passcode), onCompletion = {
+            task = { enclaveToken ->
+                nav?.push(destinationBuilder(enclaveToken), onCompletion = {
                     nav.removePrevViewControllerOnly()
                 })
-            }
+            },
+            extraAuthUsages = extraAuthUsages
         )
         nav?.push(passcodeConfirmVC)
     }

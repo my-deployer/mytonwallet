@@ -29,7 +29,7 @@ import org.mytonwallet.app_air.walletcore.stores.StoredDeeplink
 class AgentVM(initialScrollPosition: ScrollPosition? = null) : WalletCore.EventObserver {
 
     interface Delegate {
-        fun onMessageAdded(message: AgentMessage)
+        fun onMessageAdded(message: AgentMessage, animated: Boolean = true)
         fun onMessagesLoaded(messages: List<AgentMessage>)
         fun onStreamingUpdate(messageId: String, text: String)
         fun onStreamingFinished(messageId: String)
@@ -131,14 +131,14 @@ class AgentVM(initialScrollPosition: ScrollPosition? = null) : WalletCore.EventO
         loadHints()
     }
 
-    fun checkAccountChanged() {
+    fun checkAccountChanged(animated: Boolean = true) {
         if (messages.isEmpty()) return
         val newAccountId = AccountStore.activeAccountId
         if (newAccountId != null && newAccountId != currentAccountId) {
             currentAccountId = newAccountId
             val account = AccountStore.accountById(newAccountId)
             val name = account?.name?.takeIf { it.isNotEmpty() } ?: "Account"
-            addSystemMessage("Switched to $name")
+            addSystemMessage("Switched to $name", animated)
         }
     }
 
@@ -150,11 +150,11 @@ class AgentVM(initialScrollPosition: ScrollPosition? = null) : WalletCore.EventO
         }
     }
 
-    private fun addSystemMessage(text: String) {
+    private fun addSystemMessage(text: String, animated: Boolean = true) {
         val message = AgentMessage(role = AgentMessageRole.SYSTEM, text = text)
         _messages.add(message)
         persistMessage(message)
-        notifyDelegates { it.onMessageAdded(message) }
+        notifyDelegates { it.onMessageAdded(message, animated) }
     }
 
     fun clearChat() {

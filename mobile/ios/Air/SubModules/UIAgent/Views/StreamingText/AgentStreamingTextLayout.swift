@@ -32,6 +32,8 @@ struct AgentStreamingTextLayout {
         layoutManager.addTextContainer(textContainer)
         layoutManager.ensureLayout(for: textContainer)
 
+        let renderBounds = layoutManager.usedRect(for: textContainer).integral
+        let coordinateOffset = CGPoint(x: -renderBounds.minX, y: -renderBounds.minY)
         var lines: [Line] = []
         var glyphIndex = 0
 
@@ -53,35 +55,34 @@ struct AgentStreamingTextLayout {
                         characterRects.append(.zero)
                         continue
                     }
-                    let startX = layoutManager.location(forGlyphAt: glyphRange.location).x
-                    let endX: CGFloat
-                    let nextGlyphIndex = NSMaxRange(glyphRange)
-                    if nextGlyphIndex < NSMaxRange(lineGlyphRange) {
-                        endX = layoutManager.location(forGlyphAt: nextGlyphIndex).x
-                    } else {
-                        endX = lineUsedRect.maxX - lineFragmentRect.minX
+                    let lineGlyphIntersection = NSIntersectionRange(glyphRange, lineGlyphRange)
+                    guard lineGlyphIntersection.length > 0,
+                          let rect = enclosingRect(
+                            forGlyphRange: lineGlyphIntersection,
+                            layoutManager: layoutManager,
+                            textContainer: textContainer
+                          ) else {
+                        characterRects.append(.zero)
+                        continue
                     }
-                    let rect = CGRect(
-                        x: lineFragmentRect.minX + startX,
-                        y: lineFragmentRect.minY,
-                        width: max(0, endX - startX),
-                        height: lineFragmentRect.height
-                    )
-                    characterRects.append(rect)
+                    characterRects.append(rect.offsetBy(dx: coordinateOffset.x, dy: coordinateOffset.y))
                 }
             }
 
-            lines.append(Line(frame: lineFragmentRect, characterRects: characterRects, tightHeight: lineUsedRect.height))
+            lines.append(Line(
+                frame: lineFragmentRect.offsetBy(dx: coordinateOffset.x, dy: coordinateOffset.y),
+                characterRects: characterRects,
+                tightHeight: lineUsedRect.height
+            ))
             glyphIndex = NSMaxRange(lineGlyphRange)
         }
 
-        let usedRect = layoutManager.usedRect(for: textContainer)
-        let fullSize = CGSize(width: ceil(usedRect.width), height: ceil(usedRect.height))
+        let fullSize = renderBounds.size
         let renderedImage = renderImage(
             layoutManager: layoutManager,
-            textContainer: textContainer,
             attributedString: attributedString,
-            size: fullSize
+            size: fullSize,
+            drawingOffset: coordinateOffset
         )
 
         var linkRegions: [LinkRegion] = []
@@ -92,8 +93,16 @@ struct AgentStreamingTextLayout {
             layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, lineGlyphRange, _ in
                 let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
                 guard intersection.length > 0 else { return }
-                let rect = layoutManager.boundingRect(forGlyphRange: intersection, in: textContainer)
-                linkRegions.append(LinkRegion(rect: rect, url: url))
+                for rect in enclosingRects(
+                    forGlyphRange: intersection,
+                    layoutManager: layoutManager,
+                    textContainer: textContainer
+                ) {
+                    linkRegions.append(LinkRegion(
+                        rect: rect.offsetBy(dx: coordinateOffset.x, dy: coordinateOffset.y),
+                        url: url
+                    ))
+                }
             }
         }
 
@@ -156,11 +165,41 @@ struct AgentStreamingTextLayout {
         linkRegions.first(where: { $0.rect.contains(point) })?.url
     }
 
+    private static func enclosingRect(
+        forGlyphRange glyphRange: NSRange,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> CGRect? {
+        let rects = enclosingRects(
+            forGlyphRange: glyphRange,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        )
+        let enclosingRect = rects.reduce(CGRect.null) { $0.union($1) }
+        return enclosingRect.isNull ? nil : enclosingRect
+    }
+
+    private static func enclosingRects(
+        forGlyphRange glyphRange: NSRange,
+        layoutManager: NSLayoutManager,
+        textContainer: NSTextContainer
+    ) -> [CGRect] {
+        var rects: [CGRect] = []
+        layoutManager.enumerateEnclosingRects(
+            forGlyphRange: glyphRange,
+            withinSelectedGlyphRange: NSRange(location: NSNotFound, length: 0),
+            in: textContainer
+        ) { rect, _ in
+            rects.append(rect)
+        }
+        return rects
+    }
+
     private static func renderImage(
         layoutManager: NSLayoutManager,
-        textContainer: NSTextContainer,
         attributedString: NSAttributedString,
-        size: CGSize
+        size: CGSize,
+        drawingOffset: CGPoint
     ) -> CGImage? {
         guard size.width > 0, size.height > 0 else { return nil }
 
@@ -170,8 +209,8 @@ struct AgentStreamingTextLayout {
 
         let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in
             let range = NSRange(location: 0, length: attributedString.length)
-            layoutManager.drawBackground(forGlyphRange: range, at: .zero)
-            layoutManager.drawGlyphs(forGlyphRange: range, at: .zero)
+            layoutManager.drawBackground(forGlyphRange: range, at: drawingOffset)
+            layoutManager.drawGlyphs(forGlyphRange: range, at: drawingOffset)
         }
         return image.cgImage
     }

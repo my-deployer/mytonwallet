@@ -23,6 +23,7 @@ import Perception
     @PerceptionIgnored
     weak var presenter: WViewController?
     var didConfirm: Bool = false
+    var isSubmitting: Bool = false
     var extraBottomPadding: CGFloat = 16
 
     @PerceptionIgnored
@@ -155,8 +156,12 @@ import Perception
                 presenter?.dismiss(animated: true)
             }
         )
+        isSubmitting = true
         executionTask = Task { @MainActor [weak self, weak presenter] in
-            defer { self?.executionTask = nil }
+            defer {
+                self?.executionTask = nil
+                self?.isSubmitting = false
+            }
             guard let presenter else { return }
             _ = await ProtectedActionExecutor.execute(protectedAction, on: presenter)
         }

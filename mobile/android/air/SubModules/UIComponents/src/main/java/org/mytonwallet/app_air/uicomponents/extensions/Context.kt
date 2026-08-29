@@ -18,6 +18,5 @@ fun Context.getTextFromClipboard(): String? {
     }
 }
 
-fun Context.startActivityCatching(intent: Intent) {
-    runCatching { startActivity(intent) }
-}
+fun Context.startActivityCatching(intent: Intent): Boolean =
+    runCatching { startActivity(intent) }.isSuccess

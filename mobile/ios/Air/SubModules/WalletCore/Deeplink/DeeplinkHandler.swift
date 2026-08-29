@@ -4,7 +4,7 @@ import WalletContext
 
 @MainActor
 public protocol DeeplinkNavigator: AnyObject {
-    func handle(deeplink: Deeplink)
+    func handle(deeplink: Deeplink, source: DeeplinkOpenSource)
     func handleNotification(_ notification: UNNotification)
 }
 
@@ -25,7 +25,7 @@ public final class DeeplinkHandler {
         if source == .exploreSearchBar, !deeplink.isAllowedFromExploreSearchBar {
             return false
         }
-        deeplinkNavigator?.handle(deeplink: deeplink)
+        deeplinkNavigator?.handle(deeplink: deeplink, source: source)
         return true
     }
 

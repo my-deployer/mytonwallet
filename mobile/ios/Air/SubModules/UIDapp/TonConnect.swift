@@ -17,12 +17,26 @@ public let TonConnectErrorCodes: [Int: String] = [
 
 private let log = Log("TonConnect")
 
+@MainActor
+private final class DappRequestNavigationController: WNavigationController {
+    var onDidDismiss: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard presentingViewController == nil else { return }
+        onDidDismiss?()
+        onDidDismiss = nil
+    }
+}
+
 @MainActor public final class TonConnect: WalletCoreData.EventsObserver {
     
     public static let shared = TonConnect()
     
     private weak var placeholderNc: WNavigationController?
     private weak var lastPresented: UIViewController?
+    private var pendingReturnStrategy: ReturnStrategy?
+    private var pendingRequestError: ApiAnyDisplayError?
     
     init() {
         WalletCoreData.add(eventObserver: self)
@@ -85,6 +99,8 @@ private let log = Log("TonConnect")
             await handleAlreadyConnected(update: update)
         case .dappDisconnected(let update):
             await handleDisconnected(update: update)
+        case .dappRequestSettled(let update):
+            handleRequestSettled(update: update)
         default:
             break
         }
@@ -126,7 +142,7 @@ private let log = Log("TonConnect")
         case .signData:
             vc = SignDataVC(placeholderAccountId: update.accountId)
         }
-        let nc = WNavigationController(rootViewController: vc)
+        let nc = makeRequestNavigationController(rootViewController: vc)
         self.placeholderNc = nc
         presentAndRecord(nc)
     }
@@ -211,7 +227,7 @@ private let log = Log("TonConnect")
                     self?.createMultichainWallet(request: update)
                 }
             )
-            presentAndRecord(WNavigationController(rootViewController: vc))
+            presentAndRecord(makeRequestNavigationController(rootViewController: vc))
         }
     }
     
@@ -283,7 +299,7 @@ private let log = Log("TonConnect")
                 request: update,
                 onCancel: { self.cancelSendTransactions(request: update) }
             )
-            let nc = WNavigationController(rootViewController: vc)
+            let nc = makeRequestNavigationController(rootViewController: vc)
             if let sheet = nc.sheetPresentationController {
                 sheet.detents = [.large()]
             }
@@ -350,9 +366,68 @@ private let log = Log("TonConnect")
                 update: update,
                 onCancel: { self.cancelSignData(update: update) }
             )
-            let nc = WNavigationController(rootViewController: vc)
+            let nc = makeRequestNavigationController(rootViewController: vc)
             presentAndRecord(nc)
         }
+    }
+
+    @MainActor private func makeRequestNavigationController(
+        rootViewController: UIViewController
+    ) -> DappRequestNavigationController {
+        let nc = DappRequestNavigationController(rootViewController: rootViewController)
+        nc.onDidDismiss = { [weak self] in
+            self?.requestNavigationControllerDidDismiss()
+        }
+        return nc
+    }
+
+    @MainActor private func handleRequestSettled(update: ApiUpdate.DappRequestSettled) {
+        if let error = update.error {
+            pendingReturnStrategy = nil
+            if let lastPresented, lastPresented.presentingViewController != nil {
+                pendingRequestError = error
+            } else {
+                AppActions.showError(error: error)
+            }
+            return
+        }
+        guard update.returnStrategy != .none else { return }
+
+        if let lastPresented, lastPresented.presentingViewController != nil {
+            pendingReturnStrategy = update.returnStrategy
+        } else {
+            performReturnStrategy(update.returnStrategy)
+        }
+    }
+
+    @MainActor private func requestNavigationControllerDidDismiss() {
+        lastPresented = nil
+        if let pendingRequestError {
+            self.pendingRequestError = nil
+            AppActions.showError(error: pendingRequestError)
+            return
+        }
+        if let pendingReturnStrategy {
+            self.pendingReturnStrategy = nil
+            performReturnStrategy(pendingReturnStrategy)
+        }
+    }
+
+    @MainActor private func performReturnStrategy(_ strategy: ReturnStrategy) {
+        guard case .url(let value) = strategy, let url = URL(string: value) else {
+            showReturnToDappIndicator()
+            return
+        }
+        UIApplication.shared.open(url, options: [:]) { success in
+            guard !success else { return }
+            Task { @MainActor in
+                self.showReturnToDappIndicator()
+            }
+        }
+    }
+
+    @MainActor private func showReturnToDappIndicator() {
+        AppActions.showToast(message: lang("Return to the dapp to proceed, or reconnect."))
     }
     
     func submitSignData(update: ApiUpdate.DappSignData, enclaveToken: EnclaveToken?) async throws -> ApiMfaProtectedResult {

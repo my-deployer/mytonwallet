@@ -67,7 +67,8 @@ class WSegmentedController(
     private val forceCenterTabs: Boolean = false,
     private val pilledTabs: Boolean = false,
     private val ownsItems: Boolean = true,
-    private val initialPagePrefetchCount: Int? = null
+    private val initialPagePrefetchCount: Int? = null,
+    private val applyPagerSideInsets: Boolean = true
 ) : WView(navigationController.context),
     WThemedView,
     WProtectedView,
@@ -371,8 +372,10 @@ class WSegmentedController(
         }
         blurSourceContainerView.setConstraints {
             val gutter = if (applySideGutters) ViewConstants.HORIZONTAL_PADDINGS.dp else 0
-            toStartPx(viewPager, gutter + systemBarStartInset)
-            toEndPx(viewPager, gutter + systemBarEndInset)
+            val startInset = if (applyPagerSideInsets) systemBarStartInset else 0
+            val endInset = if (applyPagerSideInsets) systemBarEndInset else 0
+            toStartPx(viewPager, gutter + startInset)
+            toEndPx(viewPager, gutter + endInset)
         }
         if (isFullScreen && !isTransparent) {
             reversedCornerView.setSideInsets(
@@ -446,8 +449,10 @@ class WSegmentedController(
                 toTopPx(viewPager, baseHeaderHeight() + underTabsHeight)
             }
             val gutter = if (applySideGutters) ViewConstants.HORIZONTAL_PADDINGS.dp else 0
-            toStartPx(viewPager, gutter + systemBarStartInset)
-            toEndPx(viewPager, gutter + systemBarEndInset)
+            val startInset = if (applyPagerSideInsets) systemBarStartInset else 0
+            val endInset = if (applyPagerSideInsets) systemBarEndInset else 0
+            toStartPx(viewPager, gutter + startInset)
+            toEndPx(viewPager, gutter + endInset)
             toBottom(viewPager)
         }
 

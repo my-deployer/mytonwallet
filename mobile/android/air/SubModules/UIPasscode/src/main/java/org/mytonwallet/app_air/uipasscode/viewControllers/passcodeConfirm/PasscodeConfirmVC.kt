@@ -43,6 +43,9 @@ class PasscodeConfirmVC(
 
     private val allowedToCancel: Boolean = true,
     private val ignoreBiometry: Boolean = false,
+
+    override val extraAuthUsages: Int = 0,
+
     private val onCancel: (() -> Unit)? = null
 ) : WViewController(context),
     PasscodeScreenView.Delegate,
@@ -230,7 +233,7 @@ class PasscodeConfirmVC(
         isDoingTask = true
         Logger.d(Logger.LogTag.PASSCODE_CONFIRM, "onAuthSuccess: Running task")
         task(result)
-        if (isTaskAsync && passcodeViewState !is PasscodeViewState.Default) {
+        if (isTaskAsync) {
             navigationBar?.fadeOutActions()
             passcodeScreenView.showIndicator()
         }
@@ -279,7 +282,8 @@ class PasscodeConfirmVC(
                 try {
                     AuthStore.authorize(
                         window,
-                        passcode
+                        passcode,
+                        extraAuthUsages
                     ) { success, enclaveToken, cooldownDate, error ->
                         callback(success, cooldownDate)
                         if (success && enclaveToken != null) {

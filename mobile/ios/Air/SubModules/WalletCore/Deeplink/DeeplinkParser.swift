@@ -168,10 +168,25 @@ private func parseWalletConnectUrl(_ url: URL) -> Deeplink {
 }
 
 private func parseWalletConnectWrapperUrl(_ url: URL) -> Deeplink? {
+    if isWalletConnectSessionRequest(url) {
+        return Deeplink.walletConnect(requestLink: url.absoluteString)
+    }
     guard let requestLink = walletConnectRequestLink(from: url) else {
         return nil
     }
     return Deeplink.walletConnect(requestLink: requestLink)
+}
+
+private func isWalletConnectSessionRequest(_ url: URL) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+        return false
+    }
+    let fields = Set((components.queryItems ?? []).compactMap { item in
+        item.value?.isEmpty == false ? item.name : nil
+    })
+    return fields.isSuperset(of: ["requestId", "sessionTopic"])
+        || fields.isSuperset(of: ["topic", "wc_ev"])
+        || fields.isSuperset(of: ["topic", "message"])
 }
 
 private func walletConnectRequestLink(from url: URL) -> String? {

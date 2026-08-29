@@ -146,6 +146,13 @@ extension ApiStakingState: MBaseStakingState { // less cringey way to do this?
         return nil
     }
     
+    public var loyaltyBalance: BigInt? {
+        if case .liquid(let v) = self {
+            return v.loyaltyBalance
+        }
+        return nil
+    }
+    
     public var totalStakers: Int? {
         if case .liquid(let v) = self {
             return v.totalStakers

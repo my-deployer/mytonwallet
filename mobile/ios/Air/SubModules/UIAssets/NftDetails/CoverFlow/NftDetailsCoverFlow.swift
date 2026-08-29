@@ -57,6 +57,7 @@ class _CoverFlowView: UIView, UIScrollViewDelegate {
     
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, Item>!
+    private var isLottiePlaybackEnabled = false
 
     private let thumbnailDownloader: ImageDownloader
     private let colorResolver: NftDetailsColorResolver
@@ -68,6 +69,7 @@ class _CoverFlowView: UIView, UIScrollViewDelegate {
         didSet {
             if isActive != oldValue {
                 alpha = isActive ? 1 : 0
+                refreshVisibleTileLottiePlayback()
             }
         }
     }
@@ -424,6 +426,18 @@ class _CoverFlowView: UIView, UIScrollViewDelegate {
         currentActiveCoverFlowTile()?.alpha = visible ? 1 : 0
     }
 
+    func setLottiePlaybackEnabled(_ isEnabled: Bool) {
+        guard isLottiePlaybackEnabled != isEnabled else { return }
+        isLottiePlaybackEnabled = isEnabled
+        refreshVisibleTileLottiePlayback()
+    }
+
+    private func refreshVisibleTileLottiePlayback() {
+        collectionView?.visibleCells
+            .compactMap { $0 as? _Cell }
+            .forEach { $0.tile.refreshLottiePlayback() }
+    }
+
     /// Drive the cover-flow position from an external source (e.g. pager drag). `progress` is in [0, 1]: 0 = on currentItem, 1 = fully on next item.
     /// The call is a no-op while the user is scrolling the cover flow themselves.
     func setCoverFlowProgress(progress: CGFloat, currentModel: NftDetailsItemModel) {
@@ -481,7 +495,9 @@ extension _CoverFlowView: NftDetailsItemCoverFlowTileDelegate {
         }
     }
 
-    func nftDetailsItemCoverFlowTileGetActiveState(_ tile: NftDetailsItemCoverFlowTile) -> Bool { isActive }
+    func nftDetailsItemCoverFlowTileGetActiveState(_ tile: NftDetailsItemCoverFlowTile) -> Bool {
+        isActive && isLottiePlaybackEnabled
+    }
 }
     
 final class _Cell: UICollectionViewCell  {

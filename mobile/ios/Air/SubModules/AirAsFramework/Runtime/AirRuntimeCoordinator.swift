@@ -15,7 +15,7 @@ final class AirRuntimeCoordinator: NSObject {
     private let lockCoordinator = AirAppLockCoordinator()
     private lazy var startupCoordinator = AirStartupCoordinator(lockCoordinator: lockCoordinator)
 
-    private var nextDeeplink: Deeplink?
+    private var nextDeeplink: (deeplink: Deeplink, source: DeeplinkOpenSource)?
     private var nextNotification: UNNotification?
     private var nextSystemActions: [AirSystemAction] = []
     private var _isWalletReady = false
@@ -110,7 +110,7 @@ final class AirRuntimeCoordinator: NSObject {
         if let nextDeeplink {
             self.nextDeeplink = nil
             DispatchQueue.main.async {
-                self.handle(deeplink: nextDeeplink)
+                self.handle(deeplink: nextDeeplink.deeplink, source: nextDeeplink.source)
             }
         }
         if let nextNotification {
@@ -348,7 +348,7 @@ extension AirRuntimeCoordinator: WalletContextDelegate {
 }
 
 extension AirRuntimeCoordinator: DeeplinkNavigator {
-    func handle(deeplink: Deeplink) {
+    func handle(deeplink: Deeplink, source: DeeplinkOpenSource) {
         if isWalletReady, isAppUnlocked {
             guard AccountStore.account != nil else {
                 nextDeeplink = nil
@@ -376,7 +376,7 @@ extension AirRuntimeCoordinator: DeeplinkNavigator {
                 TonConnect.shared.handleDeeplink(requestLink)
 
             case .walletConnect(requestLink: let requestLink):
-                WalletConnect.shared.handleDeeplink(requestLink)
+                WalletConnect.shared.handleDeeplink(requestLink, source: source)
 
             case .swap(from: let from, to: let to, amountIn: let amountIn):
                 AppActions.showSwap(accountContext: accountContext, defaultSellingToken: from, defaultBuyingToken: to, defaultSellingAmount: amountIn, push: nil)
@@ -441,7 +441,7 @@ extension AirRuntimeCoordinator: DeeplinkNavigator {
                 AppActions.showSettings(section: section)
             }
         } else {
-            nextDeeplink = deeplink
+            nextDeeplink = (deeplink, source)
         }
     }
 

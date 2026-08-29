@@ -33,7 +33,10 @@ import { SEC } from '../../../constants';
 import { NETWORK_CONFIG } from '../constants';
 import { parseActionsToActivities } from './actions';
 
-// Toncenter closes the socket after 30 seconds of inactivity
+// Toncenter closes the socket after 30 seconds of inactivity, so a ping has to reach it inside every
+// such window. PING_INTERVAL + PONG_TIMEOUT is the longest a dead link is held before we reconnect,
+// and it must stay under those 30 seconds too: past them Toncenter closes the socket first and the
+// reconnect happens on its terms instead of ours.
 const PING_INTERVAL = 20 * SEC;
 
 // When the internet connection is interrupted, the Toncenter socket doesn't always disconnect automatically.

@@ -9,10 +9,26 @@ import {
 import { getTokenInfo } from '../../util/chain';
 import Deferred from '../../util/Deferred';
 import { buildCollectionByKey, omitUndefined } from '../../util/iteratees';
+import { logDebugError } from '../../util/logs';
 import { tokenRepository } from '../db';
-import { callBackendPost } from './backend';
+import { callBackendGet, callBackendPost } from './backend';
+import { getHeldSlugs } from './held-tokens';
+
+/** A backstop for the token details payload, which is normally bounded by the number of the tokens on the device */
+const MAX_POST_TOKENS = 1500;
+
+export type TokenDetailsOptions = {
+  langCode?: string;
+  /** Limits the payload to the tokens the polled wallets hold. Off for the runtimes that poll no wallet. */
+  shouldNarrowToHeldTokens?: boolean;
+};
 
 export const tokensPreload = new Deferred();
+/** Slugs of the last `GET /assets` response, reused when the details are requested outside `updateTokensFromBackend` */
+let backendTokenSlugs = new Set<string>();
+let isTokenUpdatePaused = false;
+let arePricesFresh = false;
+let pendingTokenUpdate: OnApiUpdate | undefined;
 const tokensCache: {
   bySlug: Record<string, ApiTokenWithPrice>;
 } = {
@@ -61,6 +77,43 @@ export function buildTokenDetailsPayload(tokens: ApiTokenWithPrice[], options: {
   return result;
 }
 
+/** Loads `GET /assets`, tops it up with the details of the tokens it doesn't cover, and applies both to the cache */
+export async function updateTokensFromBackend(onUpdate: OnApiUpdate, options: TokenDetailsOptions = {}) {
+  const { langCode } = options;
+  const tokens = await callBackendGet<ApiTokenWithPrice[]>('/assets', { langCode });
+
+  for (const token of tokens) {
+    token.isFromBackend = true;
+  }
+
+  await tokensPreload.promise;
+
+  backendTokenSlugs = new Set(tokens.map((token) => token.slug));
+
+  // A failed top-up must not discard the `GET /assets` response, which is the part the UI waits for
+  const nonBackendTokenDetails = await fetchNonBackendTokenDetails(options).catch((err) => {
+    logDebugError('fetchNonBackendTokenDetails', err);
+    return undefined;
+  });
+
+  await updateTokens(tokens, () => {
+    arePricesFresh = true;
+    sendUpdateTokens(onUpdate);
+  }, nonBackendTokenDetails, true);
+}
+
+export async function fetchNonBackendTokenDetails(options: TokenDetailsOptions = {}) {
+  const { langCode, shouldNarrowToHeldTokens } = options;
+  // POST is used to retrieve data because the addresses may not fit into a URL
+  const tokenAddresses = buildTokenDetailsPayload(Object.values(tokensCache.bySlug), {
+    backendSlugs: backendTokenSlugs,
+    heldSlugs: shouldNarrowToHeldTokens ? getHeldSlugs() : undefined,
+    maxCount: MAX_POST_TOKENS,
+  });
+
+  return tokenAddresses.length ? fetchBackendTokenDetails(tokenAddresses, langCode) : undefined;
+}
+
 function buildTokenDetailsPath(langCode?: string) {
   if (!langCode) {
     return '/assets';
@@ -92,7 +145,7 @@ export async function updateTokens(
     const cachedToken = tokensCache.bySlug[slug] as ApiTokenWithPrice | undefined;
     const mergedToken = mergeTokenWithCache(token, detailsBySlug, cachedToken);
 
-    if (!(token.slug in tokensCache)) {
+    if (cachedToken === undefined) {
       shouldSendUpdate = true;
     }
 
@@ -166,10 +219,32 @@ function normalizeTokenAddress(tokenAddress: string) {
 }
 
 export function sendUpdateTokens(onUpdate: OnApiUpdate) {
+  if (isTokenUpdatePaused) {
+    pendingTokenUpdate = onUpdate;
+    return;
+  }
+
   onUpdate({
     type: 'updateTokens',
+    arePricesFresh,
     tokens: tokensCache.bySlug,
   });
+}
+
+export function pauseTokenUpdates() {
+  isTokenUpdatePaused = true;
+  arePricesFresh = false;
+  pendingTokenUpdate = undefined;
+}
+
+export function resumeTokenUpdates() {
+  isTokenUpdatePaused = false;
+
+  const onUpdate = pendingTokenUpdate;
+  pendingTokenUpdate = undefined;
+  if (onUpdate) {
+    sendUpdateTokens(onUpdate);
+  }
 }
 
 export function buildTokenSlug(chain: ApiChain, address: string) {

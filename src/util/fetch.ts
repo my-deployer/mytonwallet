@@ -34,7 +34,7 @@ type FetchOptions = {
 const breaker = new CircuitBreaker();
 const negativeVerdictCache = new NegativeVerdictCache();
 
-type QueryParams = Record<string, string | number | boolean | string[] | undefined>;
+export type QueryParams = Record<string, string | number | boolean | string[] | undefined>;
 
 const MAX_TIMEOUT = 30000; // 30 sec
 const MAX_BACKOFF_MS = 10000; // 10 sec - jitter ceiling for retryable failures
@@ -58,12 +58,8 @@ export function fetchJsonWithProxy(url: string | URL, data?: QueryParams, init?:
   return fetchJson(getProxiedJsonUrl(url.toString()), data, init);
 }
 
-export async function fetchJson<T extends AnyLiteral>(
-  url: string | URL,
-  data?: QueryParams,
-  init?: RequestInit,
-  options?: FetchOptions,
-): Promise<T> {
+/** Builds the request URL, folding query params into it the way `fetchJson` does. */
+export function buildRequestUrl(url: string | URL, data?: QueryParams) {
   const urlObject = new URL(url);
   if (data) {
     Object.entries(data).forEach(([key, value]) => {
@@ -81,7 +77,16 @@ export async function fetchJson<T extends AnyLiteral>(
     });
   }
 
-  const response = await fetchWithRetry(urlObject, init, options);
+  return urlObject;
+}
+
+export async function fetchJson<T extends AnyLiteral>(
+  url: string | URL,
+  data?: QueryParams,
+  init?: RequestInit,
+  options?: FetchOptions,
+): Promise<T> {
+  const response = await fetchWithRetry(buildRequestUrl(url, data), init, options);
 
   return (await response.json()) as T;
 }

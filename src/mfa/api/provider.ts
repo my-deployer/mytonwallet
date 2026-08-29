@@ -5,7 +5,6 @@ import type {
   ApiInitArgs,
   ApiNetwork,
   ApiSwapAsset,
-  ApiTokenWithPrice,
   OnApiUpdate,
 } from '../../api/types';
 
@@ -21,22 +20,16 @@ import { setBackendConfigCache } from '../../api/common/cache';
 import { initClientId } from '../../api/common/other';
 import { pollingLoop } from '../../api/common/polling/utils';
 import {
-  buildTokenDetailsPayload,
-  fetchBackendTokenDetails,
-  getTokensCache,
   loadTokensCache,
-  sendUpdateTokens,
   tokensPreload,
-  updateTokens,
+  updateTokensFromBackend,
 } from '../../api/common/tokens';
 import { MINUTE, SEC } from '../../api/constants';
-import { setEnvironment } from '../../api/environment';
+import { getEnvironment, setEnvironment } from '../../api/environment';
 import { configureStorage, createStorage, withStorage } from '../../api/storages';
 
 const BACKEND_INTERVAL = 30 * SEC;
 const LONG_BACKEND_INTERVAL = MINUTE;
-const MAX_POST_TOKENS = 1500;
-
 let onUpdate: OnApiUpdate;
 let stopCommonBackendPolling: NoneToVoidFunction | undefined;
 let knownAddressesReadyPromise: Promise<void> | undefined;
@@ -126,24 +119,9 @@ function setupCommonBackendPolling() {
 
 async function updateMfaTokens() {
   try {
-    const tokens = await callBackendGet<ApiTokenWithPrice[]>('/assets');
-
-    for (const token of tokens) {
-      token.isFromBackend = true;
-    }
-
-    await tokensPreload.promise;
-    const tokensCache = getTokensCache();
-    // This runtime polls no wallet, so the payload can't be narrowed down to the held tokens the way the API does it
-    const nonBackendTokenAddresses = buildTokenDetailsPayload(Object.values(tokensCache.bySlug), {
-      backendSlugs: new Set(tokens.map((token) => token.slug)),
-      maxCount: MAX_POST_TOKENS,
-    });
-    const nonBackendTokenDetails = nonBackendTokenAddresses.length
-      ? await fetchBackendTokenDetails(nonBackendTokenAddresses)
-      : undefined;
-
-    await updateTokens(tokens, () => sendUpdateTokens(onUpdate), nonBackendTokenDetails, true);
+    // This runtime polls no wallet, so the details payload can't be narrowed down to the held tokens the way the API
+    // does it
+    await updateTokensFromBackend(onUpdate, { langCode: getEnvironment().langCode });
   } catch (err) {
     logDebugError('updateMfaTokens', err);
   }

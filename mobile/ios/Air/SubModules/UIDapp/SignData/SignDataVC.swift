@@ -75,7 +75,7 @@ class SignDataVC: WViewController, UISheetPresentationControllerDelegate {
         SignDataViewOrPlaceholder(
             update: update,
             accountContext: _account,
-            onConfirm: { [weak self] in self?._onConfirm() },
+            onConfirm: { [weak self] in await self?._onConfirm() },
             onCancel: { [weak self] in self?._onCancel() },
         )
     }
@@ -84,7 +84,7 @@ class SignDataVC: WViewController, UISheetPresentationControllerDelegate {
         view.backgroundColor = .air.sheetBackground
     }
 
-    func _onConfirm() {
+    func _onConfirm() async {
         guard let update else { return }
         let protectedAction = ProtectedAction.signData(
             account: account,
@@ -95,9 +95,7 @@ class SignDataVC: WViewController, UISheetPresentationControllerDelegate {
                 self?.dismiss(animated: true)
             }
         )
-        Task {
-            _ = await ProtectedActionExecutor.execute(protectedAction, on: self)
-        }
+        _ = await ProtectedActionExecutor.execute(protectedAction, on: self)
     }
 
     func _onCancel() {

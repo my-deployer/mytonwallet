@@ -259,11 +259,11 @@ class NftDetailsItemCoverFlowTile: UIView {
             imageView.backgroundColor = color
             applySpinnerStyle(for: color)
 
-            applySelectionDrivenLottie(for: model)
+            refreshLottiePlayback()
             selectionSubscription = .init(model: model, event: .selectionStatusChanged, tag: "CoverFlowTile") { [weak self] in
                 guard let self, self.model === model else { return }
                 DispatchQueue.main.async {
-                    self.applySelectionDrivenLottie(for: model)
+                    self.refreshLottiePlayback()
                 }
             }
             processedImageSubscription = .init(model: model, event: .processedImageUpdated, tag: "CoverFlowTile/Color") { [weak self] in
@@ -293,6 +293,14 @@ class NftDetailsItemCoverFlowTile: UIView {
         lottieViewer?.removeFromSuperview()
         lottieViewer = nil
         imageView.alpha = 1
+    }
+
+    func refreshLottiePlayback() {
+        guard let model else {
+            removeLottieViewer()
+            return
+        }
+        applySelectionDrivenLottie(for: model)
     }
 
     private func applySelectionDrivenLottie(for model: NftDetailsItemModel) {

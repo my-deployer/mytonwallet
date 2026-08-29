@@ -24,11 +24,38 @@ struct StakingTokenPresentationTests {
     }
 
     @Test
+    func `empty staking has no position`() {
+        let data = makeStakingData(balance: 0, unclaimedRewards: 0, annualYield: 0)
+
+        #expect(!data.hasStakingPosition())
+        #expect(!data.hasStakingPosition(forTokenSlug: MYCOIN_SLUG))
+        #expect(!data.hasStakingPosition(forTokenSlug: STAKED_MYCOIN_SLUG))
+    }
+
+    @Test
+    func `rewards and pending unstake keep staking position active`() {
+        let rewards = makeStakingData(balance: 0, unclaimedRewards: 1, annualYield: 0)
+        let unstaking = makeStakingData(
+            balance: 0,
+            unclaimedRewards: 0,
+            unstakeRequestAmount: 1,
+            annualYield: 0
+        )
+
+        #expect(rewards.hasStakingPosition())
+        #expect(rewards.hasStakingPosition(forTokenSlug: MYCOIN_SLUG))
+        #expect(unstaking.hasStakingPosition())
+        #expect(unstaking.hasStakingPosition(forTokenSlug: MYCOIN_SLUG))
+    }
+
+    @Test
     func `existing MY stake remains visible`() {
         let data = makeStakingData(balance: 1, unclaimedRewards: 0, annualYield: 0)
 
         #expect(data.hasMycoinStakeOrRewards)
         #expect(data.isEarnAvailable(forTokenSlug: MYCOIN_SLUG))
+        #expect(data.hasStakingPosition())
+        #expect(data.hasStakingPosition(forTokenSlug: STAKED_MYCOIN_SLUG))
     }
 
     @Test
@@ -110,6 +137,7 @@ struct StakingTokenPresentationTests {
         tokenSlug: String = MYCOIN_SLUG,
         balance: BigInt,
         unclaimedRewards: BigInt,
+        unstakeRequestAmount: BigInt? = nil,
         annualYield: Double
     ) -> MStakingData {
         let stateId = tokenSlug == TON_USDE_SLUG ? "ethena" : MYCOIN_STAKING_POOL
@@ -120,7 +148,7 @@ struct StakingTokenPresentationTests {
             yieldType: .apy,
             balance: balance,
             pool: stateId,
-            unstakeRequestAmount: nil,
+            unstakeRequestAmount: unstakeRequestAmount,
             tokenAddress: "token-address",
             unclaimedRewards: unclaimedRewards,
             stakeWalletAddress: "stake-wallet-address",

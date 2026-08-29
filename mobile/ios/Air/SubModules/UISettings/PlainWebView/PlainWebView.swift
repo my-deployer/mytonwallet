@@ -4,47 +4,6 @@ import UIComponents
 import WalletContext
 import WebKit
 
-private let CSS = """
-body {
-    background-color: #fff;
-}
-
-.tl_article .tl_article_content,
-.tl_article .tl_article_content .ql-editor *,
-.tl_article h1,
-.tl_article h2 {
-    color: #000;
-}
-
-.tl_article_header address,
-.tl_article_header address a {
-    color: #8E8E93;
-}
-
-@media (prefers-color-scheme: dark) {
-    body {
-        background-color: #0E0E0F;
-    }
-
-    .tl_article .tl_article_content,
-    .tl_article .tl_article_content .ql-editor *,
-    .tl_article h1,
-    .tl_article h2 {
-        color: #fff;
-    }
-
-    .tl_article_header address,
-    .tl_article_header address a {
-        color: #8E8E93;
-    }
-}
-"""
-private let INJECT_SCRIPT = """
-var style = document.createElement('style');
-style.innerHTML = `\(CSS)`;
-document.head.appendChild(style);
-"""
-
 private let _backgroundColor = UIColor(light: "#fff", dark: "#0E0E0F")
 
 @MainActor
@@ -67,13 +26,7 @@ final class PlainWebView: WViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        let injectCss = WKUserScript(source: INJECT_SCRIPT, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
-        let contentController = WKUserContentController()
-        contentController.addUserScript(injectCss)
-        let config = WKWebViewConfiguration()
-        config.userContentController = contentController
-        
-        webView = WKWebView(frame: .zero, configuration: config)
+        webView = WKWebView()
         view.addStretchedToSafeArea(subview: webView,
                                     top: \.topAnchor,
                                     bottom: \.bottomAnchor)

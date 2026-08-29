@@ -19,6 +19,7 @@ public class SendDappVC: WViewController, UISheetPresentationControllerDelegate 
     private var isWaitingForRequest = false
     private var returnUrl: String?
     private var notRespondingWorkItem: DispatchWorkItem?
+    private var executionTask: Task<Void, Never>?
 
     var hostingController: UIHostingController<SendDappViewOrPlaceholder>?
     private var sendButtonObserver: ObserveToken?
@@ -210,7 +211,7 @@ public class SendDappVC: WViewController, UISheetPresentationControllerDelegate 
         errorLabel.isHidden = insufficientTokens == nil
 
         let isEnabled = if let request {
-            canSend(request: request, insufficientTokens: insufficientTokens)
+            executionTask == nil && canSend(request: request, insufficientTokens: insufficientTokens)
         } else {
             false
         }
@@ -269,7 +270,7 @@ public class SendDappVC: WViewController, UISheetPresentationControllerDelegate 
     }
     
     @objc func onSend() {
-        guard let request else { return }
+        guard executionTask == nil, let request else { return }
         guard canSend(request: request, insufficientTokens: request.insufficientTokens(accountContext: $account)) else { return }
         submit(request: request)
     }
@@ -283,9 +284,17 @@ public class SendDappVC: WViewController, UISheetPresentationControllerDelegate 
                 self?.finishConfirm()
             }
         )
-        Task {
+        executionTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer {
+                executionTask = nil
+                sendButton.showLoading = false
+                updateSendButtonState()
+            }
             _ = await ProtectedActionExecutor.execute(protectedAction, on: self)
         }
+        sendButton.showLoading = true
+        updateSendButtonState()
     }
     
     private func finishConfirm() {

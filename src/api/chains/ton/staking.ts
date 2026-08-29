@@ -490,6 +490,7 @@ function buildLiquidState({
     annualYield: liquidApy,
     yieldType: 'APY',
     tokenBalance,
+    loyaltyBalance: backendState.loyaltyBalance ?? 0n,
     tvl: commonData.liquid.tvl,
     totalStakers: commonData.liquid.totalStakers,
     unstakeRequestAmount,
@@ -680,6 +681,7 @@ export async function fetchBackendStakingState(address: string, isViewOnly: bool
 
   stakingState.balance = fromDecimal(stakingState.balance);
   stakingState.totalProfit = fromDecimal(stakingState.totalProfit);
+  stakingState.loyaltyBalance = fromDecimal(stakingState.loyaltyBalance ?? '0');
 
   if (!isKnownStakingPool(stakingState.nominatorsPool.address)) {
     throw Error('Unexpected pool address, likely a malicious activity');

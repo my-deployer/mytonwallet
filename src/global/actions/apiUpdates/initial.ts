@@ -136,8 +136,8 @@ addActionHandler('apiUpdate', (global, actions, update) => {
     }
 
     case 'updateTokens': {
-      const { tokens } = update;
-      global = updateTokens(global, tokens, true);
+      const { tokens, arePricesFresh } = update;
+      global = updateTokens(global, tokens, true, !arePricesFresh);
       setGlobal(global);
       break;
     }

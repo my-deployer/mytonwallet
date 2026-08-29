@@ -156,15 +156,24 @@ public struct TokenAmountEntrySection: View {
                 }
             }
         } footer: {
-            HStack {
-                switchToCurrency
-                    .layoutPriority(1)
-                Spacer()
-                feeView
-                    .layoutPriority(1)
+            ViewThatFits(in: .horizontal) {
+                footerContent
+                    .lineLimit(1)
+                footerContent
             }
             .animation(.snappy, value: fee)
             .animation(.snappy, value: explainedFee)
+        }
+    }
+
+    private var footerContent: some View {
+        HStack {
+            switchToCurrency
+                .layoutPriority(1)
+            Spacer()
+            feeView
+                .layoutPriority(1)
+                .multilineTextAlignment(.trailing)
         }
     }
     

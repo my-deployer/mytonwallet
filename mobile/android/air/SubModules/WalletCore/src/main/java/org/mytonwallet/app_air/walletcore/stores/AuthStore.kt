@@ -61,6 +61,7 @@ object AuthStore : IStore {
     fun authorize(
         activity: FragmentActivity,
         passcode: String,
+        extraUsages: Int = 0,
         callback: (
             success: Boolean,
             enclaveToken: String?,
@@ -79,7 +80,7 @@ object AuthStore : IStore {
         fun performAuth() {
             WalletCore.scope.launch {
                 val upgradeUsageCount = pendingMultichainUpgradeUsageCount()
-                val usageCount = 1 + upgradeUsageCount
+                val usageCount = 1 + extraUsages + upgradeUsageCount
 
                 val needsLegacyMigration = LegacyMigration.needsMigration()
                 if (needsLegacyMigration) {
@@ -130,17 +131,18 @@ object AuthStore : IStore {
         activity: FragmentActivity,
         onBridgeReady: () -> Unit,
         onAuthenticated: () -> Unit,
+        extraUsages: Int = 0,
         callback: (enclaveToken: String?) -> Unit
     ) {
         if (!WGlobalStorage.isLegacyBiometricActivated()) {
-            authorizeWithNativeBiometrics(activity, onAuthenticated, callback)
+            authorizeWithNativeBiometrics(activity, onAuthenticated, extraUsages, callback)
             return
         }
 
         WalletCore.doOnBridgeReady {
             WalletCore.scope.launch {
                 val upgradeUsageCount = pendingMultichainUpgradeUsageCount()
-                val usageCount = 1 + upgradeUsageCount
+                val usageCount = 1 + extraUsages + upgradeUsageCount
 
                 withContext(Dispatchers.Main) {
                     onBridgeReady()
@@ -176,6 +178,7 @@ object AuthStore : IStore {
     private fun authorizeWithNativeBiometrics(
         activity: FragmentActivity,
         onAuthenticated: () -> Unit,
+        extraUsages: Int,
         callback: (enclaveToken: String?) -> Unit
     ) {
         var upgradeUsageCount = 0
@@ -187,7 +190,7 @@ object AuthStore : IStore {
                     WalletCore.scope.launch {
                         upgradeUsageCount = pendingMultichainUpgradeUsageCount()
                         withContext(Dispatchers.Main) {
-                            createSession.accept(1 + upgradeUsageCount)
+                            createSession.accept(1 + extraUsages + upgradeUsageCount)
                         }
                     }
                 }

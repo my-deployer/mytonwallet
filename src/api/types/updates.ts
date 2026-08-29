@@ -79,6 +79,7 @@ export type ApiUpdateNewLocalActivities = {
 
 export type ApiUpdateTokens = {
   type: 'updateTokens';
+  arePricesFresh: boolean;
   tokens: Record<string, ApiTokenWithPrice>;
 };
 
@@ -205,6 +206,15 @@ export type ApiUpdateDappLoading = {
 export type ApiUpdateDappCloseLoading = {
   type: 'dappCloseLoading';
   connectionType: ApiDappConnectionType;
+};
+
+export type ApiDappReturnStrategy = 'none' | 'back' | (string & {});
+
+export type ApiUpdateDappRequestSettled = {
+  type: 'dappRequestSettled';
+  promiseId: string;
+  returnStrategy: ApiDappReturnStrategy;
+  error?: ApiAnyDisplayError;
 };
 
 export type ApiUpdateDapps = {
@@ -459,6 +469,7 @@ export type ApiUpdate =
   | ApiUpdateDappDisconnect
   | ApiUpdateDappLoading
   | ApiUpdateDappCloseLoading
+  | ApiUpdateDappRequestSettled
   | ApiUpdateDappSignData
   | ApiUpdateDapps
   | ApiUpdateDappTransferComplete

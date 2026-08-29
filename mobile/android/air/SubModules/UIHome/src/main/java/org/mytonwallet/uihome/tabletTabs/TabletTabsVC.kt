@@ -484,6 +484,7 @@ class TabletTabsVC(context: Context) :
         applyPillShadowBottom()
         pillShadow?.updateTheme()
         searchBar.updateTheme()
+        contentNav.updateTheme()
         for (nav in navStacks) {
             if (nav.parent != null) continue
             nav.updateTheme()

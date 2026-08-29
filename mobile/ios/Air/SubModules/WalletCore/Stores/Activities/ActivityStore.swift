@@ -42,6 +42,34 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         var isInitialLoadedByChain: [String: Bool]?
 
         static let databaseTableName: String = "account_activities"
+
+        func persistenceSnapshot() -> Self {
+            var snapshot = self
+            let persistentById = byId?.filter { id, activity in
+                !getIsIdLocal(id) && !getIsActivityPending(activity)
+            }
+            let persistentIds = Set(persistentById?.keys.map { $0 } ?? [])
+            let persistentIdsBySlug = idsBySlug?.mapValues { ids in
+                ids.filter { persistentIds.contains($0) }
+            }
+
+            snapshot.byId = persistentById
+            snapshot.idsMain = idsMain?.filter { persistentIds.contains($0) }
+            snapshot.idsBySlug = persistentIdsBySlug
+            if let persistentById, let persistentIdsBySlug {
+                snapshot.newestActivitiesBySlug = _getNewestActivitiesBySlug(
+                    byId: persistentById,
+                    idsBySlug: persistentIdsBySlug,
+                    newestActivitiesBySlug: nil,
+                    tokenSlugs: persistentIdsBySlug.keys
+                )
+            } else {
+                snapshot.newestActivitiesBySlug = nil
+            }
+            snapshot.localActivityIds = nil
+            snapshot.pendingActivityIds = nil
+            return snapshot
+        }
     }
     
     private var byAccountId: [String: AccountState] = [:]
@@ -342,6 +370,9 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
                 updateActivitiesIsHistoryEndReached(accountId: accountId, slug: token.slug, isReached: true)
                 break
             }
+            if !apiHasMore {
+                updateActivitiesIsHistoryEndReached(accountId: accountId, slug: token.slug, isReached: true)
+            }
             let poisoningCache = getPoisoningCache(accountId)
             updatePoisoningCache(accountId: accountId, activities: activities)
             let hideTinyTransfers = AppStorageHelper.hideTinyTransfers
@@ -389,7 +420,8 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         log.info("[inf] got new ids \(token.slug): \(newIds.count)")
         updatePendingCexSwapRefreshTask()
         
-        if shouldLoadWithBudget {
+        if shouldLoadWithBudget,
+           getAccountState(accountId).isHistoryEndReachedBySlug?[token.slug] != true {
             await Task.yield()
             try await fetchTokenActivities(accountId: accountId, limit: limit, token: token, shouldLoadWithBudget: false)
         }
@@ -459,8 +491,16 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     func use(db: any DatabaseWriter) {
         self._db = db
         do {
-            let accountStates = try db.read { db in
+            let storedAccountStates = try db.read { db in
                 try AccountState.fetchAll(db)
+            }
+            let accountStates = storedAccountStates.map { $0.persistenceSnapshot() }
+            if accountStates != storedAccountStates {
+                try db.write { db in
+                    for accountState in accountStates {
+                        try accountState.upsert(db)
+                    }
+                }
             }
             updateFromDb(accountStates: accountStates)
             
@@ -512,7 +552,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     
     private func save(accountId: String) {
         do {
-            let accountState = getAccountState(accountId)
+            let accountState = getAccountState(accountId).persistenceSnapshot()
             try db.write { db in
                 try accountState.upsert(db)
             }

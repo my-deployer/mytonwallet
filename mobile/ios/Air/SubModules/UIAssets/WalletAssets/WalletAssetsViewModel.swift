@@ -143,8 +143,11 @@ public final class WalletAssetsViewModel: WalletCoreData.EventsObserver {
         } else {
             displayTabs = [.tokens, .nfts, .nftSuperCollection(TELEGRAM_GIFTS_SUPER_COLLECTION)].compactMap(storedTabToDisplay)
         }
-        if self.displayTabs != displayTabs {
+        let displayTabsChanged = self.displayTabs != displayTabs
+        if displayTabsChanged {
             self.displayTabs = displayTabs
+        }
+        if displayTabsChanged || isAccountSwitch {
             delegate?.walletAssetModelDidChangeDisplayTabs(dueToAccountSwitch: isAccountSwitch)
         }
     }

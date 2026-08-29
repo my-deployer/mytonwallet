@@ -499,6 +499,16 @@ extension JSWebViewBridge: WKScriptMessageHandler { // todo: move to a separate 
                     case "airStorageKeys":
                         await completeNativeCallOk(result: KeychainHelper.keys())
 
+                    case "openWalletConnectUrl":
+                        guard let value = data?["arg0"] as? String,
+                              let url = URL(string: value),
+                              url.scheme?.lowercased() == "https" else {
+                            await completeNativeCallOk(result: false)
+                            return
+                        }
+                        let didOpen = await UIApplication.shared.open(url)
+                        await completeNativeCallOk(result: didOpen)
+
                     case "exportSecret":
                         guard let id = data?["arg0"] as? String, !id.isEmpty else {
                             Task {
@@ -933,6 +943,14 @@ extension JSWebViewBridge: WKScriptMessageHandler { // todo: move to a separate 
                         WalletCoreData.notify(event: .dappCloseLoading(update))
                     } catch {
                         log.error("dappCloseLoading: \(error, .public)")
+                    }
+
+                case "dappRequestSettled":
+                    do {
+                        let update = try JSONSerialization.decode(ApiUpdate.DappRequestSettled.self, from: data)
+                        WalletCoreData.notify(event: .dappRequestSettled(update))
+                    } catch {
+                        log.error("dappRequestSettled: \(error, .public)")
                     }
                     
                 case "updateAccountDomainData":

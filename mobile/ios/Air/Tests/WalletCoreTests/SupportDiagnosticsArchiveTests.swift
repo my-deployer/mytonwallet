@@ -30,9 +30,15 @@ struct SupportDiagnosticsArchiveTests {
             "time": 1_700_000_000_000,
         ]]
         let sdkLogsData = try SupportDiagnosticsArchive.encodeSDKLogs(sdkLogs)
+        let diagnosticsData = try SupportDiagnosticsArchive.encodeDiagnostics(TestDiagnostics(
+            schemaVersion: 1,
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            deviceModel: "iPhone17,2"
+        ))
 
         let archiveURL = try SupportDiagnosticsArchive.create(
             nativeLogsURL: nativeLogsURL,
+            diagnosticsData: diagnosticsData,
             sdkLogsData: sdkLogsData,
             sdkLogsError: nil,
             destinationDirectory: testDirectory
@@ -41,6 +47,7 @@ struct SupportDiagnosticsArchiveTests {
 
         let files = try FileManager.default.contentsOfDirectory(atPath: extractedDirectory.path).sorted()
         #expect(files == [
+            SupportDiagnosticsArchive.diagnosticsFilename,
             SupportDiagnosticsArchive.nativeLogsFilename,
             SupportDiagnosticsArchive.sdkLogsFilename,
         ])
@@ -54,6 +61,13 @@ struct SupportDiagnosticsArchiveTests {
         ) as? [[String: Any]]
         #expect(decodedSDKLogs?.first?["message"] as? String == "test failure")
         #expect(decodedSDKLogs?.first?["level"] as? String == "debugError")
+
+        let decodedDiagnostics = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: extractedDirectory.appending(component: SupportDiagnosticsArchive.diagnosticsFilename))
+        ) as? [String: Any]
+        #expect(decodedDiagnostics?["schemaVersion"] as? Int == 1)
+        #expect(decodedDiagnostics?["deviceModel"] as? String == "iPhone17,2")
+        #expect(decodedDiagnostics?["generatedAt"] as? String == "2023-11-14T22:13:20Z")
     }
 
     @Test
@@ -66,6 +80,7 @@ struct SupportDiagnosticsArchiveTests {
 
         let archiveURL = try SupportDiagnosticsArchive.create(
             nativeLogsURL: nativeLogsURL,
+            diagnosticsData: Data("{}\n".utf8),
             sdkLogsData: Data("[]\n".utf8),
             sdkLogsError: "SDK bridge is unavailable",
             destinationDirectory: testDirectory
@@ -93,5 +108,11 @@ struct SupportDiagnosticsArchiveTests {
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
         try FileManager.default.unzipItem(at: archiveURL, to: destination)
         return destination
+    }
+
+    private struct TestDiagnostics: Encodable {
+        let schemaVersion: Int
+        let generatedAt: Date
+        let deviceModel: String
     }
 }

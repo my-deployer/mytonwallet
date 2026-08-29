@@ -175,7 +175,7 @@ public struct FeeView: View {
         if shouldShowDetails, let explainedTransferFee {
             if let vc = topWViewController() {
                 vc.view.endEditing(true)
-                vc.showTip(title: "Blockchain Fee Details", wide: true) {
+                vc.showTip(title: lang("Blockchain Fee Details"), wide: true) {
                     FeeDetailsView(nativeToken: nativeToken, fee: explainedTransferFee)
                 }
             }

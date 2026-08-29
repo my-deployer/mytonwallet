@@ -433,6 +433,7 @@ class WalletsVC(
 
     override fun insetsUpdated() {
         super.insetsUpdated()
+        topReversedCornerView?.setSideInsets(0f, 0f)
 
         if (guideline.layoutParams == null) return
         guideline.updateLayoutParams<ConstraintLayout.LayoutParams> {
@@ -475,13 +476,13 @@ class WalletsVC(
                 topReversedCornerView?.isGone = false
                 bottomReversedCornerViewUpsideDown.isGone = false
                 recyclerView.setPaddingRelative(
-                    systemBarStartInset,
+                    0,
                     (navigationController?.getSystemBars()?.top ?: 0) +
                         WNavigationBar.DEFAULT_HEIGHT_THICK.dp +
                         44.dp -
                         ViewConstants.BLOCK_RADIUS.dp.roundToInt() +
                         22.dp,
-                    systemBarEndInset,
+                    0,
                     90.dp + bottomSafeInset
                 )
                 view.setConstraints {
@@ -494,13 +495,13 @@ class WalletsVC(
                 topReversedCornerView?.isGone = true
                 bottomReversedCornerViewUpsideDown.isGone = true
                 recyclerView.setPaddingRelative(
-                    10.dp + systemBarStartInset,
+                    10.dp,
                     (navigationController?.getSystemBars()?.top ?: 0) +
                         WNavigationBar.DEFAULT_HEIGHT_THICK.dp +
                         44.dp -
                         ViewConstants.BLOCK_RADIUS.dp.roundToInt() +
                         22.dp,
-                    6.dp + systemBarEndInset,
+                    6.dp,
                     90.dp + bottomSafeInset
                 )
                 view.setConstraints {

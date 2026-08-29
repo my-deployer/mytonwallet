@@ -13,17 +13,28 @@ export function shouldAvoidSwapEstimation(global: GlobalState) {
 }
 
 /**
+ * The identity of the question the swap form asks the backend. Two swap states sharing a key ask the same question,
+ * so an estimate made for one of them answers the other. The inactive amount is the estimate's own output, and a
+ * maximum amount is resolved by the backend, so neither takes part.
+ */
+export function getSwapEstimateInputKey(currentSwap: GlobalState['currentSwap']) {
+  const amountKey = currentSwap.inputSource === SwapInputSource.In ? 'amountIn' : 'amountOut';
+
+  return JSON.stringify([
+    currentSwap.tokenInSlug,
+    currentSwap.tokenOutSlug,
+    currentSwap.slippage,
+    currentSwap.inputSource,
+    currentSwap.isMaxAmount,
+    currentSwap.isMaxAmount ? undefined : currentSwap[amountKey],
+  ]);
+}
+
+/**
  * Returns true if the swap estimate prepared for the global 1 is suitable for the global 2
  */
-export function isSwapEstimateInputEqual({ currentSwap: swap1 }: GlobalState, { currentSwap: swap2 }: GlobalState) {
-  const amountKey = swap1.inputSource === SwapInputSource.In ? 'amountIn' : 'amountOut';
-
-  return swap1.tokenInSlug === swap2.tokenInSlug
-    && swap1.tokenOutSlug === swap2.tokenOutSlug
-    && swap1.slippage === swap2.slippage
-    && swap1.inputSource === swap2.inputSource
-    && swap1.isMaxAmount === swap2.isMaxAmount
-    && (swap2.isMaxAmount || swap1[amountKey] === swap2[amountKey]);
+export function isSwapEstimateInputEqual(global1: GlobalState, global2: GlobalState) {
+  return getSwapEstimateInputKey(global1.currentSwap) === getSwapEstimateInputKey(global2.currentSwap);
 }
 
 /**

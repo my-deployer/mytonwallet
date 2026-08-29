@@ -19,6 +19,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.webkit)
+    implementation(libs.install.referrer)
     implementation(libs.firebase.messaging)
     implementation(libs.tweetnacl)
     implementation(project("$airSubModulePath:WalletContext"))

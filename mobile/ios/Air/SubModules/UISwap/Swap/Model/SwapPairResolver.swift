@@ -25,11 +25,11 @@ func isSwapPairInAccountScope(selling: ApiToken, buying: ApiToken, accountChains
 func resolveBuyAmountInputMode(
     swapType: SwapType,
     sellingChain: ApiChain,
-    isReverseProhibited: Bool
+    isReverseProhibited: Bool?
 ) -> SwapBuyAmountInputMode {
     swapType == .onChain
         && sellingChain.canSwapByBuyAmount
-        && !isReverseProhibited
+        && isReverseProhibited != true
         ? .enabled
         : .disabled
 }
@@ -50,7 +50,7 @@ func resolveBuyAmountInputMode(
         return resolveBuyAmountInputMode(
             swapType: swapType,
             sellingChain: selling.chain,
-            isReverseProhibited: pairModel.cachedIsReverseProhibited(selling: selling, buying: buying) ?? true
+            isReverseProhibited: pairModel.cachedIsReverseProhibited(selling: selling, buying: buying)
         )
     }
 

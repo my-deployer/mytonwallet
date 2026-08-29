@@ -31,8 +31,22 @@ object TokenStore : IStore {
     data class Tokens(val tokens: Map<String, ApiTokenWithPrice>)
 
     private val _tokensFlow = MutableStateFlow<Tokens?>(null)
-    fun setFlowValue(tokens: Tokens) {
-        _tokensFlow.value = tokens
+    fun setFlowValue(tokens: Tokens, arePricesFresh: Boolean = true) {
+        _tokensFlow.value = if (arePricesFresh) {
+            tokens
+        } else {
+            Tokens(
+                tokens.tokens.mapValues { (slug, incoming) ->
+                    val cached = this.tokens[slug]
+                    incoming.copy(
+                        priceUsd = cached?.priceUsd?.takeIf { it.isFinite() }
+                            ?: incoming.priceUsd,
+                        percentChange24h = cached?.percentChange24hReal?.takeIf { it.isFinite() }
+                            ?: incoming.percentChange24h
+                    )
+                }
+            )
+        }
     }
 
     val tokensFlow = _tokensFlow.asStateFlow()
@@ -147,7 +161,18 @@ object TokenStore : IStore {
             }
     }
 
-    fun setToken(slug: String, token: MToken) {
+    fun setToken(slug: String, token: MToken, arePricesFresh: Boolean = true) {
+        if (!arePricesFresh) {
+            tokens[slug]?.let { cached ->
+                if (cached.priceUsd.isFinite()) {
+                    token.priceUsd = cached.priceUsd
+                }
+                if (cached.percentChange24hReal.isFinite()) {
+                    token.percentChange24hReal = cached.percentChange24hReal
+                    token.percentChange24h = cached.percentChange24h
+                }
+            }
+        }
         if (!token.priceUsd.isFinite()) {
             tokens[slug]?.priceUsd?.let { token.priceUsd = it }
         }

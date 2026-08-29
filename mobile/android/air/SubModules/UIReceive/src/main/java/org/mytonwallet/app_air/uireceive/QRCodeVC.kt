@@ -26,7 +26,9 @@ import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WQRCodeView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
 import org.mytonwallet.app_air.uicomponents.widgets.fadeIn
+import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.getDrawableCompat
@@ -57,10 +59,13 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
         get() = AccountStore.activeAccount?.addressByChain?.get(chain.name) ?: ""
 
     companion object {
-        const val HEIGHT = 307
+        private const val QR_TOP_MARGIN = 16
+        private const val QR_CODE_SIZE = 252
+        private const val ADDRESS_HEADER_MARGIN = 39
+        const val HEIGHT = QR_TOP_MARGIN + QR_CODE_SIZE + ADDRESS_HEADER_MARGIN
     }
 
-    private val qrCodeSize = 252.dp
+    private val qrCodeSize = QR_CODE_SIZE.dp
     internal val qrCodeView: WQRCodeView by lazy {
         val qrContent = if (chain == MBlockchain.ton) {
             AddressHelpers.walletInvoiceUrl(walletAddress)
@@ -195,7 +200,7 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
             toCenterX(qrCodeView)
             centerYToCenterY(ornamentView, qrCodeView, 16f.dp)
             toCenterX(ornamentView)
-            topToBottom(titleLabel, qrCodeView, 39f)
+            topToBottom(titleLabel, qrCodeView, ADDRESS_HEADER_MARGIN.toFloat())
             toCenterX(titleLabel)
             topToBottom(addressView, titleLabel)
             toCenterX(addressView)
@@ -212,7 +217,11 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
         addressLabel.setTextColor(WColor.PrimaryText.color)
         titleLabel.updateTheme()
         warningLabel.setTextColor(WColor.SecondaryText.color)
-        addressView.setBackgroundColor(WColor.Background.color)
+        addressView.setBackgroundColor(
+            WColor.Background.color,
+            0f,
+            ViewConstants.BLOCK_RADIUS.dp
+        )
 
         val ornamentRes = chain.receiveOrnamentImage
         if (ornamentRes != null) {
@@ -231,8 +240,12 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
             toTopPx(
                 qrCodeView,
                 (navigationController?.getSystemBars()?.top ?: 0) +
-                    WNavigationBar.DEFAULT_HEIGHT.dp + 16.dp
+                    WNavigationBar.DEFAULT_HEIGHT.dp + QR_TOP_MARGIN.dp
             )
+            toStartPx(qrCodeView, systemBarStartInset)
+            toEndPx(qrCodeView, systemBarEndInset)
+            toStartPx(titleLabel, systemBarStartInset)
+            toEndPx(titleLabel, systemBarEndInset)
             toStartPx(addressView, systemBarStartInset)
             toEndPx(addressView, systemBarEndInset)
         }
@@ -240,5 +253,5 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
 
     fun getHeight(): Int = (addressView.y + addressView.height).toInt()
 
-    fun getTransparentHeight(): Int = HEIGHT.dp
+    fun getTransparentHeight(): Int = QR_TOP_MARGIN.dp + qrCodeSize + ADDRESS_HEADER_MARGIN.dp
 }

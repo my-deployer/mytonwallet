@@ -140,16 +140,7 @@ public class TokenSelectionVC: WViewController {
         configureDataSource()
         WalletCoreData.add(eventObserver: self)
         
-        if onlySupportedChains {
-            filterTokens()
-        } else {
-            Task { [weak self] in
-                do {
-                    _ = try await TokenStore.updateSwapAssets()
-                    self?.filterTokens()
-                } catch {}
-            }
-        }
+        filterTokens()
         
         if let otherSymbolOrMinterAddress {
             activityIndicatorView?.startAnimating(animated: true)
@@ -423,7 +414,7 @@ extension TokenSelectionVC: UISearchResultsUpdating {
 extension TokenSelectionVC: WalletCoreData.EventsObserver {
     public func walletCore(event: WalletCoreData.Event) {
         switch event {
-        case .balanceChanged, .tokensChanged:
+        case .balanceChanged, .tokensChanged, .swapTokensChanged:
             updateWalletTokens()
             filterTokens()
         default:

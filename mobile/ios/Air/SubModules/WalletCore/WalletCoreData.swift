@@ -84,6 +84,7 @@ public struct WalletCoreData {
         case dappDisconnect(accountId: String, origin: String)
         case dappLoading(ApiUpdate.DappLoading)
         case dappCloseLoading(ApiUpdate.DappCloseLoading)
+        case dappRequestSettled(ApiUpdate.DappRequestSettled)
         case dappAlreadyConnected(ApiUpdate.DappAlreadyConnected)
         case dappDisconnected(ApiUpdate.DappDisconnected)
         case walletConnectPayLoading(ApiUpdate.WalletConnectPayLoading)

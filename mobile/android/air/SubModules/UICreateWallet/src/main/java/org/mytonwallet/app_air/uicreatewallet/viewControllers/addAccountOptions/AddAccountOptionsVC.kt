@@ -411,33 +411,33 @@ class AddAccountOptionsVC(
                 showNavigationSeparator = false,
                 startWithBiometrics = true
             ),
-            task = { passcode ->
-                createSubwallet(passcodeConfirmVC, passcode)
+            task = { enclaveToken ->
+                createSubwallet(passcodeConfirmVC, enclaveToken)
             }
         )
         passcodeConfirmVC.isTaskAsync = true
         handlePush(passcodeConfirmVC)
     }
 
-    private fun createSubwallet(passcodeConfirmVC: PasscodeConfirmVC, passcode: String) {
+    private fun createSubwallet(passcodeConfirmVC: PasscodeConfirmVC, enclaveToken: String) {
         passcodeConfirmVC.view.lockView()
         WalletCore.call(
-            ApiMethod.Settings.CreateSubWallet(accountId, passcode)
+            ApiMethod.Settings.CreateSubWallet(accountId, enclaveToken)
         ) { result, error ->
             if (error != null || result == null) {
-                passcodeConfirmVC.view.unlockView()
+                passcodeConfirmVC.restartAuth()
                 passcodeConfirmVC.showError(error?.parsed)
                 return@call
             }
 
             val activeAccount = AccountStore.activeAccount ?: run {
-                passcodeConfirmVC.view.unlockView()
+                passcodeConfirmVC.restartAuth()
                 return@call
             }
 
             if (result.isNew) {
                 val byChain = result.byChain ?: run {
-                    passcodeConfirmVC.view.unlockView()
+                    passcodeConfirmVC.restartAuth()
                     return@call
                 }
                 val enclaveError = WalletCore.enclaveDuplicateSecrets(
@@ -445,7 +445,7 @@ class AddAccountOptionsVC(
                     listOf(result.accountId)
                 )
                 if (enclaveError != null) {
-                    passcodeConfirmVC.view.unlockView()
+                    passcodeConfirmVC.restartAuth()
                     passcodeConfirmVC.showError(enclaveError)
                     return@call
                 }
@@ -475,7 +475,7 @@ class AddAccountOptionsVC(
                 accountId = result.accountId,
                 notifySDK = false
             ) { _, activateErr ->
-                passcodeConfirmVC.view.unlockView()
+                passcodeConfirmVC.restartAuth()
                 if (activateErr != null) {
                     Logger.e(
                         Logger.LogTag.ACCOUNT,

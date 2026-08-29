@@ -81,6 +81,10 @@ class MoshiBuilder {
                         ApiUpdate.ApiUpdateDappCloseLoading::class.java,
                         "dappCloseLoading"
                     )
+                    .withSubtype(
+                        ApiUpdate.ApiUpdateDappRequestSettled::class.java,
+                        "dappRequestSettled"
+                    )
                     .withSubtype(ApiUpdate.ApiUpdateDapps::class.java, "updateDapps")
                     .withSubtype(
                         ApiUpdate.ApiUpdateInitialActivities::class.java,

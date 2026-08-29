@@ -54,7 +54,7 @@ export function namespacesToSessionChains(
     const chainVariants = CHAIN_IDS_BY_CHAIN[ns];
 
     for (const chain of config?.chains || []) {
-      if (chainVariants[chain]) {
+      if (chainVariants?.[chain]) {
         chains.push({
           chain: chainVariants[chain].chain,
           network: chainVariants[chain].network,

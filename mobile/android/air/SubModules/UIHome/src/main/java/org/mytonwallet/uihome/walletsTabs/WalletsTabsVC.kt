@@ -307,7 +307,6 @@ class WalletsTabsVC(context: Context, val defaultMode: MWalletSettingsViewMode) 
         view.setConstraints {
             toCenterX(titleLinearLayout)
             toTop(titleLinearLayout, 16.5f)
-            toCenterX(addNewWalletButton, 20f)
         }
         applyLayoutForCurrentMode()
         switchViewMode(defaultMode)
@@ -360,6 +359,8 @@ class WalletsTabsVC(context: Context, val defaultMode: MWalletSettingsViewMode) 
             height = if (centered) MATCH_CONSTRAINT else window!!.windowView.height
         }
         view.setConstraints {
+            toStartPx(addNewWalletButton, 20.dp + if (centered) 0 else systemBarStartInset)
+            toEndPx(addNewWalletButton, 20.dp + if (centered) 0 else systemBarEndInset)
             toBottom(scrollView)
             if (centered) {
                 toTop(scrollView)
@@ -402,7 +403,7 @@ class WalletsTabsVC(context: Context, val defaultMode: MWalletSettingsViewMode) 
         }
     }
 
-    private fun bottomCornerHeight(): Int = ViewConstants.TOOLBAR_RADIUS.dp.roundToInt() +
+    private fun bottomCornerHeight(): Int = (bottomReversedCornerView?.cornerHeight ?: 0) +
         ViewConstants.GAP.dp +
         50.dp +
         16.dp +

@@ -961,6 +961,7 @@ export const DEFAULT_STAKING_STATE: ApiLiquidStakingState = {
   balance: 0n,
   pool: LIQUID_POOL,
   tokenBalance: 0n,
+  loyaltyBalance: 0n,
   unstakeRequestAmount: 0n,
   instantAvailable: 0n,
   start: 0,

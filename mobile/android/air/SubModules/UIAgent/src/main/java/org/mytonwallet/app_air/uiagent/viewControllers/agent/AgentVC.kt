@@ -303,12 +303,12 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
     override fun viewWillAppear() {
         super.viewWillAppear()
         vm.setActive(this, true)
+        vm.checkAccountChanged(animated = false)
         if (initialPromptAwaitingInsertion != null) {
             showInitialPromptAtBottom()
         } else {
             restoreSharedScrollPosition()
         }
-        vm.checkAccountChanged()
     }
 
     override fun viewDidAppear() {
@@ -630,7 +630,14 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         }
     }
 
-    override fun onMessageAdded(message: AgentMessage) {
+    override fun onMessageAdded(message: AgentMessage, animated: Boolean) {
+        if (!animated) {
+            animateFromIndex = -1
+            pendingHintsReveal = false
+            cancelHintsSettleFallback()
+            rebuildTimeline()
+            return
+        }
         if (message.role == AgentMessageRole.USER &&
             message.text == initialPromptAwaitingInsertion
         ) {

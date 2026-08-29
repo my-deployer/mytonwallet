@@ -709,7 +709,8 @@ object WalletCore {
 
             is ApiUpdate.ApiUpdateTokens -> {
                 TokenStore.setFlowValue(
-                    TokenStore.Tokens(update.tokens)
+                    TokenStore.Tokens(update.tokens),
+                    update.arePricesFresh
                 )
             }
 

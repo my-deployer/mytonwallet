@@ -220,6 +220,7 @@ class WalletCardView(val window: WWindow) :
             gravity = Gravity.CENTER
         }
         balanceViewMaskWrapper = WGradientMaskView(balanceView)
+        _primaryColor?.let { applyMaskColors(it) }
         linearLayout.addView(balanceViewMaskWrapper, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         linearLayout.addView(
             arrowImageView,
@@ -893,6 +894,16 @@ class WalletCardView(val window: WWindow) :
     private var _primaryColor: Int? = null
     private var _secondaryColor: Int? = null
     private var _drawGradient: Boolean? = null
+    private fun applyMaskColors(primaryColor: Int) {
+        balanceViewMaskWrapper.setupColors(
+            intArrayOf(
+                primaryColor.colorWithAlpha(191),
+                primaryColor,
+                primaryColor.colorWithAlpha(191)
+            )
+        )
+    }
+
     private fun setLabelColors(primaryColor: Int, secondaryColor: Int, drawGradient: Boolean) {
         if (_primaryColor == primaryColor &&
             _secondaryColor == secondaryColor &&
@@ -904,13 +915,7 @@ class WalletCardView(val window: WWindow) :
         _secondaryColor = secondaryColor
         _drawGradient = drawGradient
         if (::balanceViewMaskWrapper.isInitialized) {
-            balanceViewMaskWrapper.setupColors(
-                intArrayOf(
-                    primaryColor.colorWithAlpha(191),
-                    primaryColor,
-                    primaryColor.colorWithAlpha(191)
-                )
-            )
+            applyMaskColors(primaryColor)
         }
         balanceView.alpha = 1f
         balanceView.updateColors(primaryColor, secondaryColor, drawGradient)

@@ -56,6 +56,7 @@ public class AddStakeVC: WViewController {
     private func setupViews() {
 
         title = lang("Add Stake")
+        addCloseNavigationItemIfNeeded()
 
         let hostingController = addHostingController(
             AddStakeView(model: model),
@@ -84,6 +85,12 @@ public class AddStakeVC: WViewController {
 
     func amountChanged(amount: BigInt?) {
         guard let continueButton else { return }
+
+        guard account.supportsEarn else {
+            continueButton.showLoading = false
+            continueButton.isEnabled = false
+            return
+        }
 
         guard let amount else {
             continueButton.isEnabled = false

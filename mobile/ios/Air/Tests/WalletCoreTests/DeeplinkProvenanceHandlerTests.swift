@@ -35,6 +35,7 @@ struct DeeplinkProvenanceHandlerTests {
 
         #expect(handler.handle(url, source: .generic))
         #expect(navigator.handledDeeplinks.count == 1)
+        #expect(navigator.handledSources == [.generic])
 
         guard case .sell = navigator.handledDeeplinks.first else {
             Issue.record("Expected Offramp deeplink")
@@ -50,9 +51,11 @@ struct DeeplinkProvenanceHandlerTests {
 @MainActor
 private final class RecordingDeeplinkNavigator: DeeplinkNavigator {
     var handledDeeplinks: [Deeplink] = []
+    var handledSources: [DeeplinkOpenSource] = []
 
-    func handle(deeplink: Deeplink) {
+    func handle(deeplink: Deeplink, source: DeeplinkOpenSource) {
         handledDeeplinks.append(deeplink)
+        handledSources.append(source)
     }
 
     func handleNotification(_ notification: UNNotification) {

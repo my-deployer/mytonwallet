@@ -75,7 +75,7 @@ import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
-class SubWalletsVC(context: Context, private val password: String) :
+class SubWalletsVC(context: Context, private val enclaveToken: String) :
     WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource {
 
@@ -358,7 +358,7 @@ class SubWalletsVC(context: Context, private val password: String) :
 
     private fun loadMnemonicAndStartSearch() {
         WalletCore.call(
-            ApiMethod.Settings.FetchMnemonic(accountId, password)
+            ApiMethod.Settings.FetchMnemonic(accountId, enclaveToken)
         ) { result, error ->
             if (error != null || result == null) {
                 showError(error?.parsed)
@@ -774,7 +774,7 @@ class SubWalletsVC(context: Context, private val password: String) :
     fun createSubwallet() {
         view.lockView()
         WalletCore.call(
-            ApiMethod.Settings.CreateSubWallet(accountId, password)
+            ApiMethod.Settings.CreateSubWallet(accountId, enclaveToken)
         ) { result, error ->
             if (error != null || result == null) {
                 view.unlockView()

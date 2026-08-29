@@ -38,9 +38,6 @@ private let UPDATING_DELAY = 2
     @PerceptionIgnored
     var waitingForNetwork: Bool? = nil
     @PerceptionIgnored
-    private var loadSwapAssetsTask: Task<Void, Never>?
-    
-    @PerceptionIgnored
     private var prevUpdatingState: UpdateStatusView.State? = nil
     @PerceptionIgnored
     private var setUpdatingAfterDelayTask: Task<Void, any Error>? = nil
@@ -175,31 +172,8 @@ private let UPDATING_DELAY = 2
                 log.info("Balances not loaded yet")
                 return
             }
-            // make sure assets are loaded
-            if TokenStore.swapAssets == nil {
-                log.info("swap assets are not loaded yet")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: { [weak self] in
-                    self?.loadSwapAssetsIfNeeded()
-                })
-            }
             DispatchQueue.main.async {
                 self.delegate?.tokensChanged()
-            }
-        }
-    }
-    
-    private func loadSwapAssetsIfNeeded() {
-        if TokenStore.swapAssets == nil && self.loadSwapAssetsTask == nil {
-            self.loadSwapAssetsTask = Task { [weak self] in
-                do {
-                    _ = try await TokenStore.updateSwapAssets()
-                } catch {
-                    try? await Task.sleep(for: .seconds(5))
-                    if !Task.isCancelled {
-                        self?.loadSwapAssetsTask = nil
-                        self?.loadSwapAssetsIfNeeded()
-                    }
-                }
             }
         }
     }

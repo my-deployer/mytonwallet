@@ -1,6 +1,6 @@
 import type { createTaskQueue } from '../../../util/schedulers';
 import type { FallbackPollingOptions } from '../../common/polling/fallbackPollingScheduler';
-import type { ApiBalanceBySlug, ApiChain, ApiNetwork } from '../../types';
+import type { ApiBalanceBySlug, ApiChain, ApiNetwork, StampedBalances } from '../../types';
 import type { AbstractWebsocketClient, BalanceUpdate, WalletWatcher } from './abstractWsClient';
 
 import { areDeepEqual } from '../../../util/areDeepEqual';
@@ -43,12 +43,12 @@ type BalanceStreamOptions = {
     network: ApiNetwork,
     address: string,
     sendUpdateTokens: NoneToVoidFunction,
-  ) => Promise<ApiBalanceBySlug>;
+  ) => Promise<StampedBalances>;
   fetchCrosschainBalancesCb?: (
     network: ApiNetwork,
     address: string,
     sendUpdateTokens: NoneToVoidFunction,
-  ) => Promise<ApiBalanceBySlug>;
+  ) => Promise<StampedBalances>;
   importUnknownTokens?: (
     network: ApiNetwork,
     tokenAddresses: string[],
@@ -84,6 +84,16 @@ export class BalanceStream {
   /** Per-slug `#clock` version of the value currently stored in `#balances` for that slug. */
   #balanceVersionBySlug = new Map<string, number>();
 
+  /**
+   * Per-slug instant at which the source observed the value currently stored for that slug, in
+   * unix ms. `#clock` orders writes by when this client saw them, which mis-ranks a snapshot
+   * served from a cache filled before a delta that has already landed: it starts later, so it
+   * looks newer. This map ranks by where the data comes from instead, and outranks `#clock`
+   * whenever both the stored value and the incoming snapshot carry an instant. A source that
+   * states no instant (an older gateway) leaves the slug unstamped and keeps the clock ordering.
+   */
+  #balanceAsOfBySlug = new Map<string, number>();
+
   #walletWatcher: WalletWatcher;
   #fallbackPollingOptions: FallbackPollingOptions;
   #fallbackPollingScheduler?: FallbackPollingScheduler;
@@ -95,13 +105,13 @@ export class BalanceStream {
     network: ApiNetwork,
     address: string,
     sendUpdateTokens: NoneToVoidFunction
-  ) => Promise<ApiBalanceBySlug>;
+  ) => Promise<StampedBalances>;
 
   #fetchCrosschainBalancesCb?: (
     network: ApiNetwork,
     address: string,
     sendUpdateTokens: NoneToVoidFunction,
-  ) => Promise<ApiBalanceBySlug>;
+  ) => Promise<StampedBalances>;
 
   #importUnknownTokens?: ((
     network: ApiNetwork,
@@ -246,7 +256,11 @@ export class BalanceStream {
 
     let chainBalances = this.#balances;
 
-    if (config.chainStandard && config.chainStandard !== this.#chain) {
+    // A stream on a non-standard chain usually receives its snapshot via the standard-chain
+    // cross-chain fan-out rather than its own poll. The map is only a fallback: when this stream
+    // has completed its own poll, its `#balances` are authoritative, and the map may legitimately
+    // be empty (the standard-chain stream is inactive for wallets with no activity there).
+    if (!chainBalances && config.chainStandard && config.chainStandard !== this.#chain) {
       chainBalances = crosschainAssetsByChain.get(this.#chain);
     }
 
@@ -294,10 +308,11 @@ export class BalanceStream {
         // Capture the freshness version before awaiting, so a socket delta that arrives during the
         // fetch is recognised as newer than this snapshot.
         const pollVersion = ++this.#clock;
-        const crosschainBalances
+        const crosschainResult
         = await this.#fetchCrosschainBalancesCb?.(this.#network, this.#address, this.#sendUpdateTokens);
 
-        if (crosschainBalances) {
+        if (crosschainResult) {
+          const { balances: crosschainBalances, asOf: crosschainAsOf } = crosschainResult;
           const knownChains = getSupportedChains();
 
           for (const [slug, balance] of Object.entries(crosschainBalances)) {
@@ -313,7 +328,7 @@ export class BalanceStream {
             });
           }
 
-          this.#setAllBalances(crosschainBalances, pollVersion);
+          this.#setAllBalances(crosschainBalances, pollVersion, crosschainAsOf);
           this.#balancesDeferred.resolve();
         }
 
@@ -325,10 +340,11 @@ export class BalanceStream {
       // Capture the freshness version before awaiting, so a socket delta that arrives during the
       // fetch is recognised as newer than this snapshot.
       const pollVersion = ++this.#clock;
-      const newBalances = await throttledFetchBalances(this.#network, this.#address, this.#sendUpdateTokens);
+      const result = await throttledFetchBalances(this.#network, this.#address, this.#sendUpdateTokens);
       if (this.#isDestroyed) return;
 
-      this.#setAllBalances(newBalances, pollVersion);
+      const { balances: newBalances, asOf } = result;
+      this.#setAllBalances(newBalances, pollVersion, asOf);
       this.#balancesDeferred.resolve();
     } finally {
       if (!this.#isDestroyed) {
@@ -344,12 +360,39 @@ export class BalanceStream {
    * (or drop) the slug that delta refreshed. With no interleaving (every stored version is at most
    * `pollVersion`) this is equivalent to the previous full-replace behaviour.
    */
-  #setAllBalances(newBalances: ApiBalanceBySlug, pollVersion: number) {
-    // Fast path: nothing advanced the clock since this poll captured its version, so no socket delta
-    // interleaved and the snapshot is a straight full replace. Clearing the version map keeps it
-    // bounded; an empty map reads as "oldest", which is the safe default for the next poll/delta.
-    if (this.#clock === pollVersion) {
+  /**
+   * True when the value stored for `slug` was observed after this snapshot was, so the snapshot
+   * must not touch it however late it arrives. Only a snapshot that states its own instant can be
+   * outranked: without one there is nothing to compare, and `#clock` decides as before.
+   */
+  #isOutrankedBySlugStamp(slug: string, snapshotAsOf?: number) {
+    if (snapshotAsOf === undefined) return false;
+    const storedAsOf = this.#balanceAsOfBySlug.get(slug);
+    return storedAsOf !== undefined && storedAsOf > snapshotAsOf;
+  }
+
+  #setAllBalances(newBalances: ApiBalanceBySlug, pollVersion: number, snapshotAsOf?: number) {
+    let hasOutrankedSlug = false;
+    if (snapshotAsOf !== undefined) {
+      for (const storedAsOf of this.#balanceAsOfBySlug.values()) {
+        if (storedAsOf > snapshotAsOf) {
+          hasOutrankedSlug = true;
+          break;
+        }
+      }
+    }
+
+    // Fast path: nothing advanced the clock since this poll captured its version and no stored
+    // value was observed after the snapshot, so the snapshot is a straight full replace. Clearing
+    // the maps keeps them bounded; empty reads as "oldest", the safe default for the next write.
+    if (this.#clock === pollVersion && !hasOutrankedSlug) {
       this.#balanceVersionBySlug.clear();
+      this.#balanceAsOfBySlug.clear();
+      if (snapshotAsOf !== undefined) {
+        for (const slug of Object.keys(newBalances)) {
+          this.#balanceAsOfBySlug.set(slug, snapshotAsOf);
+        }
+      }
       if (!areDeepEqual(this.#balances, newBalances)) {
         this.#balances = newBalances;
         this.#updateListeners.runCallbacks(this.#balances, 'poll');
@@ -357,30 +400,47 @@ export class BalanceStream {
       return;
     }
 
-    // Slow path: a socket delta interleaved; merge per-slug by version.
+    // Slow path: a newer write interleaved; merge per-slug, provenance first and clock second.
     const merged: ApiBalanceBySlug = {};
 
     // Keep slugs that a newer source updated and that this snapshot does not refresh.
     for (const slug of Object.keys(this.#balances ?? {})) {
-      if (!(slug in newBalances) && pollVersion < (this.#balanceVersionBySlug.get(slug) ?? -1)) {
+      if (!(slug in newBalances)
+        && (this.#isOutrankedBySlugStamp(slug, snapshotAsOf)
+          || pollVersion < (this.#balanceVersionBySlug.get(slug) ?? -1))) {
         merged[slug] = this.#balances![slug];
       }
     }
 
     // Apply this snapshot's slugs unless a newer source already wrote a fresher value.
     for (const [slug, balance] of Object.entries(newBalances)) {
-      if (pollVersion >= (this.#balanceVersionBySlug.get(slug) ?? -1)) {
+      if (!this.#isOutrankedBySlugStamp(slug, snapshotAsOf)
+        && pollVersion >= (this.#balanceVersionBySlug.get(slug) ?? -1)) {
         merged[slug] = balance;
         this.#balanceVersionBySlug.set(slug, pollVersion);
+        if (snapshotAsOf === undefined) {
+          // A stamp describes the value it was stored with. This source states no instant, so the
+          // slug's provenance is unknown again and `#clock` alone ranks it, as it does everywhere
+          // no instant is available. Keeping the previous entry would rank this value by an
+          // instant it was never observed at.
+          this.#balanceAsOfBySlug.delete(slug);
+        } else {
+          this.#balanceAsOfBySlug.set(slug, snapshotAsOf);
+        }
       } else {
         merged[slug] = this.#balances![slug];
       }
     }
 
-    // Forget versions of slugs that are no longer present to keep the map bounded.
+    // Forget entries for slugs that are no longer present to keep the maps bounded.
     for (const slug of this.#balanceVersionBySlug.keys()) {
       if (!(slug in merged)) {
         this.#balanceVersionBySlug.delete(slug);
+      }
+    }
+    for (const slug of this.#balanceAsOfBySlug.keys()) {
+      if (!(slug in merged)) {
+        this.#balanceAsOfBySlug.delete(slug);
       }
     }
 
@@ -408,10 +468,13 @@ export class BalanceStream {
       return;
     }
 
-    // A genuine socket delta is the newest data at apply time, so its changed slugs are stamped now.
+    // A genuine socket delta is the newest data at apply time, so its changed slugs are stamped now,
+    // both on the client clock and with the observation instant a later snapshot is ranked against.
     const version = ++this.#clock;
+    const observedAt = Date.now();
     for (const slug of changedSlugs) {
       this.#balanceVersionBySlug.set(slug, version);
+      this.#balanceAsOfBySlug.set(slug, observedAt);
     }
 
     this.#balances = {

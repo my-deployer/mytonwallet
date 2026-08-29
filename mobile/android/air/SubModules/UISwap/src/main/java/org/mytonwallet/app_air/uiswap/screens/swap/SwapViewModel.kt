@@ -425,6 +425,25 @@ class SwapViewModel :
         private const val TIME_LIMIT = 1000L
         private const val DELAY_NORMAL = 5000L
         private const val DELAY_ERROR = 1000L
+        private const val DELAY_ERROR_MAX = 32000L
+
+        // Far past any ceiling worth setting: it clamps the multiplication,
+        // it does not cap the delay.
+        private const val DELAY_ERROR_MAX_SAFE_DOUBLINGS = 32
+
+        /**
+         * How long to wait after an estimate that did not produce a quote.
+         *
+         * The refresh exists to follow a moving market, and a failing estimate is not following
+         * anything: a pair with no route, or an amount the network fee already exceeds, answers the
+         * same way however often it is asked. A run of failures therefore stretches the gap instead
+         * of holding at the shortest one in the loop, and the first retry stays quick because a
+         * single failure is most cheaply explained as a blip.
+         */
+        private fun estimateRetryDelay(failedAttempts: Int): Long {
+            val doublings = minOf(maxOf(failedAttempts - 1, 0), DELAY_ERROR_MAX_SAFE_DOUBLINGS)
+            return minOf(DELAY_ERROR * (1L shl doublings), DELAY_ERROR_MAX)
+        }
     }
 
     fun doSend(enclaveToken: String, response: SwapEstimateResponse, addressToReceive: String?) {
@@ -436,15 +455,23 @@ class SwapViewModel :
     private var lastSimulationTime: Long = 0L
     private var subscriptionScope: CoroutineScope? = null
 
+    // The estimate loop exists while the form has something to ask about and somebody to answer to.
+    // Keeping the second half a flow rather than a flag makes the loop a function of both, so there
+    // is no pair of transitions that can disagree about whether it should be running.
+    private val isAppInForegroundFlow = MutableStateFlow(true)
+
     private val _simulatedSwapFlow = MutableStateFlow<SwapEstimateResponse?>(null)
     val simulatedSwapFlow = _simulatedSwapFlow.asStateFlow()
 
-    private fun subscribe(state: SwapUiInputState) {
+    private fun subscribe(state: SwapUiInputState, isAppInForeground: Boolean) {
         unsubscribe()
         val tokenToSend = state.tokenToSend
         val tokenToReceive = state.tokenToReceive
         val amount = state.amount
         if (tokenToSend != null && tokenToReceive != null && amount != null) {
+            // A form nobody is looking at has no quote to keep fresh. The estimate already on screen
+            // stays as it is, and the loop starts over from the same inputs on the way back.
+            if (!isAppInForeground) return
             val scope = CoroutineScope(Dispatchers.IO)
             subscriptionScope = scope
             scope.launch {
@@ -453,6 +480,11 @@ class SwapViewModel :
                 if (timeSinceLastSimulation < TIME_LIMIT) {
                     delay(TIME_LIMIT - timeSinceLastSimulation)
                 }
+                // The loop lives as long as one set of inputs does - `subscribe` cancels and
+                // restarts it whenever they change - so the run of failures is scoped to the
+                // request that produced it and an edit always starts over at the full rate.
+                var failedAttempts = 0
+
                 while (isActive) {
                     lastSimulationTime = System.currentTimeMillis()
 
@@ -533,8 +565,10 @@ class SwapViewModel :
                         if (!wasApplied) return@launch
 
                         if (response.error != null) {
-                            delay(DELAY_ERROR)
+                            failedAttempts++
+                            delay(estimateRetryDelay(failedAttempts))
                         } else {
+                            failedAttempts = 0
                             delay(DELAY_NORMAL)
                         }
                         continue
@@ -550,7 +584,8 @@ class SwapViewModel :
                             _simulatedSwapFlow.value = null
                         }
                     }
-                    delay(DELAY_ERROR)
+                    failedAttempts++
+                    delay(estimateRetryDelay(failedAttempts))
                 }
             }
         } else {
@@ -1355,6 +1390,14 @@ class SwapViewModel :
                 }
             }
 
+            WalletEvent.AppBackground -> {
+                isAppInForegroundFlow.value = false
+            }
+
+            WalletEvent.AppForeground -> {
+                isAppInForegroundFlow.value = true
+            }
+
             is WalletEvent.ReceivedPendingActivities -> {
                 walletEvent.pendingActivities?.forEach {
                     checkReceivedActivity(it)
@@ -1374,7 +1417,15 @@ class SwapViewModel :
     // Init and clear.
 
     init {
-        collectFlow(uiInputStateFlow, this::subscribe)
+        collectFlow(
+            combine(
+                uiInputStateFlow,
+                isAppInForegroundFlow,
+                ::Pair
+            )
+        ) { (state, isAppInForeground) ->
+            subscribe(state, isAppInForeground)
+        }
         collectFlow(uiInputStateFlow) {
             it.tokenToSend?.let { token -> loadPairsIfNeeded(token.slug) }
         }

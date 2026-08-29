@@ -574,10 +574,14 @@ extension TokenVC: TokenVMDelegate {
         updateTradeActions()
     }
     func tokenDetailsUpdated() {
+        let wasSectionVisible = tokenInfoModel.state.isSectionVisible
         tokenInfoModel.configure(state: tokenVM.tokenInfoState)
         updateNavigationMenu()
-        applySnapshot(makeSnapshot(), animatingDifferences: true)
-        (visibleCustomSectionCell(id: infoCustomSectionID) as? TokenInfoCell)?.modelStateDidChange()
+        if wasSectionVisible != tokenVM.tokenInfoState.isSectionVisible {
+            applySnapshot(makeSnapshot(), animatingDifferences: true)
+        } else {
+            (visibleCustomSectionCell(id: infoCustomSectionID) as? TokenInfoCell)?.modelStateDidChange()
+        }
     }
     func accountChanged() {
         guard accountContext.source == .current else { return }

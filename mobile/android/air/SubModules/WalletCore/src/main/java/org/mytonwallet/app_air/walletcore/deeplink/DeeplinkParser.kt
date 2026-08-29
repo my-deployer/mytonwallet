@@ -106,10 +106,6 @@ sealed class Deeplink {
 
     data class Settings(override val accountAddress: String?, val page: String?) : Deeplink()
     data class WalletConnect(override val accountAddress: String?, val requestUri: Uri) : Deeplink()
-    data class WalletConnectSessionRequest(
-        override val accountAddress: String?,
-        val sessionTopic: String
-    ) : Deeplink()
     data class WalletConnectPay(override val accountAddress: String?, val requestUri: Uri) :
         Deeplink()
 
@@ -221,9 +217,9 @@ class DeeplinkParser {
             Deeplink.WalletConnect(accountAddress = null, requestUri = uri)
 
         private fun handleWalletConnectWrapper(uri: Uri): Deeplink? {
-            val requestId = uri.getQueryParameter("requestId")
-            val sessionTopic = uri.getQueryParameter("sessionTopic")
-            walletConnectSessionRequest(requestId, sessionTopic)?.let { return it }
+            if (isWalletConnectSessionRequest(uri)) {
+                return Deeplink.WalletConnect(accountAddress = null, requestUri = uri)
+            }
             val requestLink = walletConnectRequestLink(uri) ?: return null
             return Deeplink.WalletConnect(
                 accountAddress = null,
@@ -231,16 +227,21 @@ class DeeplinkParser {
             )
         }
 
-        internal fun walletConnectSessionRequest(
-            requestId: String?,
-            sessionTopic: String?
-        ): Deeplink.WalletConnectSessionRequest? {
-            if (requestId.isNullOrBlank() || sessionTopic.isNullOrBlank()) return null
-            return Deeplink.WalletConnectSessionRequest(
-                accountAddress = null,
-                sessionTopic = sessionTopic
-            )
+        private fun isWalletConnectSessionRequest(uri: Uri): Boolean {
+            val fields = try {
+                uri.queryParameterNames.filterTo(mutableSetOf()) {
+                    !uri.getQueryParameter(it).isNullOrEmpty()
+                }
+            } catch (_: UnsupportedOperationException) {
+                return false
+            }
+            return isWalletConnectSessionRequest(fields)
         }
+
+        internal fun isWalletConnectSessionRequest(fields: Set<String>): Boolean =
+            fields.containsAll(setOf("requestId", "sessionTopic")) ||
+                fields.containsAll(setOf("topic", "wc_ev")) ||
+                fields.containsAll(setOf("topic", "message"))
 
         private fun walletConnectRequestLink(uri: Uri): String? {
             val encodedQuery = uri.encodedQuery

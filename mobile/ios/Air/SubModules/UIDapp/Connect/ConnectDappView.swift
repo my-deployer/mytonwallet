@@ -151,8 +151,9 @@ private struct ConnectButton: View {
             Button(action: viewModel.onConnectWallet) {
                 Text(viewModel.connectButtonTitle)
             }
-            .disabled(viewModel.isDisabled)
+            .disabled(viewModel.isDisabled || viewModel.isSubmitting)
             .buttonStyle(isDangerous ? WUIButtonStyle(style: .destructive) : .airPrimary)
+            .environment(\.isLoading, viewModel.isSubmitting)
             .padding(.horizontal, 30)
         }
     }

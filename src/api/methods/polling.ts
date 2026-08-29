@@ -7,7 +7,6 @@ import type {
   ApiCurrencyRates,
   ApiNetwork,
   ApiSwapAsset,
-  ApiTokenWithPrice,
   ApiUpdatingStatus,
   OnApiUpdate,
 } from '../types';
@@ -35,18 +34,18 @@ import {
   forgetHeldTokens,
   forgetNetworkHeldTokens,
   forgetOtherNetworksHeldTokens,
-  getHeldSlugs,
   recordHeldTokens,
 } from '../common/held-tokens';
 import { pollingLoop } from '../common/polling/utils';
 import {
-  buildTokenDetailsPayload,
-  fetchBackendTokenDetails,
-  getTokensCache,
+  fetchNonBackendTokenDetails,
   loadTokensCache,
+  pauseTokenUpdates,
+  resumeTokenUpdates,
   sendUpdateTokens,
   tokensPreload,
   updateTokens,
+  updateTokensFromBackend,
 } from '../common/tokens';
 import { MINUTE, SEC } from '../constants';
 import { storage } from '../storages';
@@ -62,14 +61,10 @@ const INCORRECT_TIME_DIFF = 30 * SEC;
 const ACCOUNT_CONFIG_INTERVAL = { focused: MINUTE, notFocused: 10 * MINUTE };
 const MFA_INTERVAL = MINUTE;
 
-/** A backstop for the token details payload, which is normally bounded by the size of the polled portfolios */
-const MAX_POST_TOKENS = 1500;
 /** Lets the balances of the several polled wallets arrive before the details of their new tokens are requested */
 const TOKEN_DETAILS_THROTTLE = 3 * SEC;
 
 let onUpdate: OnApiUpdate;
-/** Slugs of the last `GET /assets` response, reused when the details are requested outside `tryUpdateTokens` */
-let backendTokenSlugs = new Set<string>();
 let stopCommonBackendPolling: NoneToVoidFunction | undefined;
 let stopActiveAccountPolling: NoneToVoidFunction | undefined;
 const inactiveAccountPolling = createInactiveAccountsPollingManager();
@@ -86,6 +81,7 @@ export function initPolling(_onUpdate: OnApiUpdate) {
     _onUpdate(update);
   };
 
+  pauseTokenUpdates();
   void loadTokensCache();
 
   void Promise.allSettled([
@@ -141,34 +137,13 @@ function setupCommonBackendPolling() {
 async function tryUpdateTokens() {
   try {
     const langCode = await storage.getItem('langCode');
-    const tokens = await callBackendGet<ApiTokenWithPrice[]>('/assets', { langCode });
-
-    for (const token of tokens) {
-      token.isFromBackend = true;
-    }
-
-    await tokensPreload.promise;
-
-    backendTokenSlugs = new Set(tokens.map((t) => t.slug));
-
-    const nonBackendTokenDetails = await fetchNonBackendTokenDetails(langCode);
-
-    await updateTokens(tokens, () => sendUpdateTokens(onUpdate), nonBackendTokenDetails, true);
+    await updateTokensFromBackend(onUpdate, { langCode, shouldNarrowToHeldTokens: true });
   } catch (err) {
     logDebugError('tryUpdateTokens', err);
+  } finally {
+    await tokensPreload.promise;
+    resumeTokenUpdates();
   }
-}
-
-async function fetchNonBackendTokenDetails(langCode?: string) {
-  const tokensCache = getTokensCache();
-  // POST is used to retrieve data because the addresses may not fit into a URL
-  const tokenAddresses = buildTokenDetailsPayload(Object.values(tokensCache.bySlug), {
-    backendSlugs: backendTokenSlugs,
-    heldSlugs: getHeldSlugs(),
-    maxCount: MAX_POST_TOKENS,
-  });
-
-  return tokenAddresses.length ? fetchBackendTokenDetails(tokenAddresses, langCode) : undefined;
 }
 
 /**
@@ -179,7 +154,7 @@ const refreshTokenDetails = throttle(async () => {
   try {
     await tokensPreload.promise;
     const langCode = await storage.getItem('langCode');
-    const tokenDetails = await fetchNonBackendTokenDetails(langCode);
+    const tokenDetails = await fetchNonBackendTokenDetails({ langCode, shouldNarrowToHeldTokens: true });
 
     if (tokenDetails?.length) {
       await updateTokens([], () => sendUpdateTokens(onUpdate), tokenDetails, true);

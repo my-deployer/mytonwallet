@@ -165,14 +165,15 @@ open class WNavigationController(
     val bottomInset: Int
         get() {
             if (isCenteredWindow) return 0
+            val baseInset =
+                tabBarController?.getBottomNavigationHeight() ?: (window.systemBars?.bottom ?: 0)
             val gradientInset =
-                if (WGlobalStorage.isGradientNavigationBarActive()) {
+                if (baseInset > 0 && WGlobalStorage.isGradientNavigationBarActive()) {
                     ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp.roundToInt()
                 } else {
                     0
                 }
-            return gradientInset +
-                (tabBarController?.getBottomNavigationHeight() ?: (window.systemBars?.bottom ?: 0))
+            return gradientInset + baseInset
         }
 
     val imeInsetBottom: Int
@@ -750,7 +751,7 @@ open class WNavigationController(
         viewControllers.last().scrollToTop()
     }
 
-    fun onDestroy() {
+    open fun onDestroy() {
         viewControllers.forEach { it.onDestroy() }
         viewControllers.clear()
     }

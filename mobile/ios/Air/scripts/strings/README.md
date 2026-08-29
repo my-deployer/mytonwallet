@@ -28,11 +28,10 @@ python3 check_localization_completeness.py --help
 #### Examples
 
 ```bash
-# Check Russian localization
+# Check Russian localization (paths relative to this directory)
 python3 check_localization_completeness.py \
-  --base /Users/nikstar/Developer/mytonwallet-dev/src/i18n/en.yaml \
-  --compare /Users/nikstar/Developer/mytonwallet-dev/src/i18n/ru.yaml
-
+  --base ../../../../../src/i18n/en.yaml \
+  --compare ../../../../../src/i18n/ru.yaml
 ```
 
 #### Output
@@ -68,11 +67,14 @@ A Python script that scans all Swift files in the iOS folder and finds localizat
 #### Usage
 
 ```bash
-# Basic usage (from scripts/strings directory)
-python3 find_unused_localization_keys.py --ios-path ../../../..
+# Basic usage; the repository root is found from the script's own location
+python3 find_unused_localization_keys.py
 
 # With verbose output
-python3 find_unused_localization_keys.py --ios-path ../../../.. --verbose
+python3 find_unused_localization_keys.py --verbose
+
+# Point it at a different checkout
+python3 find_unused_localization_keys.py --ios-path /path/to/repo
 
 # Get help
 python3 find_unused_localization_keys.py --help
@@ -88,8 +90,11 @@ A convenience shell script that automatically checks common localizations agains
 # Run all checks
 ./check_localizations.sh
 
-# Or from anywhere
-/Users/nikstar/Developer/mytonwallet-dev/mobile/ios/Air/scripts/strings/check_localizations.sh
+# Or from anywhere — the repo root is derived from the script's own location
+path/to/repo/mobile/ios/Air/scripts/strings/check_localizations.sh
+
+# Override the repo root if the scripts were copied out of the repository
+BASE_DIR=/path/to/repo ./check_localizations.sh
 ```
 
 This script will automatically:

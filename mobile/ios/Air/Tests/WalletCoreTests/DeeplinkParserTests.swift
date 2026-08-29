@@ -95,6 +95,23 @@ struct DeeplinkParserTests {
         #expect(Deeplink(url: nonWalletConnectUriUrl) == nil)
     }
 
+    @Test(arguments: [
+        "mywallet-wc://request?requestId=123&sessionTopic=session-topic",
+        "https://connect.mywallet.io/wc?topic=session-topic&wc_ev=envelope%2Fpayload%3D",
+        "https://connect.mywallet.io/wc?topic=session-topic&message=envelope",
+    ])
+    func parsesWalletConnectLinkModeSessionRequest(value: String) throws {
+        let url = try #require(URL(string: value))
+        let deeplink = try #require(Deeplink(url: url))
+
+        guard case .walletConnect(let requestLink) = deeplink else {
+            Issue.record("Expected WalletConnect deeplink")
+            return
+        }
+
+        #expect(requestLink == value)
+    }
+
     @Test
     func parsesSellOnCardDeeplink() throws {
         let url = try #require(URL(string: "mtw://sell-on-card"))

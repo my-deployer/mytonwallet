@@ -202,7 +202,6 @@ class TonConnectRequestConnectVC(
 
         buttonView.setOnClickListener {
             val update = update ?: return@setOnClickListener
-
             if (update.needsNewMultichainWallet) {
                 createMultichainWallet(update)
                 return@setOnClickListener
@@ -234,10 +233,12 @@ class TonConnectRequestConnectVC(
             }
 
             if (!requiresSigning) {
+                buttonView.isLoading = true
                 connectConfirm(
                     update.promiseId,
                     enclaveToken = ""
                 ) { success, _ ->
+                    buttonView.isLoading = false
                     if (success) {
                         window!!.dismissLastNav()
                     }
@@ -484,7 +485,11 @@ class TonConnectRequestConnectVC(
                 accountId = update.accountId,
                 notifySDK = true
             ) { activatedAccount, _ ->
-                val activatedAccount = activatedAccount ?: return@activateAccount
+                val activatedAccount = activatedAccount ?: run {
+                    isConfirmed = false
+                    onCompletion(false, null)
+                    return@activateAccount
+                }
                 callback(activatedAccount)
             }
         }
@@ -592,7 +597,7 @@ class TonConnectRequestConnectVC(
         WalletCore.call(ApiMethod.Auth.GenerateMnemonic(), callback = { words, err ->
             val window = window
             if (words == null || window == null) {
-                passcodeConfirmVC.view.unlockView()
+                passcodeConfirmVC.restartAuth()
                 passcodeConfirmVC.showError(err?.parsed)
                 return@call
             }
@@ -609,7 +614,7 @@ class TonConnectRequestConnectVC(
     override fun showError(error: MBridgeError?) {
         val passcodeConfirmVC = creationPasscodeConfirmVC
         if (passcodeConfirmVC != null) {
-            passcodeConfirmVC.view.unlockView()
+            passcodeConfirmVC.restartAuth()
             passcodeConfirmVC.showError(error)
             return
         }

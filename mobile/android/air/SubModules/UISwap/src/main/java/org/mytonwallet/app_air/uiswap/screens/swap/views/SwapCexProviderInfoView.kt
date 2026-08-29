@@ -51,6 +51,9 @@ class SwapCexProviderInfoView @JvmOverloads constructor(
         movementMethod = LinkMovementMethod.getInstance()
     }
 
+    private var providerName: String? = null
+    private var cexLabel: String? = null
+
     init {
         linearLayout.addView(
             titleTextView,
@@ -77,35 +80,9 @@ class SwapCexProviderInfoView @JvmOverloads constructor(
         privacyPolicyUrl: String?,
         amlKycPolicyUrl: String?
     ) {
-        val template = LocaleController.getString(
-            "Cross-chain exchange provided by %provider%"
-        )
-        val placeholder = "%provider%"
-        val startIndex = template.indexOf(placeholder)
-
-        val (providerIconRes, providerIconHeightDp) = when (cexLabel) {
-            "changelly" -> R.drawable.ic_cex_changelly to 20
-            "near-intents" -> R.drawable.ic_cex_near_intents to 12
-            else -> null to 0
-        }
-        titleTextView.text = if (startIndex != -1 && providerIconRes != null) {
-            val builder = SpannableStringBuilder(template)
-            builder.replace(startIndex, startIndex + placeholder.length, " ")
-            val drawable = ContextCompat.getDrawable(context, providerIconRes)
-            drawable?.let {
-                drawable.setBoundsFitMin(providerIconHeightDp.dp)
-                builder.setSpan(
-                    VerticalImageSpan(it),
-                    startIndex,
-                    startIndex + 1,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
-            }
-            titleTextView.contentDescription = template.replace(placeholder, providerName ?: "")
-            builder
-        } else {
-            template.replace(placeholder, providerName ?: "")
-        }
+        this.providerName = providerName
+        this.cexLabel = cexLabel
+        updateTitle()
 
         if (termsOfUseUrl != null && privacyPolicyUrl != null) {
             val replacements = mutableListOf(
@@ -149,6 +126,38 @@ class SwapCexProviderInfoView @JvmOverloads constructor(
         }
     }
 
+    private fun updateTitle() {
+        val template = LocaleController.getString(
+            "Cross-chain exchange provided by %provider%"
+        )
+        val placeholder = "%provider%"
+        val startIndex = template.indexOf(placeholder)
+
+        val (providerIconRes, providerIconHeightDp) = when (cexLabel) {
+            "changelly" -> R.drawable.ic_cex_changelly to 20
+            "near-intents" -> R.drawable.ic_cex_near_intents to 12
+            else -> null to 0
+        }
+        titleTextView.text = if (startIndex != -1 && providerIconRes != null) {
+            val builder = SpannableStringBuilder(template)
+            builder.replace(startIndex, startIndex + placeholder.length, " ")
+            val drawable = ContextCompat.getDrawable(context, providerIconRes)
+            drawable?.let {
+                drawable.setBoundsFitMin(providerIconHeightDp.dp)
+                builder.setSpan(
+                    VerticalImageSpan(it),
+                    startIndex,
+                    startIndex + 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                )
+            }
+            titleTextView.contentDescription = template.replace(placeholder, providerName ?: "")
+            builder
+        } else {
+            template.replace(placeholder, providerName ?: "")
+        }
+    }
+
     override fun updateTheme() {
         setBackgroundColor(WColor.Background.color, 24f.dp)
 
@@ -157,5 +166,9 @@ class SwapCexProviderInfoView @JvmOverloads constructor(
         infoTextView.setTextColor(WColor.PrimaryText.color)
         infoTextView.setLinkTextColor(WColor.Tint.color)
         infoTextView.highlightColor = WColor.tintRippleColor
+
+        if (cexLabel != null) {
+            updateTitle()
+        }
     }
 }

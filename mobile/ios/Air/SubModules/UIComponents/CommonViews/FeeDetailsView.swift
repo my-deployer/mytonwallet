@@ -97,14 +97,7 @@ public struct FeeDetailsView: View {
             fullFeeExplanation
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            
-            if showExcess {
-                Text(lang("This is how the TON Blockchain works."))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                
-            }
-            
+
             if let extraContent = extraContent {
                 extraContent
             }
@@ -115,11 +108,27 @@ public struct FeeDetailsView: View {
 
     private var fullFeeExplanation: Text {
         let precision = fee.fullFee?.precision
-
-        if showExcess {
-            return Text("**\(Text(amount: fullAmount, format: .init(preset: .fee, roundHalfUp: true, precision: precision)))** need to be immediately debited from your wallet to pay the fee. Part of this will be returned in GRAM to you as excess within a few minutes.")
+        let fullAmountText = fullAmount.formatted(
+            .fee,
+            roundHalfUp: true,
+            precision: precision
+        )
+        if !showExcess {
+            let explanation = lang(
+                "$dapp_return_details",
+                arg1: "**\(fullAmountText)**",
+                arg2: ""
+            )
+            let firstParagraph = explanation.components(separatedBy: "\n\n").first ?? explanation
+            return Text(LocalizedStringKey(firstParagraph))
         }
 
-        return Text("**\(Text(amount: fullAmount, format: .init(preset: .fee)))** will be immediately debited from your wallet to pay the fee.")
+        let explanation = lang(
+            "$fee_details",
+            arg1: "**\(fullAmountText)**",
+            arg2: nativeToken.symbol,
+            arg3: nativeToken.chain.title
+        )
+        return Text(LocalizedStringKey(explanation))
     }
 }

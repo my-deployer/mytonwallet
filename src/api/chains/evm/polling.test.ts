@@ -7,6 +7,7 @@ import { swapReplaceActivities } from '../../common/swap';
 import { BalanceStream } from '../../common/websocket/balanceStream';
 import { getTokenActivitySlice } from './activities';
 import { setupActivePolling } from './polling';
+import { getIsWalletActive } from './wallet';
 
 jest.mock('../../common/accounts', () => ({
   fetchStoredWallet: jest.fn(),
@@ -64,6 +65,7 @@ jest.mock('./wallet', () => ({
 const ADDRESS = '0x5819e5Ff34198F315322e1863Be6C3dC927cC5C3';
 
 const mockedFetchStoredWallet = jest.mocked(fetchStoredWallet);
+const mockedGetIsWalletActive = jest.mocked(getIsWalletActive);
 const mockedSwapReplaceActivities = jest.mocked(swapReplaceActivities);
 const mockedGetTokenActivitySlice = jest.mocked(getTokenActivitySlice);
 const MockedBalanceStream = jest.mocked(BalanceStream);
@@ -102,6 +104,129 @@ describe('EVM polling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockedFetchStoredWallet.mockResolvedValue({ address: ADDRESS, index: 0 });
+    // The cases below all describe an address that has history to load, so the cheap
+    // has-anything-happened-here probe answers yes; the case that answers no is its own test.
+    mockedGetIsWalletActive.mockResolvedValue(true);
+  });
+
+  it('skips the initial history load for an address with nothing on this chain', async () => {
+    // The whole point of the gate: an account holds every EVM chain but uses none of them, and
+    // each unused chain would otherwise pay a history call on every launch.
+    mockedGetIsWalletActive.mockResolvedValue(false);
+
+    const onUpdate = jest.fn() as OnApiUpdate;
+    const onUpdatingStatusChange = jest.fn() as OnUpdatingStatusChange;
+    const account = {
+      type: 'view',
+      byChain: { bnb: { address: ADDRESS, index: 0 } },
+    } as ApiAccountWithChain<'bnb'>;
+
+    setupActivePolling('bnb', '0-mainnet', account, onUpdate, onUpdatingStatusChange, {});
+    await flushPromises();
+
+    expect(mockedGetTokenActivitySlice).not.toHaveBeenCalled();
+    // The feed blocks on `areInitialActivitiesLoaded[chain]`, so the empty result still has to
+    // be dispatched - skipping the fetch must not turn into skipping the update.
+    expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'initialActivities',
+      chain: 'bnb',
+      accountId: '0-mainnet',
+      mainActivities: [],
+      bySlug: {},
+    }));
+  });
+
+  // The skip has to declare the history finished. Without the flag the reducer leaves the
+  // chain's end state undefined, which reads as "still loading" and sends the UI to
+  // `fetchPastActivities` - the same paid history call the skip exists to avoid, one step later.
+  it('marks the skipped history as finished so the feed does not paginate for more', async () => {
+    mockedGetIsWalletActive.mockResolvedValue(false);
+
+    const onUpdate = jest.fn() as OnApiUpdate;
+    const onUpdatingStatusChange = jest.fn() as OnUpdatingStatusChange;
+    const account = {
+      type: 'view',
+      byChain: { bnb: { address: ADDRESS, index: 0 } },
+    } as ApiAccountWithChain<'bnb'>;
+
+    setupActivePolling('bnb', '0-mainnet', account, onUpdate, onUpdatingStatusChange, {});
+    await flushPromises();
+
+    expect(getInitialActivitiesUpdate(onUpdate)?.mainHistoryHasMore).toBe(false);
+  });
+
+  // The failure path emits the same empty shape deliberately WITHOUT the flag: a failed attempt
+  // learned nothing about whether history exists, and claiming the end was reached would hide a
+  // real feed behind an empty state until something else forced a reload.
+  it('leaves the history open when the initial load fails', async () => {
+    mockedGetTokenActivitySlice.mockRejectedValue(new Error('history down'));
+
+    const onUpdate = jest.fn() as OnApiUpdate;
+    const onUpdatingStatusChange = jest.fn() as OnUpdatingStatusChange;
+    const account = {
+      type: 'view',
+      byChain: { bnb: { address: ADDRESS, index: 0 } },
+    } as ApiAccountWithChain<'bnb'>;
+
+    setupActivePolling('bnb', '0-mainnet', account, onUpdate, onUpdatingStatusChange, {});
+    await flushPromises();
+
+    expect(getInitialActivitiesUpdate(onUpdate)?.mainHistoryHasMore).toBeUndefined();
+  });
+
+  // A probe that cannot answer must not be read as "no history". Its RPC provider is separate
+  // from the history provider, so an outage there says nothing about what the feed should show.
+  it('loads the initial history anyway when the activity probe fails', async () => {
+    mockedGetIsWalletActive.mockRejectedValue(new Error('rpc down'));
+    const activity = {
+      id: '0xkept',
+      timestamp: 1_773_000_000_000,
+      kind: 'transaction',
+      slug: getChainConfig('bnb').nativeToken.slug,
+    } as ApiActivity;
+    mockedGetTokenActivitySlice.mockResolvedValue({ activities: [activity], hasMore: false });
+
+    const onUpdate = jest.fn() as OnApiUpdate;
+    const onUpdatingStatusChange = jest.fn() as OnUpdatingStatusChange;
+    const account = {
+      type: 'view',
+      byChain: { bnb: { address: ADDRESS, index: 0 } },
+    } as ApiAccountWithChain<'bnb'>;
+
+    setupActivePolling('bnb', '0-mainnet', account, onUpdate, onUpdatingStatusChange, {});
+    await flushPromises();
+
+    expect(mockedGetTokenActivitySlice).toHaveBeenCalled();
+    expect(getInitialActivitiesUpdate(onUpdate)?.mainActivities).toEqual([activity]);
+  });
+
+  it('loads the initial history anyway when a socket event contradicts the skip', async () => {
+    // A socket event is evidence that something landed on chain, which outranks a probe taken
+    // before it. Without this the first funds an address ever receives would leave the feed
+    // empty until the verdict expires.
+    mockedGetIsWalletActive.mockResolvedValue(false);
+    const activity = { id: '0xfirst', timestamp: 1_773_000_000_000 } as ApiActivity;
+    mockedGetTokenActivitySlice.mockResolvedValue({ activities: [activity], hasMore: false });
+
+    const onUpdate = jest.fn() as OnApiUpdate;
+    const onUpdatingStatusChange = jest.fn() as OnUpdatingStatusChange;
+    const account = {
+      type: 'view',
+      byChain: { bnb: { address: ADDRESS, index: 0 } },
+    } as ApiAccountWithChain<'bnb'>;
+
+    setupActivePolling('bnb', '0-mainnet', account, onUpdate, onUpdatingStatusChange, {});
+    await flushPromises();
+    expect(mockedGetTokenActivitySlice).not.toHaveBeenCalled();
+
+    const balanceUpdate = getBalanceStreamInstance().onUpdate.mock.calls[0][0] as (
+      balances: Record<string, bigint>,
+      source: 'poll' | 'socket',
+    ) => void;
+    balanceUpdate({ bnb: 1n }, 'socket');
+    await flushPromises();
+
+    expect(mockedGetTokenActivitySlice).toHaveBeenCalled();
   });
 
   it('forces balance polling when initial activity catch-up finds an EVM transaction', async () => {

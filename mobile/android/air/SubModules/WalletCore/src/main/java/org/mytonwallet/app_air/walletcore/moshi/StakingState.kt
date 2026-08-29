@@ -34,6 +34,8 @@ sealed class StakingState {
         override val isUnstakeRequested: Boolean?,
         override val unstakeRequestAmount: BigInteger?,
         val tokenBalance: String,
+        /** Accrued loyalty bonus. Held outside the STAKED jetton and paid as a separate transfer on unstake. */
+        val loyaltyBalance: BigInteger?,
         val instantAvailable: BigInteger,
         val end: Long,
         val totalStakers: Int?,
@@ -196,6 +198,10 @@ sealed class StakingState {
 
                 is Jetton -> {
                     balance + unclaimedRewards
+                }
+
+                is Liquid -> {
+                    balance + (loyaltyBalance ?: BigInteger.ZERO)
                 }
 
                 else -> {

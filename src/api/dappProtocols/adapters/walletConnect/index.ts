@@ -26,6 +26,7 @@ import type {
   confirmDappRequestSignData,
 } from '../../../methods';
 import type {
+  ApiAnyDisplayError,
   ApiChain,
   ApiDappRequest,
   ApiDappTransfer,
@@ -38,6 +39,7 @@ import type { StoredDappConnection, StoredSessionChain } from '../../storage';
 import type {
   DappDisconnectRequest,
   UnifiedSignDataPayload } from '../../types';
+import { ApiCommonError } from '../../../types';
 import {
   type DappConnectionRequest,
   type DappConnectionResult,
@@ -67,11 +69,16 @@ import {
   APP_ICON_URL,
   APP_NAME,
   APP_WEBSITE_URL,
+  IS_AIR_APP,
   IS_EXTENSION,
   WALLET_CONNECT_PAY_APP_ID,
   WALLET_CONNECT_PROJECT_ID,
 } from '../../../../config';
 import { parseAccountId } from '../../../../util/account';
+import {
+  WALLETCONNECT_DEEPLINK,
+  WALLETCONNECT_UNIVERSAL_URLS,
+} from '../../../../util/deeplink/constants';
 import { getDappConnectionUniqueId } from '../../../../util/getDappConnectionUniqueId';
 import { logDebug, logDebugError } from '../../../../util/logs';
 import safeExec from '../../../../util/safeExec';
@@ -81,6 +88,7 @@ import {
   isWalletConnectPayAccountSwitch,
   isWalletConnectPayUserCancellation,
 } from '../../../../util/walletConnectPay';
+import { callWindow } from '../../../../util/windowProvider/connector';
 import chains from '../../../chains';
 import { getEvmProvider } from '../../../chains/evm/util/client';
 import {
@@ -91,7 +99,7 @@ import {
 } from '../../../common/accounts';
 import { createDappPromise } from '../../../common/dappPromises';
 import { isUpdaterAlive } from '../../../common/helpers';
-import { ApiUserRejectsError } from '../../../errors';
+import { ApiBaseError, ApiUserRejectsError } from '../../../errors';
 import { callHook } from '../../../hooks';
 import {
   addDapp,
@@ -99,6 +107,7 @@ import {
   getDapp,
   updateDapp,
 } from '../../../methods/dapps';
+import { getWalletConnectRequestKey, parseWalletConnectDeeplink } from './deeplink';
 import { resolveWalletConnectEvmSerializedTx } from './evmTransaction';
 import {
   ensureRequestParams,
@@ -135,14 +144,16 @@ import {
 } from './payMapping';
 import { READONLY_EVM_RPC_METHODS } from './readonlyMethods';
 
-// WalletConnect deep link patterns
-const WALLET_CONNECT_DEEP_LINK_PREFIXES = [
-  'wc:',
-  'https://walletconnect.com/wc',
-];
-
 const EVM_TX_FINALIZATION_POLL_MS = 2000;
 const EVM_TX_FINALIZATION_TIMEOUT_MS = 5 * 60 * 1000;
+
+type PendingReturnRequest = {
+  key: string;
+  shouldReturn: boolean;
+  promiseId?: string;
+  returnUrl?: string;
+  error?: ApiAnyDisplayError;
+};
 
 // Derive the EVM chain name set from the same EVM_CHAIN_IDS map the rest of the
 // adapter uses; hardcoding here would silently drift when a new chain joins the
@@ -172,6 +183,8 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
 
   private activePayContext?: WcPayContext;
 
+  private pendingReturnRequest?: PendingReturnRequest;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -193,6 +206,14 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       throw new Error('WalletConnect is unavailable: indexedDB is not supported');
     }
 
+    if (IS_AIR_APP) {
+      (globalThis as typeof globalThis & {
+        Linking?: { openURL(url: string): Promise<boolean> };
+      }).Linking ??= {
+        openURL: (url) => callWindow('openWalletConnectUrl', url),
+      };
+    }
+
     //
     // See: https://docs.walletconnect.network/wallet-sdk/web/usage
     //
@@ -204,6 +225,11 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
         description: 'Multichain cryptocurrency wallet',
         url: APP_WEBSITE_URL,
         icons: [APP_ICON_URL],
+        redirect: IS_AIR_APP ? {
+          native: WALLETCONNECT_DEEPLINK,
+          universal: WALLETCONNECT_UNIVERSAL_URLS[0],
+          linkMode: true,
+        } : undefined,
       },
       payConfig: {
         appId: WALLET_CONNECT_PAY_APP_ID,
@@ -226,8 +252,73 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       this.walletKit.off('session_authenticate', this.handleSessionAuthenticate);
     }
 
+    this.pendingReturnRequest = undefined;
     this.initialized = false;
     return Promise.resolve();
+  }
+
+  private bindReturnRequest(key: string, promiseId: string, returnUrl?: string) {
+    if (this.pendingReturnRequest && this.pendingReturnRequest.key !== key) return;
+    const shouldReturn = this.pendingReturnRequest?.shouldReturn === true;
+    this.pendingReturnRequest = { key, shouldReturn, promiseId, returnUrl };
+  }
+
+  private bindSessionReturnRequest(topic: string | undefined, requestId: string, promiseId: string) {
+    if (!topic) return;
+    const requestKey = `session:${topic}:${requestId}`;
+    const pendingKey = this.pendingReturnRequest?.key;
+    if (pendingKey && pendingKey !== requestKey && pendingKey !== `session:${topic}`) return;
+
+    const shouldReturn = this.pendingReturnRequest?.shouldReturn === true;
+    const returnUrl = this.walletKit.getActiveSessions()[topic]?.peer.metadata.redirect?.native;
+    this.pendingReturnRequest = { key: requestKey, shouldReturn, promiseId, returnUrl };
+  }
+
+  private settleSessionRequest(topic: string, requestId: number) {
+    const requestKey = `session:${topic}:${requestId}`;
+    this.settleReturnRequest(
+      this.pendingReturnRequest?.key === requestKey ? requestKey : `session:${topic}`,
+    );
+  }
+
+  private markSessionRequestFailed(topic: string, requestId: string | number, error: unknown) {
+    const requestKey = `session:${topic}:${requestId}`;
+    this.markReturnRequestFailed(
+      this.pendingReturnRequest?.key === requestKey ? requestKey : `session:${topic}`,
+      error,
+    );
+  }
+
+  private markReturnRequestFailed(key: string, error: unknown) {
+    if (error instanceof ApiUserRejectsError) return;
+
+    const displayError = error instanceof ApiBaseError && error.displayError
+      ? error.displayError
+      : ApiCommonError.ServerError;
+
+    if (this.pendingReturnRequest?.key === key && this.pendingReturnRequest.promiseId) {
+      this.pendingReturnRequest.error = displayError;
+    } else {
+      this.onUpdate({ type: 'showError', error: displayError });
+    }
+  }
+
+  private settleReturnRequest(key: string) {
+    const request = this.pendingReturnRequest;
+    if (request?.key !== key) return;
+    this.pendingReturnRequest = undefined;
+
+    if (!request.promiseId) {
+      logDebugError('walletConnect:returnToDapp', 'Request finished before its UI was presented', { key });
+      return;
+    }
+
+    this.onUpdate({
+      type: 'dappRequestSettled',
+      promiseId: request.promiseId,
+      returnStrategy: request.shouldReturn ? request.returnUrl || 'back' : 'none',
+      error: request.error,
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -242,11 +333,11 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
     let dappUniqueId = '';
     let dappAccountId = '';
     let dappUrl = '';
+    const pairingTopic = payload.topic;
 
     try {
       const { id, params, verifyContext, topic } = payload;
       const { requester, authPayload } = params;
-
       const populatedAuthPayload = populateAuthPayload({
         authPayload,
         chains: Object.keys(CHAIN_IDS),
@@ -325,6 +416,7 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       }
     } catch (err) {
       logDebugError('walletConnect:handleSessionAuthenticate', err);
+      this.markReturnRequestFailed(`pairing:${pairingTopic}`, err);
 
       try {
         await this.walletKit.rejectSessionAuthenticate({
@@ -340,6 +432,8 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
         dappUrl,
         dappUniqueId,
       );
+    } finally {
+      this.settleReturnRequest(`pairing:${pairingTopic}`);
     }
   };
 
@@ -414,6 +508,7 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
     let dappUniqueId = '';
     let dappAccountId = '';
     let dappUrl = '';
+    const pairingTopic = proposal.params.pairingTopic;
     try {
       const { id, params } = proposal;
       const { proposer, optionalNamespaces, requiredNamespaces } = params;
@@ -462,12 +557,19 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       );
     } catch (err) {
       logDebugError('walletConnect:handleSessionProposal', err);
+      if (pairingTopic) {
+        this.markReturnRequestFailed(`pairing:${pairingTopic}`, err);
+      }
 
       await deleteDapp(
         dappAccountId,
         dappUrl,
         dappUniqueId,
       );
+    } finally {
+      if (pairingTopic) {
+        this.settleReturnRequest(`pairing:${pairingTopic}`);
+      }
     }
   };
 
@@ -500,6 +602,17 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
    * Handle incoming session request (RPC call) from dApp.
    */
   private handleSessionRequest = async (event: WalletKitTypes.SessionRequest) => {
+    try {
+      await this.processSessionRequest(event);
+    } catch (err) {
+      logDebugError('walletConnect:handleSessionRequest', err);
+      this.markSessionRequestFailed(event.topic, event.id, err);
+    } finally {
+      this.settleSessionRequest(event.topic, event.id);
+    }
+  };
+
+  private processSessionRequest = async (event: WalletKitTypes.SessionRequest) => {
     const { id, topic, params } = event;
     const { request, chainId } = params;
 
@@ -917,6 +1030,13 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
             urlTrustStatus,
           };
 
+          if (message.protocolData.params.pairingTopic) {
+            this.bindReturnRequest(
+              `pairing:${message.protocolData.params.pairingTopic}`,
+              promiseId,
+              message.protocolData.params.proposer.metadata.redirect?.native,
+            );
+          }
           this.onUpdate({
             type: 'dappConnect',
             identifier: String(requestId),
@@ -949,6 +1069,13 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
 
       const uniqueId = getDappConnectionUniqueId(dapp);
 
+      if (message.protocolData.params.pairingTopic) {
+        this.bindReturnRequest(
+          `pairing:${message.protocolData.params.pairingTopic}`,
+          promiseId,
+          message.protocolData.params.proposer.metadata.redirect?.native,
+        );
+      }
       this.onUpdate({
         type: 'dappConnect',
         identifier: String(requestId),
@@ -1018,18 +1145,25 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       };
     } catch (err) {
       logDebugError('walletConnect:connect', err);
+      if (message.protocolData.params.pairingTopic) {
+        this.markReturnRequestFailed(`pairing:${message.protocolData.params.pairingTopic}`, err);
+      }
 
       if (message.transport === 'relay') {
-        if (message.protocolData.isSessionAuthenticate) {
-          await this.walletKit.rejectSessionAuthenticate({
-            id: message.protocolData.id,
-            reason: getSdkError('USER_REJECTED'),
-          });
-        } else {
-          await this.walletKit.rejectSession({
-            id: message.protocolData.id,
-            reason: getSdkError('USER_REJECTED'),
-          });
+        try {
+          if (message.protocolData.isSessionAuthenticate) {
+            await this.walletKit.rejectSessionAuthenticate({
+              id: message.protocolData.id,
+              reason: getSdkError('USER_REJECTED'),
+            });
+          } else {
+            await this.walletKit.rejectSession({
+              id: message.protocolData.id,
+              reason: getSdkError('USER_REJECTED'),
+            });
+          }
+        } catch (rejectErr) {
+          logDebugError('walletConnect:connect:reject', rejectErr);
         }
       }
 
@@ -1304,6 +1438,7 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
 
       const { promiseId, promise } = createDappPromise();
 
+      this.bindSessionReturnRequest(message.payload.topic, message.id, promiseId);
       this.onUpdate({
         type: 'dappSendTransactions',
         promiseId,
@@ -1380,6 +1515,7 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       logDebugError('walletConnect:sendTransaction', err);
 
       if (message.payload.topic) {
+        this.markSessionRequestFailed(message.payload.topic, message.id, err);
         const response = {
           id: Number(message.id),
           jsonrpc: '2.0',
@@ -1497,6 +1633,9 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
         hasTopic: !!message.payload.topic,
       });
 
+      if (!message.payload.isSessionAuthenticate) {
+        this.bindSessionReturnRequest(message.payload.topic, message.id, promiseId);
+      }
       this.onUpdate({
         type: 'dappSignData',
         operationChain: message.chain,
@@ -1549,6 +1688,9 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
       logDebugError('walletConnect:signData', err);
 
       if (message.payload.topic) {
+        if (!message.payload.isSessionAuthenticate) {
+          this.markSessionRequestFailed(message.payload.topic, message.id, err);
+        }
         const response = {
           id: Number(message.id),
           jsonrpc: '2.0',
@@ -1682,16 +1824,61 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
   // ---------------------------------------------------------------------------
 
   canHandleDeepLink(url: string): boolean {
-    return WALLET_CONNECT_DEEP_LINK_PREFIXES.some((prefix) => url.startsWith(prefix))
-      || isPaymentLink(url);
+    return Boolean(parseWalletConnectDeeplink(url)) || isPaymentLink(url);
   }
 
-  async handleDeepLink(url: string): Promise<string | undefined> {
+  async handleDeepLink(
+    url: string,
+    shouldReturnToDapp?: boolean,
+  ): Promise<string | undefined> {
     try {
       if (isPaymentLink(url)) {
         await this.processPayment(url);
       } else {
-        await this.walletKit.pair({ uri: url });
+        const deeplink = parseWalletConnectDeeplink(url);
+        if (deeplink) {
+          const sessionExists = Boolean(this.walletKit.getActiveSessions()[deeplink.topic]);
+          const requestKey = getWalletConnectRequestKey(deeplink, sessionExists);
+          if (shouldReturnToDapp) {
+            this.pendingReturnRequest = {
+              key: requestKey,
+              shouldReturn: !deeplink.isLinkModeRequest,
+            };
+          } else if (this.pendingReturnRequest?.key === requestKey) {
+            this.pendingReturnRequest = undefined;
+          }
+
+          if (deeplink.message) {
+            if (sessionExists) {
+              await this.walletKit.engine.signClient.session.update(deeplink.topic, {
+                transportType: 'link_mode',
+              });
+            }
+
+            this.walletKit.core.dispatchEnvelope({
+              topic: deeplink.topic,
+              message: deeplink.message,
+              sessionExists,
+            });
+          }
+        }
+
+        if (!deeplink || deeplink.shouldPair) {
+          try {
+            await this.walletKit.pair({ uri: url });
+          } catch (err) {
+            this.markReturnRequestFailed(deeplink?.requestKey ?? '', err);
+            const pendingReturnRequest = this.pendingReturnRequest;
+            if (
+              pendingReturnRequest
+              && pendingReturnRequest.key === deeplink?.requestKey
+              && !pendingReturnRequest.promiseId
+            ) {
+              this.pendingReturnRequest = undefined;
+            }
+            throw err;
+          }
+        }
       }
     } catch (err) {
       logDebugError('walletConnect:handleDeepLink', err);

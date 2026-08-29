@@ -1,6 +1,5 @@
 package org.mytonwallet.app_air.uiassets.viewControllers.token
 
-import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.Gravity
@@ -12,7 +11,6 @@ import android.view.View.VISIBLE
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.view.animation.DecelerateInterpolator
 import android.widget.LinearLayout
 import androidx.core.view.isVisible
 import androidx.core.view.setPadding
@@ -29,7 +27,6 @@ import org.mytonwallet.app_air.uiagent.viewControllers.agent.AgentVC
 import org.mytonwallet.app_air.uiassets.viewControllers.token.cells.TokenChartCell
 import org.mytonwallet.app_air.uiassets.viewControllers.token.cells.TokenInfoCell
 import org.mytonwallet.app_air.uiassets.viewControllers.token.views.TokenHeaderView
-import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
@@ -272,12 +269,6 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                     LARGE_INT
                 }
             )
-            val computedOffset = recyclerView.computeVerticalScrollOffset()
-            if (dy > 2 && computedOffset > 100) {
-                hideTradeButtons()
-            } else if (dy < -2 || computedOffset < 100) {
-                showTradeButtons()
-            }
         }
 
         override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
@@ -381,10 +372,6 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
         )
     }
 
-    private var tradeButtonsVisibilityFraction = 1f
-    private var tradeButtonsVisibilityTarget = 1f
-    private var tradeButtonsVisibilityAnimator: ValueAnimator? = null
-
     private fun tradeButtonsBottomMargin(): Int = 10.dp + (window?.systemBars?.bottom ?: 0)
 
     private fun updateTradeButtonsLayout() {
@@ -398,7 +385,6 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
             toEndPx(tradeButtonsView, horizontalMargin + systemBarEndInset)
             toBottomPx(tradeButtonsView, tradeButtonsBottomMargin())
         }
-        renderTradeButtonsVisibility()
     }
 
     private fun updateTradeButtons() {
@@ -407,56 +393,6 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                 BalanceStore.getBalances(account.accountId)?.get(token.slug)
                     ?: BigInteger.ZERO
                 ) > BigInteger.ZERO
-    }
-
-    private fun renderTradeButtonsVisibility() {
-        tradeButtonsView.alpha = tradeButtonsVisibilityFraction
-        tradeButtonsView.translationY =
-            (50.dp + tradeButtonsBottomMargin()) * (1f - tradeButtonsVisibilityFraction)
-    }
-
-    private fun showTradeButtons() {
-        if (!areTradeActionsAvailable || tradeButtonsVisibilityTarget == 1f) return
-        buyButton.isClickable = true
-        sellButton.isClickable = true
-        tradeButtonsVisibilityAnimator?.cancel()
-        tradeButtonsVisibilityAnimator =
-            ValueAnimator.ofFloat(tradeButtonsVisibilityFraction, 1f).apply {
-                duration =
-                    (
-                        AnimationConstants.VERY_QUICK_ANIMATION *
-                            (1f - tradeButtonsVisibilityFraction)
-                        ).toLong()
-                interpolator = DecelerateInterpolator()
-                addUpdateListener {
-                    tradeButtonsVisibilityFraction = animatedValue as Float
-                    renderTradeButtonsVisibility()
-                }
-                tradeButtonsVisibilityTarget = 1f
-                start()
-            }
-    }
-
-    private fun hideTradeButtons() {
-        if (!areTradeActionsAvailable || tradeButtonsVisibilityTarget == 0f) return
-        buyButton.isClickable = false
-        sellButton.isClickable = false
-        tradeButtonsVisibilityAnimator?.cancel()
-        tradeButtonsVisibilityAnimator =
-            ValueAnimator.ofFloat(tradeButtonsVisibilityFraction, 0f).apply {
-                duration =
-                    (
-                        AnimationConstants.VERY_QUICK_ANIMATION *
-                            tradeButtonsVisibilityFraction
-                        ).toLong()
-                interpolator = DecelerateInterpolator()
-                addUpdateListener {
-                    tradeButtonsVisibilityFraction = animatedValue as Float
-                    renderTradeButtonsVisibility()
-                }
-                tradeButtonsVisibilityTarget = 0f
-                start()
-            }
     }
 
     override fun setupViews() {
@@ -1189,7 +1125,6 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     }
 
     override fun onDestroy() {
-        tradeButtonsVisibilityAnimator?.cancel()
         buyButton.setOnClickListener(null)
         sellButton.setOnClickListener(null)
         super.onDestroy()

@@ -392,13 +392,13 @@ sealed class ApiMethod<T> {
                 .build()
         }
 
-        class CreateSubWallet(accountId: String, password: String) :
+        class CreateSubWallet(accountId: String, enclaveToken: String) :
             ApiMethod<ApiCreateSubWalletResult>() {
             override val name: String = "createSubWallet"
             override val type: Type = ApiCreateSubWalletResult::class.java
             override val arguments: String = ArgumentsBuilder()
                 .string(accountId)
-                .string(password)
+                .string(enclaveToken)
                 .build()
         }
 
@@ -814,11 +814,13 @@ sealed class ApiMethod<T> {
             }
         }
 
-        class WalletConnectHandleDeepLink(url: String) : ApiMethod<Any?>() {
+        class WalletConnectHandleDeepLink(url: String, shouldReturnToDapp: Boolean) :
+            ApiMethod<Any?>() {
             override val name: String = "walletConnect_handleDeepLink"
             override val type: Type = Any::class.java
             override val arguments: String = ArgumentsBuilder()
                 .string(url)
+                .boolean(shouldReturnToDapp)
                 .build()
         }
 

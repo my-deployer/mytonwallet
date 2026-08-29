@@ -154,7 +154,7 @@ class WGradientMaskView(child: View) : FrameLayout(child.context) {
     }
 
     override fun dispatchDraw(canvas: Canvas) {
-        if (!isAnimating || fadeAlpha <= 0f) {
+        if (!isAnimating || fadeAlpha <= 0f || gradientPaint.shader == null) {
             super.dispatchDraw(canvas)
             return
         }

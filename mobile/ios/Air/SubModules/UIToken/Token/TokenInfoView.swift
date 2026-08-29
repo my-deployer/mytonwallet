@@ -49,21 +49,37 @@ enum TokenInfoState: Equatable {
     }
 }
 
+struct TokenInfoPresentationSnapshot: Equatable {
+    let state: TokenInfoState
+    let showsOriginalDescription: Bool
+    let expansionProgress: CGFloat
+    let expandedHeight: CGFloat
+}
+
+enum TokenInfoPresentationOverlay: Equatable {
+    case skeleton
+    case content(TokenInfoPresentationSnapshot)
+}
+
 @MainActor
 final class TokenInfoModel: ObservableObject {
     static let collapsedHeight = CGFloat(64)
     static let initialExpandedHeight = CGFloat(368)
     static let animationDuration = TimeInterval(0.45)
+    static let crossfadeDuration = TimeInterval(0.2)
 
     @Published private(set) var state: TokenInfoState
     @Published private(set) var isExpanded: Bool
     @Published private(set) var expansionProgress: CGFloat
     @Published private(set) var contentOpacity: CGFloat
-    @Published private(set) var skeletonOpacity: CGFloat
-    @Published private(set) var showsSkeleton: Bool
+    @Published private(set) var presentationOverlay: TokenInfoPresentationOverlay?
+    @Published private(set) var presentationOverlayOpacity: CGFloat
+    @Published private(set) var layoutRevision = 0
     @Published private(set) var showsOriginalDescription = false
 
     var measuredExpandedHeight = initialExpandedHeight
+    private(set) var pendingPresentationRevision: Int?
+    private(set) var isConfiguringState = false
 
     var onToggleRequested: (() -> Void)?
     private var presentationTask: Task<Void, Never>?
@@ -77,76 +93,96 @@ final class TokenInfoModel: ObservableObject {
         self.isExpanded = isExpanded
         self.expansionProgress = isExpanded ? 1 : 0
         self.contentOpacity = state.isLoading ? 0 : 1
-        self.skeletonOpacity = state.isLoading ? 1 : 0
-        self.showsSkeleton = state.isLoading
+        self.presentationOverlay = nil
+        self.presentationOverlayOpacity = 0
     }
 
     var canExpand: Bool { state.canExpand }
-    var displayedDescription: String? {
-        guard case .details(let details) = state else {
-            return state.description
-        }
-        return showsOriginalDescription
-            ? details.originalDescriptionText ?? lang("$token_info_no_description")
-            : details.displayDescriptionText ?? lang("$token_info_no_description")
+    var targetExpansionProgress: CGFloat { isExpanded && canExpand ? 1 : 0 }
+    var currentPresentationSnapshot: TokenInfoPresentationSnapshot {
+        TokenInfoPresentationSnapshot(
+            state: state,
+            showsOriginalDescription: showsOriginalDescription,
+            expansionProgress: expansionProgress,
+            expandedHeight: measuredExpandedHeight
+        )
     }
-    var isMissingDescription: Bool {
-        guard case .details(let details) = state else { return false }
-        return details.displayDescriptionText == nil
-    }
-    var isUsingLocalizedDescription: Bool {
-        guard case .details(let details) = state else { return false }
-        return !showsOriginalDescription
-            && details.localizedDescriptionText != nil
-            && details.originalDescriptionText != nil
-    }
-
     func configure(state: TokenInfoState) {
         guard self.state != state else { return }
         presentationTask?.cancel()
-        let isFinishingInitialLoad = self.state.isLoading && showsSkeleton && !state.isLoading
-        let shouldRestoreExpansion = !self.state.canExpand && state.canExpand
+        presentationTask = nil
 
+        if state.isLoading {
+            isConfiguringState = true
+            defer { isConfiguringState = false }
+            withTransaction(Transaction(animation: nil)) {
+                self.state = state
+                showsOriginalDescription = false
+                isExpanded = false
+                expansionProgress = 0
+                contentOpacity = 0
+                presentationOverlay = nil
+                presentationOverlayOpacity = 0
+                pendingPresentationRevision = nil
+                layoutRevision &+= 1
+            }
+            return
+        }
+
+        let previousState = self.state
+        let previousSnapshot = currentPresentationSnapshot
+        let overlay: TokenInfoPresentationOverlay = previousState.isLoading
+            ? .skeleton
+            : .content(previousSnapshot)
+        let shouldRestoreExpansion = !previousState.canExpand && state.canExpand
+        let revision = layoutRevision &+ 1
+
+        isConfiguringState = true
+        defer { isConfiguringState = false }
         withTransaction(Transaction(animation: nil)) {
+            presentationOverlay = overlay
+            presentationOverlayOpacity = 1
+            contentOpacity = 0
             self.state = state
             showsOriginalDescription = false
             if !state.canExpand {
                 isExpanded = false
-                expansionProgress = 0
             } else if shouldRestoreExpansion {
                 isExpanded = preferredExpansion
-                expansionProgress = isExpanded ? 1 : 0
             }
+            pendingPresentationRevision = revision
+            layoutRevision = revision
+        }
+    }
 
-            if state.isLoading {
-                showsSkeleton = true
-                skeletonOpacity = 1
-                contentOpacity = 0
-            } else if isFinishingInitialLoad {
-                showsSkeleton = true
-                skeletonOpacity = 1
-                contentOpacity = 0
-            } else {
-                showsSkeleton = false
-                skeletonOpacity = 0
-                contentOpacity = 1
-            }
+    func beginPresentationTransition(revision: Int, animated: Bool) {
+        guard pendingPresentationRevision == revision else { return }
+        pendingPresentationRevision = nil
+        presentationTask?.cancel()
+
+        guard animated, presentationOverlay != nil else {
+            finishPresentationTransition()
+            return
         }
 
-        guard isFinishingInitialLoad else { return }
+        withAnimation(.easeInOut(duration: Self.crossfadeDuration)) {
+            presentationOverlayOpacity = 0
+            contentOpacity = 1
+        }
         presentationTask = Task { @MainActor [weak self] in
-            await Task.yield()
-            guard let self, !Task.isCancelled else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                self.skeletonOpacity = 0
-                self.contentOpacity = 1
-            }
-            try? await Task.sleep(for: .milliseconds(200))
+            try? await Task.sleep(for: .seconds(Self.crossfadeDuration))
             guard !Task.isCancelled else { return }
-            withTransaction(Transaction(animation: nil)) {
-                self.showsSkeleton = false
-            }
+            self?.finishPresentationTransition()
         }
+    }
+
+    private func finishPresentationTransition() {
+        withTransaction(Transaction(animation: nil)) {
+            contentOpacity = 1
+            presentationOverlayOpacity = 0
+            presentationOverlay = nil
+        }
+        presentationTask = nil
     }
 
     func requestToggle() {
@@ -164,42 +200,123 @@ final class TokenInfoModel: ObservableObject {
     }
 
     func setExpansionProgress(_ expansionProgress: CGFloat) {
-        self.expansionProgress = min(max(expansionProgress, 0), 1)
+        let expansionProgress = min(max(expansionProgress, 0), 1)
+        guard abs(self.expansionProgress - expansionProgress) > 0.001 else { return }
+        self.expansionProgress = expansionProgress
     }
+
+    @discardableResult
+    func updateMeasuredExpandedHeight(_ height: CGFloat) -> Bool {
+        let height = max(height, Self.collapsedHeight)
+        guard canExpand, abs(measuredExpandedHeight - height) > 0.5 else { return false }
+        measuredExpandedHeight = height
+        return true
+    }
+}
+
+private struct TokenInfoLayoutMeasurement: Equatable {
+    let height: CGFloat
+    let revision: Int
 }
 
 struct TokenInfoView: View {
     @ObservedObject var model: TokenInfoModel
-    var onHeightChange: (CGFloat) -> Void = { _ in }
+    var onHeightChange: (CGFloat, Int) -> Void = { _, _ in }
     @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            if let details = model.state.details {
-                detailsContent(details)
-                    .opacity(model.expansionProgress)
-                    .allowsHitTesting(model.isExpanded)
-                    .accessibilityHidden(!model.isExpanded)
+        let layoutRevision = model.layoutRevision
+        let isStaticLoading = model.state.isLoading && model.pendingPresentationRevision == nil
+        return ZStack(alignment: .top) {
+            contentLayer(
+                state: model.state,
+                showsOriginalDescription: model.showsOriginalDescription,
+                expansionProgress: model.expansionProgress,
+                showsSkeleton: isStaticLoading,
+                isInteractive: model.presentationOverlay == nil
+            )
+            .opacity(isStaticLoading ? 1 : model.contentOpacity)
+            .onGeometryChange(for: TokenInfoLayoutMeasurement.self, of: { proxy in
+                TokenInfoLayoutMeasurement(
+                    height: proxy.size.height,
+                    revision: layoutRevision
+                )
+            }) { measurement in
+                onHeightChange(measurement.height, measurement.revision)
             }
+
+            // Measure the incoming layer directly. The outgoing layer may remain at its old
+            // height during the crossfade without changing the target reported to UIKit.
+            presentationOverlay
+                .opacity(model.presentationOverlayOpacity)
         }
         .background(Color.air.groupedItem)
         .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
-            onHeightChange(height)
-        }
         .accessibilityElement(children: .contain)
     }
 
     @ViewBuilder
-    private func detailsContent(_ details: ApiTokenDetails) -> some View {
+    private var presentationOverlay: some View {
+        switch model.presentationOverlay {
+        case .skeleton:
+            contentLayer(
+                state: .loading,
+                showsOriginalDescription: false,
+                expansionProgress: 0,
+                showsSkeleton: true,
+                isInteractive: false
+            )
+        case .content(let snapshot):
+            contentLayer(
+                state: snapshot.state,
+                showsOriginalDescription: snapshot.showsOriginalDescription,
+                expansionProgress: snapshot.expansionProgress,
+                showsSkeleton: false,
+                isInteractive: false
+            )
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private func contentLayer(
+        state: TokenInfoState,
+        showsOriginalDescription: Bool,
+        expansionProgress: CGFloat,
+        showsSkeleton: Bool,
+        isInteractive: Bool
+    ) -> some View {
+        VStack(spacing: 0) {
+            header(
+                state: state,
+                showsOriginalDescription: showsOriginalDescription,
+                expansionProgress: expansionProgress,
+                showsSkeleton: showsSkeleton,
+                isInteractive: isInteractive
+            )
+
+            if let details = state.details {
+                detailsContent(details, showsOriginalDescription: showsOriginalDescription)
+                    .opacity(expansionProgress)
+                    .allowsHitTesting(isInteractive && model.isExpanded)
+                    .accessibilityHidden(!isInteractive || !model.isExpanded)
+            }
+        }
+        .allowsHitTesting(isInteractive)
+        .accessibilityHidden(!isInteractive)
+    }
+
+    @ViewBuilder
+    private func detailsContent(
+        _ details: ApiTokenDetails,
+        showsOriginalDescription: Bool
+    ) -> some View {
         let tokenLinks = details.links?.filter { ![.documentation, .sourceCode].contains($0.kind) } ?? []
         let supply = supplyDetails(details)
         let hasMetrics = details.marketCap != nil || supply != nil || details.createdAt != nil || details.volume24h != nil
 
         VStack(spacing: 0) {
-            if model.isUsingLocalizedDescription {
+            if isUsingLocalizedDescription(details, showsOriginalDescription: showsOriginalDescription) {
                 translationAttribution
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
@@ -248,29 +365,46 @@ struct TokenInfoView: View {
         }
     }
 
-    private var header: some View {
-        ZStack(alignment: .topTrailing) {
-            headerLabels
-            if model.canExpand {
-                chevron
+    private func header(
+        state: TokenInfoState,
+        showsOriginalDescription: Bool,
+        expansionProgress: CGFloat,
+        showsSkeleton: Bool,
+        isInteractive: Bool
+    ) -> some View {
+        let canExpand = state.canExpand
+        return ZStack(alignment: .topTrailing) {
+            headerLabels(
+                state: state,
+                showsOriginalDescription: showsOriginalDescription,
+                expansionProgress: expansionProgress,
+                showsSkeleton: showsSkeleton
+            )
+            if canExpand {
+                chevron(expansionProgress: expansionProgress)
                     .transition(.opacity)
             }
         }
         .frame(minHeight: TokenInfoModel.collapsedHeight, alignment: .top)
         .contentShape(.rect)
         .onTapGesture {
-            if model.canExpand {
+            if isInteractive, canExpand {
                 model.requestToggle()
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(model.canExpand ? .isButton : [])
+        .accessibilityAddTraits(canExpand ? .isButton : [])
         .accessibilityLabel(lang("Info"))
-        .accessibilityValue(model.canExpand ? (model.isExpanded ? lang("Expanded") : lang("Collapsed")) : "")
-        .accessibilityHint(model.canExpand ? (model.isExpanded ? lang("$token_info_collapse_hint") : lang("$token_info_expand_hint")) : "")
+        .accessibilityValue(canExpand ? (model.isExpanded ? lang("Expanded") : lang("Collapsed")) : "")
+        .accessibilityHint(canExpand ? (model.isExpanded ? lang("$token_info_collapse_hint") : lang("$token_info_expand_hint")) : "")
     }
 
-    private var headerLabels: some View {
+    private func headerLabels(
+        state: TokenInfoState,
+        showsOriginalDescription: Bool,
+        expansionProgress: CGFloat,
+        showsSkeleton: Bool
+    ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(lang("Info"))
                 .textStyle(.supporting)
@@ -279,17 +413,20 @@ struct TokenInfoView: View {
                 .frame(height: 18, alignment: .topLeading)
 
             ZStack(alignment: .topLeading) {
-                if model.showsSkeleton {
+                if showsSkeleton {
                     loadingPlaceholder
                         .skeletonContainer(
                             isActive: true,
                             shimmerReferenceHeight: TokenInfoModel.collapsedHeight
                         )
-                        .opacity(model.skeletonOpacity)
                 }
 
-                statePresentation
-                    .opacity(model.contentOpacity)
+                statePresentation(
+                    state: state,
+                    showsOriginalDescription: showsOriginalDescription,
+                    expansionProgress: expansionProgress
+                )
+                .opacity(showsSkeleton ? 0 : 1)
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
@@ -300,27 +437,33 @@ struct TokenInfoView: View {
     }
 
     private var loadingPlaceholder: some View {
-        Color.clear
-            .frame(width: 184, height: 19)
-            .skeletonPlaceholder(
-                surface: .light,
-                cornerRadius: 4,
-                barInset: .init(top: 3, leading: 0, bottom: 3, trailing: 0)
-            )
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.air.groupedBackground.opacity(0.5))
+            .frame(width: 184, height: 13)
+            .frame(height: 19)
+            .skeleton(cornerRadius: 4)
     }
 
     @ViewBuilder
-    private var statePresentation: some View {
-        switch model.state {
+    private func statePresentation(
+        state: TokenInfoState,
+        showsOriginalDescription: Bool,
+        expansionProgress: CGFloat
+    ) -> some View {
+        switch state {
         case .hidden:
             EmptyView()
         case .loading:
             Color.clear.frame(height: 19)
-        case .details:
-            if let description = model.displayedDescription {
+        case .details(let details):
+            if let description = displayedDescription(
+                details,
+                showsOriginalDescription: showsOriginalDescription
+            ) {
                 descriptionStack(
                     description,
-                    color: model.isMissingDescription ? Color.air.secondaryLabel : Color.air.primaryLabel
+                    color: details.displayDescriptionText == nil ? Color.air.secondaryLabel : Color.air.primaryLabel,
+                    expansionProgress: expansionProgress
                 )
             }
         case .fallback(let text):
@@ -330,13 +473,17 @@ struct TokenInfoView: View {
         }
     }
 
-    private func descriptionStack(_ text: String, color: Color) -> some View {
+    private func descriptionStack(
+        _ text: String,
+        color: Color,
+        expansionProgress: CGFloat
+    ) -> some View {
         ZStack(alignment: .topLeading) {
             description(text, lineLimit: nil, color: color)
-                .opacity(model.expansionProgress)
+                .opacity(expansionProgress)
 
             description(text, lineLimit: 1, color: color)
-                .opacity(1 - model.expansionProgress)
+                .opacity(1 - expansionProgress)
         }
         .padding(.trailing, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -356,19 +503,37 @@ struct TokenInfoView: View {
         .textStyle(.footnote)
     }
 
-    private var chevron: some View {
+    private func chevron(expansionProgress: CGFloat) -> some View {
         Image(systemName: "chevron.down")
             .textStyle(.badgeBold, content: .technical)
             .foregroundStyle(Color.air.primaryLabel.opacity(0.3))
             .frame(width: 24, height: 24)
-            .rotationEffect(.degrees(chevronRotation))
+            .rotationEffect(.degrees(chevronRotation(expansionProgress: expansionProgress)))
             .padding(.top, 20)
             .padding(.trailing, 12)
     }
 
-    private var chevronRotation: Double {
+    private func chevronRotation(expansionProgress: CGFloat) -> Double {
         let direction = layoutDirection == .leftToRight ? -1.0 : 1.0
-        return direction * 180 * Double(model.expansionProgress)
+        return direction * 180 * Double(expansionProgress)
+    }
+
+    private func displayedDescription(
+        _ details: ApiTokenDetails,
+        showsOriginalDescription: Bool
+    ) -> String? {
+        showsOriginalDescription
+            ? details.originalDescriptionText ?? lang("$token_info_no_description")
+            : details.displayDescriptionText ?? lang("$token_info_no_description")
+    }
+
+    private func isUsingLocalizedDescription(
+        _ details: ApiTokenDetails,
+        showsOriginalDescription: Bool
+    ) -> Bool {
+        !showsOriginalDescription
+            && details.localizedDescriptionText != nil
+            && details.originalDescriptionText != nil
     }
 
     private func description(
@@ -378,7 +543,7 @@ struct TokenInfoView: View {
     ) -> some View {
         Text(verbatim: description)
             .textStyle(.callout)
-            .tracking(-0.43)
+            .tracking(-0.12)
             .lineSpacing(3)
             .foregroundStyle(color)
             .lineLimit(lineLimit)

@@ -10,6 +10,7 @@ import android.os.Build
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
+import kotlin.math.roundToInt
 import org.mytonwallet.app_air.uicomponents.drawable.StickyBottomGradientDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.widgets.WBlurryBackgroundView
@@ -51,6 +52,9 @@ class ReversedCornerViewUpsideDown(
 
     val extraTopHeight: Int
         get() = if (isGradientMode) ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp.toInt() else 0
+
+    val cornerHeight: Int
+        get() = if (isGradientMode) 0 else ViewConstants.TOOLBAR_RADIUS.dp.roundToInt()
 
     private var blurryBackgroundView: WBlurryBackgroundView? = null
 

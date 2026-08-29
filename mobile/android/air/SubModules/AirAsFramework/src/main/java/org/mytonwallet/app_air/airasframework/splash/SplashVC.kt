@@ -56,6 +56,7 @@ import org.mytonwallet.app_air.uisettings.viewControllers.userResponsibility.Use
 import org.mytonwallet.app_air.uisettings.viewControllers.walletVersions.WalletVersionsVC
 import org.mytonwallet.app_air.uistake.earn.EarnRootVC
 import org.mytonwallet.app_air.uiswap.screens.swap.SwapVC
+import org.mytonwallet.app_air.uitonconnect.DappRequestNavigationController
 import org.mytonwallet.app_air.uitonconnect.TonConnectController
 import org.mytonwallet.app_air.uitonconnect.viewControllers.connect.TonConnectRequestConnectVC
 import org.mytonwallet.app_air.uitonconnect.viewControllers.send.requestSend.TonConnectRequestSendVC
@@ -700,27 +701,21 @@ class SplashVC(context: Context) :
             }
 
             is Deeplink.WalletConnect -> {
-                DappDeeplinkReturnTracker.expectWalletConnect(
-                    deeplink.requestUri.toString(),
-                    shouldReturn = source == DeeplinkOpenSource.OS_EXTERNAL
-                )
                 WalletCore.call(
-                    ApiMethod.DApp.WalletConnectHandleDeepLink(deeplink.requestUri.toString())
+                    ApiMethod.DApp.WalletConnectHandleDeepLink(
+                        deeplink.requestUri.toString(),
+                        shouldReturnToDapp = source == DeeplinkOpenSource.OS_EXTERNAL
+                    )
                 ) { _, _ -> }
-                return true
-            }
-
-            is Deeplink.WalletConnectSessionRequest -> {
-                DappDeeplinkReturnTracker.expectWalletConnectSessionRequest(
-                    deeplink.sessionTopic,
-                    shouldReturn = source == DeeplinkOpenSource.OS_EXTERNAL
-                )
                 return true
             }
 
             is Deeplink.WalletConnectPay -> {
                 WalletCore.call(
-                    ApiMethod.DApp.WalletConnectHandleDeepLink(deeplink.requestUri.toString())
+                    ApiMethod.DApp.WalletConnectHandleDeepLink(
+                        deeplink.requestUri.toString(),
+                        shouldReturnToDapp = false
+                    )
                 ) { _, _ -> }
                 return true
             }
@@ -933,10 +928,6 @@ class SplashVC(context: Context) :
             }
 
             is Deeplink.WalletConnect -> {
-                // Already handled in handleInstantDeeplinks
-            }
-
-            is Deeplink.WalletConnectSessionRequest -> {
                 // Already handled in handleInstantDeeplinks
             }
 
@@ -1518,7 +1509,7 @@ class SplashVC(context: Context) :
                     tonConnectRequestVC
                 )
             if (isLoadingVCAdded) {
-                val navVC = WNavigationController(
+                val navVC = DappRequestNavigationController(
                     window,
                     WNavigationController.PresentationConfig(
                         style = WNavigationController.PresentationStyle.BottomSheet
@@ -1565,8 +1556,10 @@ class SplashVC(context: Context) :
                         tonConnectRequestSendVC
                     )
                 if (isLoadingVCAdded) {
-                    val navVC =
-                        WNavigationController(window, PresentationConfig.PreferredFullScreen)
+                    val navVC = DappRequestNavigationController(
+                        window,
+                        PresentationConfig.PreferredFullScreen
+                    )
                     navVC.setRoot(tonConnectRequestSendVC)
                     if (isAppUnlocked()) {
                         window.present(navVC)

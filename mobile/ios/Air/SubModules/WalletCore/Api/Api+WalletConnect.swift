@@ -44,10 +44,14 @@ extension Api {
         try await bridge.callApi("walletConnect_proxyEvmRpc", request, message, decoding: ApiDappMethodResult<AnyCodable>.self)
     }
 
-    public static func walletConnect_handleDeepLink(_ url: String) async throws {
+    public static func walletConnect_handleDeepLink(
+        _ url: String,
+        shouldReturnToDapp: Bool
+    ) async throws {
         _ = try await bridge.callApiOptional(
             "walletConnect_handleDeepLink",
             url,
+            shouldReturnToDapp,
             decodingOptional: String.self
         )
     }

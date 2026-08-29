@@ -104,7 +104,10 @@ sealed class ApiUpdate {
 
     @JsonSealedSubtype("updateTokens")
     @JsonClass(generateAdapter = true)
-    data class ApiUpdateTokens(val tokens: Map<String, ApiTokenWithPrice>) : ApiUpdate()
+    data class ApiUpdateTokens(
+        val arePricesFresh: Boolean,
+        val tokens: Map<String, ApiTokenWithPrice>
+    ) : ApiUpdate()
 
     @JsonSealedSubtype("dappConnectComplete")
     @JsonClass(generateAdapter = true)
@@ -117,6 +120,14 @@ sealed class ApiUpdate {
     @JsonSealedSubtype("dappCloseLoading")
     @JsonClass(generateAdapter = true)
     data class ApiUpdateDappCloseLoading(val type: String? = null) : ApiUpdate()
+
+    @JsonSealedSubtype("dappRequestSettled")
+    @JsonClass(generateAdapter = true)
+    data class ApiUpdateDappRequestSettled(
+        val promiseId: String,
+        val returnStrategy: String,
+        val error: String? = null
+    ) : ApiUpdate()
 
     @JsonSealedSubtype("updateDapps")
     @JsonClass(generateAdapter = true)

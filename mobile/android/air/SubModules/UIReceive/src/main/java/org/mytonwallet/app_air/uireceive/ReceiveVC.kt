@@ -77,6 +77,7 @@ class ReceiveVC private constructor(
 
     companion object {
         const val OPTION_ROW_HEIGHT = 50
+        private const val BOTTOM_CONTENT_PADDING = 15
 
         fun createIfAvailable(
             context: Context,
@@ -184,7 +185,8 @@ class ReceiveVC private constructor(
                 updateOptionsForOffset(currentOffset)
             },
             forceCenterTabs = false,
-            pilledTabs = true
+            pilledTabs = true,
+            applyPagerSideInsets = false
         )
         segmentedController.addCloseButton()
         segmentedController
@@ -409,7 +411,13 @@ class ReceiveVC private constructor(
         } else {
             v.addView(optionsContainerView, LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         }
-        v.setPadding(0, 0, 0, navigationController?.getSystemBars()?.bottom ?: 0)
+        v.setPadding(
+            0,
+            0,
+            0,
+            BOTTOM_CONTENT_PADDING.dp +
+                (navigationController?.getSystemBars()?.bottom ?: 0)
+        )
         v
     }
 
@@ -466,12 +474,7 @@ class ReceiveVC private constructor(
         updateTheme()
         updateOptionsForOffset(defaultChainIndex.toFloat())
 
-        val firstVC = qrCodeVCs.values.first()
-        gradientColorViews.forEach { colorView ->
-            val layoutParams = colorView.layoutParams
-            layoutParams.height = qrTransparentHeight(firstVC)
-            colorView.layoutParams = layoutParams
-        }
+        updateGradientHeights()
     }
 
     override val isTinted = true
@@ -560,8 +563,16 @@ class ReceiveVC private constructor(
     override fun insetsUpdated() {
         super.insetsUpdated()
         qrSegmentView.insetsUpdated()
+        updateGradientHeights()
+        scrollingContentView.setPadding(
+            0,
+            0,
+            0,
+            BOTTOM_CONTENT_PADDING.dp +
+                (navigationController?.getSystemBars()?.bottom ?: 0)
+        )
         if (isViewOnlyAccount) {
-            view.setConstraints {
+            scrollingContentView.setConstraints {
                 toStartPx(
                     viewOnlyWarningView,
                     ViewConstants.HORIZONTAL_PADDINGS.dp + systemBarStartInset
@@ -572,7 +583,7 @@ class ReceiveVC private constructor(
                 )
             }
         } else {
-            view.setConstraints {
+            scrollingContentView.setConstraints {
                 toStartPx(
                     optionsContainerView,
                     ViewConstants.HORIZONTAL_PADDINGS.dp + systemBarStartInset
@@ -583,6 +594,11 @@ class ReceiveVC private constructor(
                 )
             }
         }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldW: Int, oldH: Int) {
+        super.onSizeChanged(w, h, oldW, oldH)
+        if (w != oldW) resubscribeQrHeightListener()
     }
 
     private fun switchableAccounts(): List<MAccount> =
@@ -748,6 +764,15 @@ class ReceiveVC private constructor(
     private fun qrTransparentHeight(vc: QRCodeVC): Int =
         vc.getTransparentHeight() + qrSegmentView.navHeight +
             (navigationController?.getSystemBars()?.top ?: 0)
+
+    private fun updateGradientHeights() {
+        val height = qrTransparentHeight(defaultVC)
+        gradientColorViews.forEach { colorView ->
+            colorView.updateLayoutParams {
+                this.height = height
+            }
+        }
+    }
 
     private fun animateQrView(
         qrCodeView: View,

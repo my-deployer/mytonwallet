@@ -42,7 +42,10 @@ export async function updateTokenHashes(
       tokensByAddress[address].codeHash = Buffer.from(states[address].code_hash, 'base64').toString('hex');
     }
 
-    await updateTokens(Object.values(tokensByAddress).filter((token) => token.codeHash), sendUpdateTokens);
+    const updatedTokens = Object.values(tokensByAddress).filter((token) => token.codeHash);
+    if (updatedTokens.length) {
+      await updateTokens(updatedTokens, sendUpdateTokens, [], true);
+    }
   } catch (err) {
     logDebugError('Failed to fetch contract code hashes for tokens', err);
   }

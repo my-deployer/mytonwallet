@@ -25,7 +25,7 @@ import {
 import { setupActivePolling, setupInactivePolling } from './polling';
 import { fetchTransactionById } from './transactionInfo';
 import { checkTransactionDraft, sendSignedTransaction, submitGasfullTransfer } from './transfer';
-import { fetchAccountAssets, fetchCrosschainAccountAssets, getAddressInfo, getWalletBalance } from './wallet';
+import { fetchAccountBalances, fetchCrosschainAccountBalances, getAddressInfo, getWalletBalance } from './wallet';
 
 type OmitFirstArg<F extends (...args: any) => any> =
   Parameters<F> extends [any, ...infer Rest]
@@ -47,7 +47,7 @@ class EVMChainSdk<T extends EVMChain> implements ChainSdk<T> {
 
   crosschain = {
     fetchCrossChainActivitySlice,
-    fetchCrosschainAccountAssets,
+    fetchCrosschainAccountAssets: fetchCrosschainAccountBalances,
   };
 
   fetchActivitySlice = this.#bindChain(fetchActivitySlice);
@@ -62,7 +62,7 @@ class EVMChainSdk<T extends EVMChain> implements ChainSdk<T> {
   getWalletFromAddress = getWalletFromAddress;
 
   getWalletBalance = this.#bindChain(getWalletBalance);
-  getWalletAssets = this.#bindChain(fetchAccountAssets);
+  getWalletAssets = this.#bindChain(fetchAccountBalances);
 
   getWalletsFromLedgerAndLoadBalance = notSupported;
 

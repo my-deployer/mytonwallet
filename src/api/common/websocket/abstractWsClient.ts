@@ -6,7 +6,12 @@ import { throttle } from '../../../util/schedulers';
 
 export type InMessageCallback<T> = (message: T) => void;
 
-const ACTUALIZATION_DELAY = 10;
+// Address churn - switching accounts, a multi-account wallet registering its watchers one by one -
+// produces a burst of subscribe messages on one socket. Every socket in the app throttles on this
+// one value, so it is set by the strictest provider rather than by any single one: our own backend
+// admits 2 messages per second over a 5-second window and drops the client past that. A second is
+// wide enough to coalesce a burst into a single subscribe under that limit.
+const ACTUALIZATION_DELAY = 1000;
 
 export interface WalletWatcher {
   /** Whether the socket is connected and subscribed to the given wallets */

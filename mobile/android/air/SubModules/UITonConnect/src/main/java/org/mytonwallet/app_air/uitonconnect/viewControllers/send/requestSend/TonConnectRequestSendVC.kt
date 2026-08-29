@@ -65,6 +65,7 @@ import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.helpers.DappDeeplinkReturnTracker
+import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.moshi.ApiConnectionType
 import org.mytonwallet.app_air.walletcore.moshi.ApiDappUrlTrustStatus
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
@@ -761,6 +762,7 @@ class TonConnectRequestSendVC(
                         }
                     }
                 }
+
                 val mfaVC = org.mytonwallet.app_air.uicomponents.viewControllers
                     .MfaActionConfirmVC(
                         context,

@@ -29,11 +29,6 @@ extension Api {
         return estimate
     }
     
-    /// - Important: call through TokenStore
-    internal static func swapGetAssets() async throws -> [ApiToken] {
-        return try await bridge.callApi("swapGetAssets", decoding: [ApiToken].self)
-    }
-
     public static func swapGetPairs(symbolOrMinter: String) async throws -> [MPair] {
         if let pairs = TokenStore.swapPairs[symbolOrMinter] {
             return pairs

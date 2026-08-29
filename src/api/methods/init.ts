@@ -10,6 +10,7 @@ import { getProtocolManager, initProtocolManager } from '../dappProtocols';
 import { setEnvironment } from '../environment';
 import { addHooks } from '../hooks';
 import { configureStorage, createStorage, withStorage } from '../storages';
+import { claimInstallAttribution } from './attribution';
 import { destroyPolling } from './polling';
 import * as methods from '.';
 
@@ -55,6 +56,7 @@ export default async function init(onUpdate: OnApiUpdate, args: ApiInitArgs) {
   });
 
   void saveReferrer(args, runtimeStorage);
+  void claimInstallAttribution(args, runtimeStorage);
 }
 
 export function destroy() {

@@ -333,7 +333,8 @@ class SettingsHeaderView: WTouchPassView {
         let titleMinScale = 17.0 / 24.0
         let titleScale = interpolate(from: 1.0, to: titleMinScale, progress: collapseProgress)
         let titleTransform = CGAffineTransform.identity.scaledBy(x: titleScale, y: titleScale)
-        let titlePosition = interpolate(from: scrollRange, to: 0, progress: collapseProgress) + navigationCenterY
+        let topOverscroll = -min(0, scrollOffset)
+        let titlePosition = interpolate(from: scrollRange, to: 0, progress: collapseProgress) + navigationCenterY + topOverscroll
                 
         let addressTransform = CGAffineTransform.identity
             .scaledBy(x: titleScale, y: titleScale)

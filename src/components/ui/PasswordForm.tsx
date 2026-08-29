@@ -185,6 +185,15 @@ function PasswordForm({
   const [localError, setLocalError] = useState<string>('');
   const { isSmallHeight, isPortrait } = useDeviceScreen();
   const withAutoConfirm = useCanAutoConfirm(enclaveSessionValidUntil, noAutoConfirm);
+  /**
+   * Whether this entry opens the auto-confirm window - not the question `noAutoConfirm` answers, which
+   * is whether this screen may be skipped. Tying them together left the transfer and dApp flows able to
+   * spend the window and unable to open it. Biometrics rule it out, read from the prop because
+   * `isBiometricAuthEnabled` is off wherever a screen passes `noBiometrics` on an account that has them,
+   * and the screen that turns biometrics on is a moment away from ruling it out too.
+   */
+  const canArmAutoConfirm = !isBiometricAuthEnabledProp && operationType !== 'turnOnBiometrics';
+  const isLongSession = canArmAutoConfirm && Boolean(isAutoConfirmEnabled);
   const isSubmitDisabled = !inputValue.length && !withAutoConfirm;
   const canUsePinPad = getDoesUsePinPad();
   const [isLogOutModalOpened, openLogOutModal, closeLogOutModal] = useFlag(false);
@@ -262,7 +271,7 @@ function PasswordForm({
     if (shouldMigrate) {
       migrateLegacyAuth({
         password,
-        isLongSession: !noAutoConfirm && Boolean(isAutoConfirmEnabled),
+        isLongSession,
         // A migration hands its session straight to the operation and never starts the multichain
         // upgrade, so budgeting for the upgrade would leave those reads unspent - and unspent means
         // available for good, since a counted session has no expiry. Turning biometrics back on does
@@ -280,12 +289,7 @@ function PasswordForm({
     }
 
     // Normal authorization
-    const enclaveSession = await enclave.authorize(
-      'passcode',
-      !noAutoConfirm && Boolean(isAutoConfirmEnabled),
-      password,
-      usageCount,
-    );
+    const enclaveSession = await enclave.authorize('passcode', isLongSession, password, usageCount);
 
     if (!enclaveSession) {
       isAuthorizingRef.current = false;
@@ -340,7 +344,7 @@ function PasswordForm({
 
     migrateLegacyBiometricAuth({
       legacyAuthConfig,
-      isLongSession: !noAutoConfirm && Boolean(isAutoConfirmEnabled),
+      isLongSession,
       // The upgrade is left out for the same reason as in the passcode migration above
       usageCount: operationUsageCount,
       onSuccess: onAuthorize,
@@ -502,7 +506,9 @@ function PasswordForm({
     );
   }
 
-  const shouldRenderAutoConfirmCheckbox = operationType !== 'turnOnBiometrics' && !isBiometricAuthEnabled;
+  // Offered exactly where it can take effect: the checkbox and the window read one signal, so a
+  // screen cannot show the option and then refuse to act on it
+  const shouldRenderAutoConfirmCheckbox = canArmAutoConfirm;
 
   if (canUsePinPad) {
     const hasError = Boolean(localError || error);

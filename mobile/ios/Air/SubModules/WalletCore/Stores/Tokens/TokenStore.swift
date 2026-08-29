@@ -132,19 +132,20 @@ public final class _TokenStore: Sendable {
         tokens[chain.nativeToken.slug]!
     }
     
-    private func process(newTokens: [String: ApiToken]) {
+    private func process(newTokens: [String: ApiToken], arePricesFresh: Bool) {
         assert(!Thread.isMainThread)
         guard !newTokens.isEmpty else { return }
-        if let toncoin = newTokens[TONCOIN_SLUG], toncoin.priceUsd == 3.1 {
-            return
-        }
         var tokens = self.tokens
         let removedSlugs =  Set(tokens.keys).subtracting(Set(newTokens.keys).union(Set(Self.defaultTokens.keys)))
         for removedSlug in removedSlugs {
             tokens[removedSlug] = nil
         }
         for (slug, newToken) in newTokens {
-            tokens[slug] = _merge(cached: self.tokens[slug], incoming: newToken)
+            tokens[slug] = _merge(
+                cached: self.tokens[slug],
+                incoming: newToken,
+                arePricesFresh: arePricesFresh
+            )
         }
         _applyFixups(tokens: &tokens)
         guard self.tokens != tokens else {
@@ -160,11 +161,8 @@ public final class _TokenStore: Sendable {
         scheduleSharedCacheUpdate(tokens: tokens, baseCurrency: self.baseCurrency, rates: self.currencyRates)
     }
     
-    func _merge(cached: ApiToken?, incoming: ApiToken) -> ApiToken {
+    func _merge(cached: ApiToken?, incoming: ApiToken, arePricesFresh: Bool) -> ApiToken {
         guard let cached else { return incoming }
-        
-        let priceIsInvalid: Bool = (incoming.priceUsd == 0 && Self.invalidPriceSlugs.contains(incoming.slug))
-            || (incoming.slug == TONCOIN_SLUG && incoming.priceUsd == 1.95)
 
         let merged = ApiToken(
             slug: incoming.slug,
@@ -189,8 +187,10 @@ public final class _TokenStore: Sendable {
             codeHash: incoming.codeHash?.nilIfEmpty ?? cached.codeHash,
             label: incoming.label?.nilIfEmpty ?? cached.label,
             isFromBackend: incoming.isFromBackend ?? cached.isFromBackend,
-            priceUsd: priceIsInvalid ? cached.priceUsd : incoming.priceUsd,
-            percentChange24h: priceIsInvalid ? cached.percentChange24h : incoming.percentChange24h
+            priceUsd: arePricesFresh ? incoming.priceUsd : cached.priceUsd ?? incoming.priceUsd,
+            percentChange24h: arePricesFresh
+                ? incoming.percentChange24h
+                : cached.percentChange24h ?? incoming.percentChange24h
         )
         return merged
     }
@@ -241,6 +241,13 @@ public final class _TokenStore: Sendable {
     private func process(swapAssetsArray: [[String: Any]]) {
         do {
             let assets = try JSONSerialization.decode([ApiToken].self, from: swapAssetsArray)
+            let hasMissingTonIdentifier = assets.contains {
+                $0.chain == .ton && !$0.isNative && $0.tokenAddress?.nilIfEmpty == nil
+            }
+            guard !hasMissingTonIdentifier else {
+                log.error("ignoring invalid swap assets cache")
+                return
+            }
             TokenStore.swapAssets = assets.sorted {
                 $0.displayName(strippingLabelWhenShown: false) < $1.displayName(strippingLabelWhenShown: false)
             }
@@ -250,12 +257,6 @@ public final class _TokenStore: Sendable {
         } catch {
             log.error("failed to decode swap assets")
         }
-    }
-    
-    public func updateSwapAssets() async throws -> [ApiToken] {
-        let assets = try await Api.swapGetAssets()
-        AppStorageHelper.save(swapAssetsArray: assets)
-        return assets
     }
     
     // MARK: -
@@ -299,35 +300,6 @@ public final class _TokenStore: Sendable {
         ROBINHOOD_SLUG: .ROBINHOOD,
     ]
 
-    private static let invalidPriceSlugs: Set<String> = [
-        TONCOIN_SLUG,
-        TON_USDT_SLUG,
-        TON_USDE_SLUG,
-        MYCOIN_SLUG,
-        TRX_SLUG,
-        TRON_USDT_SLUG,
-        SOLANA_SLUG,
-        SOLANA_USDT_MAINNET_SLUG,
-        SOLANA_USDC_MAINNET_SLUG,
-        ETH_SLUG,
-        ETH_USDT_MAINNET_SLUG,
-        ETH_USDC_MAINNET_SLUG,
-        BASE_SLUG,
-        BASE_USDT_MAINNET_SLUG,
-        BASE_USDC_MAINNET_SLUG,
-        BNB_SLUG,
-        BSC_USDT_MAINNET_SLUG,
-        POLYGON_SLUG,
-        ARBITRUM_SLUG,
-        MONAD_SLUG,
-        AVALANCHE_SLUG,
-        AVALANCHE_USDT_MAINNET_SLUG,
-        HYPERLIQUID_SLUG,
-        HYPERLIQUID_USDC_MAINNET_SLUG,
-        ROBINHOOD_SLUG,
-    ]
-    
-    
     // MARK: - Cached history data
     
     public struct HistoryData: Equatable, Hashable, Codable, Sendable {
@@ -400,6 +372,10 @@ extension _TokenStore: WalletCoreData.EventsObserver {
             scheduleSharedCacheUpdate(rates: update.rates)
 
         case .updateTokens(let dict):
+            guard let arePricesFresh = dict["arePricesFresh"] as? Bool else {
+                log.fault("updateTokens missing arePricesFresh")
+                return
+            }
             nonisolated(unsafe) let dict = dict
             self.updateTokensTask.withLock {
                 $0?.cancel()
@@ -412,7 +388,7 @@ extension _TokenStore: WalletCoreData.EventsObserver {
                         await Task.yield()
                         try Task.checkCancellation()
                         
-                        self.process(newTokens: tokens)
+                        self.process(newTokens: tokens, arePricesFresh: arePricesFresh)
 
                     } catch is CancellationError {
                     } catch {

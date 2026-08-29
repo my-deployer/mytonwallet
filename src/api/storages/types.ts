@@ -38,6 +38,9 @@ export type StorageKey = 'accounts'
   | 'clientId'
   | 'referrer'
   | 'langCode'
+  // For install attribution
+  | 'attributionClaimed'
+  | 'attributionChannel'
   // For extension
   | 'dapps'
   | 'dappMethods:lastAccountId'

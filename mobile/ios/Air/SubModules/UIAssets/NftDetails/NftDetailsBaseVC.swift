@@ -13,6 +13,7 @@ public class NftDetailsBaseVC: WViewController {
     private let mainScrollContentView = UIView()
     private var headerView: NftDetailsMainHeaderView?
     private var pager: NftDetailsPagerView?
+    private var isLottiePlaybackEnabled = false
     
     typealias Background = NftDetailsBackground
     typealias ItemModel = NftDetailsItemModel
@@ -196,11 +197,13 @@ public class NftDetailsBaseVC: WViewController {
     }
 
     public override func viewWillAppear(_ animated: Bool) {
-       super.viewWillAppear(animated)
-       if let sheet = self.sheetPresentationController {
-           sheet.configureAllowsInteractiveDismiss(false)
-       }
-       configureNavigationItems()
+        super.viewWillAppear(animated)
+        // Keep the destination layer tree static until the navigation transition has finished.
+        setLottiePlaybackEnabled(false)
+        if let sheet = self.sheetPresentationController {
+            sheet.configureAllowsInteractiveDismiss(false)
+        }
+        configureNavigationItems()
 
         if #unavailable(iOS 26) {
             // iOS 17: backButtonDisplayMode alone doesn't suppress the title from the previous VC.
@@ -213,19 +216,30 @@ public class NftDetailsBaseVC: WViewController {
         }
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        setLottiePlaybackEnabled(true)
+    }
+
     public override func viewWillDisappear(_ animated: Bool) {
-       super.viewWillDisappear(animated)
-       manager.colorCache.saveIfNeeded()
-       
-       if let sheet = self.sheetPresentationController {
-           sheet.configureAllowsInteractiveDismiss(true)
-       }
+        super.viewWillDisappear(animated)
+        setLottiePlaybackEnabled(false)
+        manager.colorCache.saveIfNeeded()
+
+        if let sheet = self.sheetPresentationController {
+            sheet.configureAllowsInteractiveDismiss(true)
+        }
 
         if #unavailable(iOS 26) {
             previousBackItemOwner?.navigationItem.backBarButtonItem = previousVCBackBarButtonItem
             previousBackItemOwner = nil
             previousVCBackBarButtonItem = nil
         }
+    }
+
+    private func setLottiePlaybackEnabled(_ isEnabled: Bool) {
+        isLottiePlaybackEnabled = isEnabled
+        headerView?.setLottiePlaybackEnabled(isEnabled)
     }
     
     public override func viewDidLayoutSubviews() {
@@ -302,6 +316,7 @@ public class NftDetailsBaseVC: WViewController {
             ])
             headerView = newHeader
             mainScrollView.headerViewToRedirect = newHeader
+            newHeader.setLottiePlaybackEnabled(isLottiePlaybackEnabled)
         }
     }
 

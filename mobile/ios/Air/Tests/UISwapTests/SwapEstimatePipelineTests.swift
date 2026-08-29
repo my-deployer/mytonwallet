@@ -124,6 +124,48 @@ struct SwapEstimatePipelineTests {
 
     @Test
     @MainActor
+    func `TON on chain swaps do not map unknown pair state to disabled UI`() {
+        let mode = resolveBuyAmountInputMode(
+            swapType: .onChain,
+            sellingChain: .ton,
+            isReverseProhibited: nil
+        )
+
+        #expect(mode == .enabled)
+    }
+
+    @Test
+    @MainActor
+    func `TON on chain swaps disable buy amount when pair prohibits reverse`() {
+        let mode = resolveBuyAmountInputMode(
+            swapType: .onChain,
+            sellingChain: .ton,
+            isReverseProhibited: true
+        )
+
+        #expect(mode == .disabled)
+    }
+
+    @Test
+    @MainActor
+    func `reversing an empty TON USDT form keeps buy amount input enabled`() async {
+        let model = makeSwapModel()
+
+        #expect(!model.input.buyingAmountInputDisabled)
+        #expect(model.input.sellingToken.slug == TONCOIN_SLUG)
+        #expect(model.input.buyingToken.slug == TON_USDT_SLUG)
+
+        model.input.userTappedReverse()
+        await Task.yield()
+        await Task.yield()
+
+        #expect(model.input.sellingToken.slug == TON_USDT_SLUG)
+        #expect(model.input.buyingToken.slug == TONCOIN_SLUG)
+        #expect(!model.input.buyingAmountInputDisabled)
+    }
+
+    @Test
+    @MainActor
     func `Solana on chain swaps disable buy amount input even when pair allows reverse`() {
         let mode = resolveBuyAmountInputMode(
             swapType: .onChain,

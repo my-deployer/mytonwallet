@@ -134,7 +134,7 @@ function setupBalancePolling(
     address,
     sendUpdateTokens: () => sendUpdateTokens(onUpdate),
     fallbackPollingOptions: isActive ? activeWalletTiming : inactiveWalletTiming,
-    fetchBalancesCb: fetchBalances,
+    fetchBalancesCb: async (...args) => ({ balances: await fetchBalances(...args) }),
     fetchCrosschainBalancesCb: undefined,
     importUnknownTokens,
     loadingConcurrencyLimiter: isActive ? undefined : getConcurrencyLimiter('ton', network),
