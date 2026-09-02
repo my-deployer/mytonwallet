@@ -690,6 +690,15 @@ function migrateCache(cached: GlobalState, initialState: GlobalState) {
     }
     cached.stateVersion = 61;
   }
+
+  if (cached.stateVersion === 61) {
+    // A cached jetton image may be a direct link to the host chosen by the token issuer, which exposes the user's
+    // IP address. The next token update replaces it with a Toncenter proxy link, or with no image at all.
+    for (const token of Object.values(cached.tokenInfo?.bySlug ?? {})) {
+      if (token.chain === 'ton' && !token.isFromBackend) delete token.image;
+    }
+    cached.stateVersion = 62;
+  }
   // When adding migration here, increase `STATE_VERSION`
 }
 

@@ -74,7 +74,7 @@ public enum AirDebugActions {
     private static func resetAgentRoot() {
         for window in UIApplication.shared.sceneWindows {
             window.rootViewController?
-                .descendantViewController(of: HomeTabBarController.self)?
+                .descendantViewController(of: TopTabsRootViewController.self)?
                 .debugOnly_resetAgentRoot()
             window.rootViewController?
                 .descendantViewController(of: SplitRootViewController.self)?

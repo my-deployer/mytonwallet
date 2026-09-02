@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - master
+      # Release branches carry the candidate testers actually install, so the web and TMA bundles
+      # are built from them too rather than only from master.
+      - 'release/**'
   workflow_dispatch:
 
 concurrency:

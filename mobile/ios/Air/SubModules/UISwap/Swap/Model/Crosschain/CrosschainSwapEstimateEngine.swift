@@ -2,25 +2,6 @@ import Foundation
 import WalletCore
 import WalletContext
 
-struct CrosschainSwapEstimateResult {
-    let changedFrom: SwapSide
-    let swapEstimate: ApiSwapCexEstimateResponse?
-    let estimateIssue: SwapIssue?
-    let isRateLimited: Bool
-
-    init(
-        changedFrom: SwapSide,
-        swapEstimate: ApiSwapCexEstimateResponse?,
-        estimateIssue: SwapIssue?,
-        isRateLimited: Bool = false
-    ) {
-        self.changedFrom = changedFrom
-        self.swapEstimate = swapEstimate
-        self.estimateIssue = estimateIssue
-        self.isRateLimited = isRateLimited
-    }
-}
-
 func crosschainNetworkFeeDraftAmount(
     sellingToken: ApiToken,
     isMaxAmount: Bool,
@@ -40,7 +21,7 @@ func crosschainAdjustedNativeMaxAmount(
     networkFee: MDouble?
 ) -> BigInt? {
     guard
-        swapType != .crosschainToWallet,
+        swapType.cexTopology != .toWallet,
         isMaxAmount,
         sellingToken.isNative,
         let tokenBalance = account.balances[sellingToken.slug],
@@ -68,7 +49,7 @@ func crosschainAdjustedNativeMaxAmount(
         changedFrom: SwapSide,
         swapType: SwapType,
         account: SwapAccountSnapshot
-    ) async throws -> CrosschainSwapEstimateResult {
+    ) async throws -> SwapEstimateResult {
         try await loadEstimate(
             input,
             changedFrom: changedFrom,
@@ -82,7 +63,7 @@ func crosschainAdjustedNativeMaxAmount(
         changedFrom: SwapSide,
         swapType: SwapType,
         account: SwapAccountSnapshot
-    ) async throws -> CrosschainSwapEstimateResult {
+    ) async throws -> SwapEstimateResult {
         guard changedFrom == .selling else {
             throw SdkError.unexpected(message: "Cross-chain reverse estimation is not supported")
         }
@@ -93,7 +74,7 @@ func crosschainAdjustedNativeMaxAmount(
             var networkFee: MDouble?
             var realNetworkFee: MDouble?
 
-            if swapType != .crosschainToWallet, input.isMaxAmount, selling.token.isNative {
+            if swapType.cexTopology != .toWallet, input.isMaxAmount, selling.token.isNative {
                 let feeDraftAmount = crosschainNetworkFeeDraftAmount(
                     sellingToken: selling.token,
                     isMaxAmount: input.isMaxAmount,
@@ -124,28 +105,29 @@ func crosschainAdjustedNativeMaxAmount(
             }
             let fromAddress = account.getAddress(chain: selling.token.chain)
             let toAddress = account.getAddress(chain: buying.token.chain)
-            let shouldForceChangelly = swapType == .crosschainToWallet && fromAddress == nil
-            let options = ApiSwapCexEstimateOptions(
+            let shouldForceChangelly = swapType.cexTopology == .toWallet && fromAddress == nil
+            let request = ApiSwapEstimateRequest(
                 from: selling.token.swapIdentifier,
                 to: buying.token.swapIdentifier,
+                slippage: nil,
                 fromAmount: fromAmount,
+                toAmount: nil,
                 fromAddress: fromAddress,
                 toAddress: toAddress,
                 cexLabel: shouldForceChangelly ? .changelly : input.cexLabel,
+                shouldTryDiesel: nil,
+                swapVersion: nil,
+                toncoinBalance: nil,
+                walletVersion: nil,
                 isFromAmountMax: input.isMaxAmount ? true : nil
             )
-            let estimate = try await Api.swapCexEstimate(accountId: account.id, swapEstimateOptions: options)
+            let response = try await Api.swapEstimate(accountId: account.id, request: request)
             try Task.checkCancellation()
-
-            guard var swapEstimate = estimate else {
-                return CrosschainSwapEstimateResult(
-                    changedFrom: changedFrom,
-                    swapEstimate: nil,
-                    estimateIssue: .invalidPair
-                )
+            guard case .cex(var swapEstimate) = response else {
+                throw SdkError.unexpected(message: "Expected CEX swap estimate", context: response)
             }
 
-            if swapType != .crosschainToWallet {
+            if swapType.cexTopology != .toWallet {
                 if networkFee == nil, realNetworkFee == nil {
                     if let feeData = try? await fetchNetworkFee(
                         sellingToken: selling.token,
@@ -172,9 +154,9 @@ func crosschainAdjustedNativeMaxAmount(
                 account: account
             )
             swapEstimate.dieselStatus = .notAvailable
-            return CrosschainSwapEstimateResult(
+            return SwapEstimateResult(
                 changedFrom: changedFrom,
-                swapEstimate: swapEstimate,
+                response: .cex(swapEstimate),
                 estimateIssue: nil
             )
         } catch {
@@ -182,10 +164,10 @@ func crosschainAdjustedNativeMaxAmount(
                 throw CancellationError()
             }
             let isRateLimited = isSwapEstimateRateLimited(error)
-            return CrosschainSwapEstimateResult(
+            return SwapEstimateResult(
                 changedFrom: changedFrom,
-                swapEstimate: nil,
-                estimateIssue: isRateLimited ? nil : mapEstimateError(error),
+                response: nil,
+                estimateIssue: isRateLimited ? nil : swapEstimateIssue(from: error),
                 isRateLimited: isRateLimited
             )
         }
@@ -197,7 +179,7 @@ func crosschainAdjustedNativeMaxAmount(
         networkFee: Double?,
         account: SwapAccountSnapshot
     ) -> Bool? {
-        if swapType == .crosschainToWallet {
+        if swapType.cexTopology == .toWallet {
             return true
         }
         guard
@@ -247,23 +229,4 @@ func crosschainAdjustedNativeMaxAmount(
         return (networkFee, realNetworkFee)
     }
 
-    private func mapEstimateError(_ error: Error) -> SwapIssue {
-        if let message = swapEstimateBackendMessage(from: error) {
-            return mapEstimateErrorMessage(message)
-        }
-        return .unexpectedEstimateError
-    }
-
-    private func mapEstimateErrorMessage(_ message: String) -> SwapIssue {
-        switch message.trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "Insufficient liquidity":
-            return .insufficientLiquidity
-        case "Tokens must be different", "Asset not found", "Pair not found":
-            return .invalidPair
-        case "Too small amount":
-            return .tooSmallAmount
-        default:
-            return .unexpectedEstimateError
-        }
-    }
 }

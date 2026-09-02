@@ -4,16 +4,23 @@ import {
   TONCENTER_MAINNET_URL,
   TONCENTER_TESTNET_URL,
 } from '../config';
-import { pause } from './schedulers';
+import {
+  mergeAbortSignals,
+  pauseWithAbortSignal,
+  raceWithAbortSignal,
+  throwIfAborted,
+} from './abortSignal';
 
 type FetchInput = string | URL | Request;
-
-type CleanupAbortSignal = AbortSignal & { cleanup?: () => void };
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const PROVIDER_MIN_DELAY_MS = 250;
 const PROVIDER_RETRIES = 6;
 const PROVIDER_FALLBACK_RETRY_AFTER_MS = 5000;
+// A 429 is provider-controlled back-pressure, so the pause it asks for is provider-controlled
+// too. Without a ceiling one response parks every later request to that origin for as long as
+// the header says - an hour-long Retry-After would take the origin out of service for an hour.
+const MAX_PROVIDER_RETRY_AFTER_MS = 30000;
 // Origins throttled per-provider: spaced requests, Retry-After back-pressure on 429.
 const THROTTLED_PROVIDER_ORIGINS = new Set([
   new URL(TONCENTER_MAINNET_URL).origin,
@@ -40,25 +47,35 @@ export class ThrottledFetcher {
   ) {}
 
   async fetch(input: FetchInput, init?: RequestInit, timeoutMs = this.timeoutMs): Promise<Response> {
-    await this.throttle();
-
+    // The timer starts before the queue wait, not after it: the caller asked for a deadline on the
+    // whole call, and a request parked behind another origin's back-pressure would otherwise wait
+    // without any bound of its own.
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-    const signal = mergeAbortSignals(init?.signal, controller.signal);
+    const timeoutId = setTimeout(() => {
+      controller.abort(new DOMException('Request timed out.', 'TimeoutError'));
+    }, timeoutMs);
+    const { signal, cleanup } = mergeAbortSignals(init?.signal, controller.signal);
 
     try {
-      const response = await fetch(input, {
-        ...init,
-        signal,
-      });
-      this.onResult?.(response.ok);
-      return response;
-    } catch (err) {
-      this.onResult?.(false);
-      throw err;
+      await this.throttle(signal);
+      throwIfAborted(signal);
+
+      // Only the network call reports provider health: a request abandoned in the queue never
+      // reached the provider and says nothing about it.
+      try {
+        const response = await fetch(input, {
+          ...init,
+          signal,
+        });
+        this.onResult?.(response.ok);
+        return response;
+      } catch (err) {
+        this.onResult?.(false);
+        throw err;
+      }
     } finally {
       clearTimeout(timeoutId);
-      signal.cleanup?.();
+      cleanup();
     }
   }
 
@@ -66,8 +83,9 @@ export class ThrottledFetcher {
     this.nextAllowedAt = Math.max(this.nextAllowedAt, Date.now() + delayMs);
   }
 
-  private async throttle() {
-    this.pending = this.pending.then(async () => {
+  private async throttle(signal?: AbortSignal | null) {
+    const pending = this.pending.then(async () => {
+      throwIfAborted(signal);
       const now = Date.now();
       const sinceLastRequestMs = this.lastRequestAt === undefined ? undefined : now - this.lastRequestAt;
       const minDelayRemainingMs = sinceLastRequestMs === undefined
@@ -77,14 +95,16 @@ export class ThrottledFetcher {
       const waitMs = Math.max(0, minDelayRemainingMs, explicitDelayRemainingMs);
 
       if (waitMs > 0) {
-        await pause(waitMs);
+        await pauseWithAbortSignal(waitMs, signal);
       }
 
+      throwIfAborted(signal);
       this.lastRequestAt = Date.now();
       this.nextAllowedAt = this.lastRequestAt;
     });
+    this.pending = pending.catch(() => undefined);
 
-    await this.pending;
+    await raceWithAbortSignal(pending, signal);
   }
 }
 
@@ -164,7 +184,9 @@ function adjustProviderDelay(origin: string, response: Response) {
     return;
   }
 
-  fetcher.delayNextRequest(Math.max(PROVIDER_MIN_DELAY_MS, retryAfterMs));
+  fetcher.delayNextRequest(
+    Math.min(MAX_PROVIDER_RETRY_AFTER_MS, Math.max(PROVIDER_MIN_DELAY_MS, retryAfterMs)),
+  );
 }
 
 function getUrl(input: FetchInput): URL | undefined {
@@ -177,35 +199,4 @@ function getUrl(input: FetchInput): URL | undefined {
   } catch {
     return undefined;
   }
-}
-
-function mergeAbortSignals(
-  signalA?: AbortSignal | null,
-  signalB?: AbortSignal | null,
-): CleanupAbortSignal {
-  if (!signalA) {
-    return signalB as CleanupAbortSignal;
-  }
-
-  if (!signalB) {
-    return signalA as CleanupAbortSignal;
-  }
-
-  const controller = new AbortController();
-  const abort = () => controller.abort();
-
-  if (signalA.aborted || signalB.aborted) {
-    controller.abort();
-  } else {
-    signalA.addEventListener('abort', abort, { once: true });
-    signalB.addEventListener('abort', abort, { once: true });
-  }
-
-  const signal = controller.signal as CleanupAbortSignal;
-  signal.cleanup = () => {
-    signalA.removeEventListener('abort', abort);
-    signalB.removeEventListener('abort', abort);
-  };
-
-  return signal;
 }

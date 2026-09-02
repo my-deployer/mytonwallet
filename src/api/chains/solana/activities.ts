@@ -7,6 +7,7 @@ import type {
 import type { SolanaParsedTransaction } from './types';
 
 import { SOLANA } from '../../../config';
+import { throwIfAborted } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { mergeSortedActivities, sortActivities } from '../../../util/activities/order';
 import { fromDecimal, toDecimal } from '../../../util/decimals';
@@ -34,15 +35,18 @@ export async function fetchActivitySlice({
   toTimestamp,
   fromTimestamp,
   limit,
+  signal,
 }: ApiFetchActivitySliceOptions): Promise<ApiActivity[]> {
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'solana');
 
   if (tokenSlug) {
-    const { activities } = await getTokenActivitySlice(network, address, tokenSlug, toTimestamp, fromTimestamp, limit);
+    const { activities } = await getTokenActivitySlice(
+      network, address, tokenSlug, toTimestamp, fromTimestamp, limit, signal,
+    );
     return activities;
   } else {
-    return getAllActivitySlice(network, address, toTimestamp, fromTimestamp, limit);
+    return getAllActivitySlice(network, address, toTimestamp, fromTimestamp, limit, signal);
   }
 }
 
@@ -53,6 +57,7 @@ export async function getTokenActivitySlice(
   toTimestamp?: number,
   fromTimestamp?: number,
   limit?: number,
+  signal?: AbortSignal,
 ): Promise<{ activities: ApiActivity[]; hasMore: boolean }> {
   let activities: ApiActivity[] = [];
 
@@ -66,18 +71,18 @@ export async function getTokenActivitySlice(
   };
 
   if (!slug) {
-    rawTransactions = await fetchSolTxs(network, address, true, options);
+    rawTransactions = await fetchSolTxs(network, address, true, options, signal);
   }
 
   if (slug === SOLANA.slug) {
-    rawTransactions = await fetchSolTxs(network, address, false, options);
+    rawTransactions = await fetchSolTxs(network, address, false, options, signal);
   }
 
   if (slug && slug !== SOLANA.slug) {
     const token = getTokenBySlug(slug);
 
     if (token?.tokenWalletAddress && token.tokenAddress) {
-      rawTransactions = await fetchSolTxs(network, token.tokenWalletAddress, false, options);
+      rawTransactions = await fetchSolTxs(network, token.tokenWalletAddress, false, options, signal);
     }
   }
 
@@ -87,8 +92,8 @@ export async function getTokenActivitySlice(
   const hasMore = limit !== undefined && rawTransactions.length >= limit;
 
   const [, nfts] = await Promise.all([
-    collectTokensFromTransactions(network, address, rawTransactions),
-    collectNftsFromTransactions(network, address, rawTransactions),
+    collectTokensFromTransactions(network, address, rawTransactions, signal),
+    collectNftsFromTransactions(network, address, rawTransactions, signal),
   ]);
 
   activities = rawTransactions
@@ -104,11 +109,12 @@ async function getAllActivitySlice(
   toTimestamp?: number,
   fromTimestamp?: number,
   limit?: number,
+  signal?: AbortSignal,
 ) {
   const txsBySlug: Record<string, ApiActivity[]> = {};
 
   const { activities: txs } = await getTokenActivitySlice(
-    network, address, undefined, toTimestamp, fromTimestamp, limit,
+    network, address, undefined, toTimestamp, fromTimestamp, limit, signal,
   );
 
   for (const tx of txs) {
@@ -143,6 +149,7 @@ async function fetchSolTxs(
     max_timestamp?: number;
     search_internal?: boolean;
   } = {},
+  signal?: AbortSignal,
 ) {
   const params = {
     'sort-order': queryParams.order_by === 'block_timestamp,asc'
@@ -165,6 +172,7 @@ async function fetchSolTxs(
       headers: {
         ...getEnvironment().apiHeaders,
       },
+      signal,
     },
   );
 
@@ -196,6 +204,7 @@ export async function collectTokensFromTransactions(
   network: ApiNetwork,
   address: string,
   rawTxs: SolanaParsedTransaction[],
+  signal?: AbortSignal,
 ) {
   const addresses = new Set<string>();
 
@@ -209,13 +218,14 @@ export async function collectTokensFromTransactions(
     }
   }
 
-  await updateTokensMetadataByAddress(network, [...addresses]);
+  await updateTokensMetadataByAddress(network, [...addresses], signal);
 }
 
 export async function collectNftsFromTransactions(
   network: ApiNetwork,
   address: string,
   rawTxs: SolanaParsedTransaction[],
+  signal?: AbortSignal,
 ) {
   const addresses = new Set<string>();
 
@@ -251,7 +261,8 @@ export async function collectNftsFromTransactions(
     }
   }
   if (addresses.size) {
-    const nfts = await fetchNftsByAddresses(network, [...addresses]);
+    const nfts = await fetchNftsByAddresses(network, [...addresses], signal);
+    throwIfAborted(signal);
     return nfts;
   }
   return [];

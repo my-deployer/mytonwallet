@@ -51,7 +51,7 @@ extension AgentBackendKind {
             AgentStore.shared.isLocalBackendAvailable
         }
     }
-    
+
     static var preferredKind: AgentBackendKind {
         switch ConfigStore.shared.preferredAgent {
         case .local:
@@ -89,7 +89,7 @@ public final class AgentVC: WViewController {
 
         return UICollectionView(frame: .zero, collectionViewLayout: layout)
     }()
-    
+
     private lazy var dataSource = makeDataSource()
 
     private let contentLayoutGuide = UILayoutGuide()
@@ -158,6 +158,9 @@ public final class AgentVC: WViewController {
         super.viewIsAppearing(animated)
         model.isActive = true
         model.checkAccountChanged(animated: false)
+        if let query = AgentEntryPoint.consumePendingQuery() {
+            sendMessage(text: query, clearsComposerDraft: false, editingMessageID: nil)
+        }
     }
 
     public override func viewWillDisappear(_ animated: Bool) {
@@ -167,7 +170,7 @@ public final class AgentVC: WViewController {
 
     public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
-        
+
         if traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) {
             updateTheme()
         }
@@ -175,7 +178,7 @@ public final class AgentVC: WViewController {
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        
+
         guard canResolveBottomLayoutState else { return }
         let keepBottomVisible = lastKnownNearBottom && !isArrivalScrollInFlight && !hasActiveStreamingMessage && !isRevealingSentUserMessage
         updateOcclusionInsets()
@@ -328,12 +331,12 @@ public final class AgentVC: WViewController {
     private func setupNavigationItem() {
         let header = NavigationHeader2()
         header.setTitle(lang("Agent"))
-        navigationItem.titleView = header
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: makeOverflowMenu())
+        agentHostNavigationItem.titleView = header
+        agentHostNavigationItem.rightBarButtonItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis"), menu: makeOverflowMenu())
     }
 
     private func refreshNavigationItemMenu() {
-        navigationItem.rightBarButtonItem?.menu = makeOverflowMenu()
+        agentHostNavigationItem.rightBarButtonItem?.menu = makeOverflowMenu()
     }
 
     private func makeOverflowMenu() -> UIMenu {
@@ -342,7 +345,7 @@ public final class AgentVC: WViewController {
         if IS_DEBUG_OR_TESTFLIGHT {
             children.append(makeBackendMenu())
         }
-        
+
         children.append(
             UIAction(title: lang("Clear Chat"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
                 self?.clearChat()
@@ -393,7 +396,7 @@ public final class AgentVC: WViewController {
             guard let self,
                   let item = self.model.item(for: itemID),
                   case .message(let message) = item else { return }
-            
+
             cell.onPreferredHeightChanged = { [weak self] _ in
                 self?.handleStreamingCellHeightChanged(itemID: itemID)
             }
@@ -871,7 +874,7 @@ public final class AgentVC: WViewController {
     }
 
     private func updateScrollToBottomButtonVisibility(animated: Bool) {
-        scrollToBottomButton.setVisible(!isNearBottom(), animated: animated)
+        scrollToBottomButton.setButtonVisible(!isNearBottom(), animated: animated)
     }
 
     private func sendCurrentMessage() {
@@ -940,7 +943,7 @@ public final class AgentVC: WViewController {
 
     private func sendMessage(text: String?, clearsComposerDraft: Bool, editingMessageID: AgentItemID?) {
         guard model.canSendMessage(draftText: text) else { return }
-        
+
         self.editingMessageID = nil
         model.send(text: text, editingMessageID: editingMessageID)
         if clearsComposerDraft {
@@ -1123,7 +1126,7 @@ extension AgentVC: AgentModelDelegate {
                 self.resizeStreamingRow()
                 return
             }
-            
+
             if self.lastTypingIndicatorID != nil {
                 self.revealTypingIndicatorIfNeeded()
             } else {

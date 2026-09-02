@@ -2,7 +2,7 @@ import type { ApiSubmitTransferOptions } from '../../../api/types';
 import type { AccountSettings, GlobalState } from '../../types';
 import { MintCardState } from '../../types';
 
-import { DEFAULT_CHAIN, IS_MY_WALLET_BRAND, MINT_CARD_ADDRESS, MINT_CARD_COMMENT } from '../../../config';
+import { DEFAULT_CHAIN, MINT_CARD_ADDRESS, MINT_CARD_COMMENT } from '../../../config';
 import { fromDecimal } from '../../../util/decimals';
 import { debounce } from '../../../util/schedulers';
 import { callApi } from '../../../api';
@@ -70,8 +70,6 @@ const checkCardNftOwnershipDebounced = debounce(() => {
 }, CHECK_OWNERSHIP_DEBOUNCE_MS, false, true);
 
 addActionHandler('checkCardNftOwnership', (global, actions, payload) => {
-  if (!IS_MY_WALLET_BRAND) return;
-
   const { accountId } = payload || {};
 
   if (accountId) {

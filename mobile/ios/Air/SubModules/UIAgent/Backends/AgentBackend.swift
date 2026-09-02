@@ -5,7 +5,7 @@ public enum AgentBackendKind: String, CaseIterable {
     case real
     case local
     case hybrid
-    
+
     static var menuOrder: [Self] { [.real, .local, .hybrid, .testing] }
 
     var menuTitle: String {

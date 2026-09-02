@@ -3,6 +3,7 @@ package org.mytonwallet.app_air.walletcontext.globalStorage
 import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
+import org.mytonwallet.app_air.walletbasecontext.DEBUG_MODE
 import org.mytonwallet.app_air.walletbasecontext.R as BaseR
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.localization.WLanguage
@@ -104,6 +105,7 @@ object WGlobalStorage {
     private const val ARE_ROUNDED_CORNERS_ACTIVE = "settings.roundedCorners"
     private const val IS_GRADIENT_NAVIGATION_BAR_ACTIVE = "settings.gradientNavigationBar"
     private const val IS_BLUR_ENABLED = "settings.blurEnabled"
+    private const val ARE_TOP_TABS_ENABLED = "settings.topTabs"
     private const val ARE_SOUNDS_ACTIVE = "settings.canPlaySounds"
     private const val HIDE_TINY_TRANSFERS = "settings.areTinyTransfersHidden"
     private const val HIDE_UNVERIFIED_NFTS = "settings.areUnverifiedNftsHidden"
@@ -437,6 +439,17 @@ object WGlobalStorage {
 
     fun isRoundedBalanceFontActive(): Boolean =
         globalStorageProvider.getBool(IS_ROUNDED_BALANCE_FONT_ACTIVE) ?: true
+
+    fun areTopTabsEnabled(): Boolean = globalStorageProvider.getBool(ARE_TOP_TABS_ENABLED)
+        ?: true
+
+    fun setAreTopTabsEnabled(enabled: Boolean) {
+        globalStorageProvider.set(
+            ARE_TOP_TABS_ENABLED,
+            enabled,
+            IGlobalStorageProvider.PERSIST_INSTANT
+        )
+    }
 
     fun setIsRoundedBalanceFontActive(active: Boolean) {
         globalStorageProvider.set(
@@ -1007,6 +1020,27 @@ object WGlobalStorage {
                 current
             )
         ) {
+            current
+        } else {
+            HOME_ASSETS_LIMIT_DEFAULT
+        }
+    }
+
+    fun setHomeActivitiesTopLimit(accountId: String, limit: Int) {
+        val safeLimit =
+            if (HOME_ASSETS_LIMIT_ALLOWED.contains(limit)) limit else HOME_ASSETS_LIMIT_DEFAULT
+        globalStorageProvider.set(
+            "byAccountId.$accountId.activities.homeTopLimit",
+            safeLimit,
+            IGlobalStorageProvider.PERSIST_INSTANT
+        )
+    }
+
+    fun getHomeActivitiesTopLimit(accountId: String): Int {
+        val current =
+            globalStorageProvider.getInt("byAccountId.$accountId.activities.homeTopLimit")
+                ?: return HOME_ASSETS_LIMIT_DEFAULT
+        return if (HOME_ASSETS_LIMIT_ALLOWED.contains(current)) {
             current
         } else {
             HOME_ASSETS_LIMIT_DEFAULT

@@ -199,6 +199,7 @@ class DebugMenuVC(context: Context) : WViewController(context) {
             isLast = false
         ) { checked ->
             WGlobalStorage.setAreExperimentalFeaturesEnabled(checked)
+            WalletContextManager.delegate?.get()?.restartApp()
         }
     } else {
         null

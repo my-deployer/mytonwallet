@@ -14,13 +14,13 @@ private let configCacheKey = "cache.updateConfig"
 public class ConfigStore: @unchecked Sendable { // todo: use UnfairLock intead of queue for thread safety
 
     public static let shared = ConfigStore()
-    
+
     private init() {
         _config = Self.loadCachedConfig()
     }
-    
+
     private let queue = DispatchQueue(label: "org.mytonwallet.app.config_store", attributes: .concurrent)
-    
+
     private var _config: ApiUpdate.UpdateConfig? = nil
     private var _isLimitedOverride: Bool?
     private var _seasonalThemeOverride: ApiUpdate.UpdateConfig.SeasonalTheme?
@@ -77,18 +77,19 @@ public class ConfigStore: @unchecked Sendable { // todo: use UnfairLock intead o
             }
         }
     }
-    
+
     public var shouldRestrictSwapsAndOnRamp: Bool { config?.isLimited == true }
     public var shouldRestrictBuyNfts: Bool { config?.isLimited == true }
     public var shouldRestrictSites: Bool { config?.isLimited == true }
     public var shouldRestrictSell: Bool { config?.isLimited == true }
     public var knowledgeBaseVersion: String? { config?.knowledgeBaseVersion }
+    public var agentProtocolVersion: ApiUpdate.UpdateConfig.AgentProtocolVersion { config?.agentProtocolVersion ?? .v1 }
     public var preferredAgent: ApiUpdate.UpdateConfig.PreferredAgent { config?.preferredAgent ?? .online }
-    
+
     private func handleConfig(_ config: ApiUpdate.UpdateConfig) {
         WalletCoreData.notify(event: .configChanged)
     }
-    
+
     public func clean() {
         queue.async(flags: .barrier) {
             self._config = nil
@@ -111,12 +112,12 @@ public class ConfigStore: @unchecked Sendable { // todo: use UnfairLock intead o
         }
     }
 
-    /// What may be written to disk. The ramp allowlist is deliberately dropped: a restored list would
-    /// outlive the server withdrawing a currency and would defeat the absent-config fallback, which is
-    /// the only thing keeping a cold start on the licensed currencies.
+    /// Server-controlled allowlists and protocol routing stay live-only so cached config cannot restore
+    /// withdrawn behavior
     static func cacheableConfig(_ config: ApiUpdate.UpdateConfig) -> ApiUpdate.UpdateConfig {
         var cacheable = config
         cacheable.allowedOnOffRampCurrencies = nil
+        cacheable.agentProtocolVersion = nil
         return cacheable
     }
 

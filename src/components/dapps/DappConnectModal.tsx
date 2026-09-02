@@ -19,14 +19,12 @@ import { isKeyCountGreater } from '../../util/isEmptyObject';
 import isViewAccount from '../../util/isViewAccount';
 import resolveSlideTransitionName from '../../util/resolveSlideTransitionName';
 
-import useInterval from '../../hooks/useInterval';
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
 import useModalTransitionKeys from '../../hooks/useModalTransitionKeys';
 
 import AccountSwitcherPill from '../common/AccountSwitcherPill';
 import AccountSwitcherSlide from '../common/AccountSwitcherSlide';
-import MfaConfirm from '../common/MfaConfirm';
 import LedgerConfirmOperation from '../ledger/LedgerConfirmOperation';
 import LedgerConnect from '../ledger/LedgerConnect';
 import AddAccountPasswordModal from '../main/modals/accountSelector/AddAccountPasswordModal';
@@ -49,7 +47,6 @@ interface DappConnectOpenProps {
   error?: string;
   requiredPermissions?: ApiDappPermissions;
   requiredProof?: TonConnectProof;
-  mfaRequestHash?: string;
   currentAccountId: string;
   accounts?: Record<string, Account>;
   multichainResolution?: 'switched-account' | 'needs-new-wallet';
@@ -70,7 +67,6 @@ function DappConnectModal({
   error,
   requiredPermissions,
   requiredProof,
-  mfaRequestHash,
   accounts,
   currentAccountId,
   multichainResolution,
@@ -87,7 +83,6 @@ function DappConnectModal({
     resetHardwareWalletConnect,
     addAccount,
     clearAccountError,
-    updateDappConnectMfaRequestStatus,
   } = getActions();
 
   const lang = useLang();
@@ -113,14 +108,6 @@ function DappConnectModal({
     setSelectedAccount(currentAccountId);
   }, [currentAccountId]);
 
-  const isMfaEnabled = Boolean(accounts?.[selectedAccount]?.byChain?.ton?.mfa);
-
-  useInterval(() => {
-    if (isOpen && state === DappConnectState.ConfirmMfa && mfaRequestHash) {
-      updateDappConnectMfaRequestStatus();
-    }
-  }, isOpen && state === DappConnectState.ConfirmMfa ? 1000 : undefined);
-
   const shouldRenderAccountSelector = accounts && isKeyCountGreater(accounts, 1);
   const isNoCompatibleWallet = multichainResolution === 'needs-new-wallet';
 
@@ -138,13 +125,13 @@ function DappConnectModal({
   });
 
   const handleSubmit = useLastCallback(() => {
-    if (isViewAccount(accounts![selectedAccount].type) && (requiredProof || isMfaEnabled)) return;
+    if (isViewAccount(accounts![selectedAccount].type) && requiredProof) return;
 
     const isHardware = accounts![selectedAccount].type === 'hardware';
     const { isPasswordRequired, isAddressRequired } = requiredPermissions || {};
-    const doesNeedSigning = Boolean(requiredProof || isMfaEnabled);
+    const doesNeedSigning = Boolean(requiredProof);
 
-    if (!doesNeedSigning || (!isMfaEnabled && !isHardware && isAddressRequired && !isPasswordRequired)) {
+    if (!doesNeedSigning || (!isHardware && isAddressRequired && !isPasswordRequired)) {
       submitDappConnectRequestConfirm({
         accountId: selectedAccount,
       });
@@ -212,9 +199,8 @@ function DappConnectModal({
     if (isNoCompatibleWallet) return true;
 
     const isCompatible = getIsAccountCompatible(account.byChain);
-    const accountHasMfa = Boolean(account.byChain.ton?.mfa);
 
-    return !isCompatible || ((!!requiredProof || accountHasMfa) && isViewAccount(account.type));
+    return !isCompatible || (!!requiredProof && isViewAccount(account.type));
   });
 
   const slideSubtitle = useMemo(() => (
@@ -234,7 +220,7 @@ function DappConnectModal({
     const isViewMode = Boolean(
       selectedAccount
       && isViewAccount(accounts?.[selectedAccount]?.type)
-      && (requiredProof || isMfaEnabled),
+      && requiredProof,
     );
     const isSelectedAccountCompatible = getIsAccountCompatible(accounts?.[selectedAccount]?.byChain ?? {});
 
@@ -354,9 +340,6 @@ function DappConnectModal({
           <DappPassword
             isActive={isActive}
             error={error}
-            // Proving ownership to the dapp and signing the MFA request are separate signatures, so
-            // a connection that does both reads the secret twice
-            extraAuthUsages={requiredProof && isMfaEnabled ? 1 : 0}
             onAuthorize={handlePasswordSubmit}
             onCancel={handlePasswordCancel}
             onClose={cancelDappConnectRequestConfirm}
@@ -392,16 +375,6 @@ function DappConnectModal({
             onClose={handlePasswordCancel}
           />
         );
-      case DappConnectState.ConfirmMfa:
-        return (
-          <>
-            <ModalHeader onClose={cancelDappConnectRequestConfirm} />
-            <MfaConfirm
-              onClose={cancelDappConnectRequestConfirm}
-              mfaRequestHash={mfaRequestHash}
-            />
-          </>
-        );
     }
   }
 
@@ -427,7 +400,7 @@ function DappConnectModal({
 
 export default memo(withGlobal((global): StateProps => {
   const {
-    state, dapp, error, accountId, permissions, proof, mfaRequestHash, multichainResolution, isCreatingAccount,
+    state, dapp, error, accountId, permissions, proof, multichainResolution, isCreatingAccount,
   } = global.dappConnectRequest || {};
   const currentAccountId = accountId || selectCurrentAccountId(global)!;
   const hasConnectRequest = state !== undefined;
@@ -449,7 +422,6 @@ export default memo(withGlobal((global): StateProps => {
     error,
     requiredPermissions: permissions,
     requiredProof: proof,
-    mfaRequestHash,
     currentAccountId,
     accounts,
     multichainResolution,

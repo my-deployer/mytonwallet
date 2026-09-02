@@ -216,6 +216,16 @@ public final class SettingsStore: Sendable {
             $0.walletTokensLimit = limit.rawValue
         }
     }
+
+    public var homeActivityVisibleItemsLimit: HomeActivityVisibleItemsLimit {
+        HomeActivityVisibleItemsLimit(storedValue: _row.withLock { $0.homeActivityLimit })
+    }
+
+    public func setHomeActivityVisibleItemsLimit(_ limit: HomeActivityVisibleItemsLimit) {
+        update {
+            $0.homeActivityLimit = limit.rawValue
+        }
+    }
     
     public var walletSettingsListLayout: String? {
         _row.withLock { $0.walletSettingsListLayout }

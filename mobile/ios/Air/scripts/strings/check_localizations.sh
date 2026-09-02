@@ -68,19 +68,23 @@ if [ -d "$MAIN_I18N_DIR" ]; then
     echo "🌍 Checking main localizations..."
     echo
 
-    # Check Russian
-    if [ -f "$MAIN_I18N_DIR/ru.yaml" ]; then
+    locale_checks_run=0
+    for compare_file in "$MAIN_I18N_DIR"/*.yaml; do
+        if [ "$compare_file" = "$MAIN_I18N_DIR/en.yaml" ]; then
+            continue
+        fi
+
+        locale_code="$(basename "$compare_file" .yaml)"
+        locale_checks_run=$((locale_checks_run + 1))
         checks_run=$((checks_run + 1))
-        check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/ru.yaml" "Russian (main)" || failed=1
-    else
-        echo -e "${RED}❌ Expected localization not found: $MAIN_I18N_DIR/ru.yaml${NC}"
+        check_localization "$MAIN_I18N_DIR/en.yaml" "$compare_file" "$locale_code (main)" || failed=1
+    done
+
+    if [ "$locale_checks_run" -eq 0 ]; then
+        echo -e "${RED}❌ No non-English localizations found in: $MAIN_I18N_DIR${NC}"
         echo
         failed=1
     fi
-
-    # Add more languages here as they become available
-    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/de.yaml" "German (main)" || failed=1
-    # check_localization "$MAIN_I18N_DIR/en.yaml" "$MAIN_I18N_DIR/fr.yaml" "French (main)" || failed=1
 else
     echo -e "${RED}❌ Localization directory not found: $MAIN_I18N_DIR${NC}"
     echo -e "${RED}   Set BASE_DIR to the repository root and re-run.${NC}"

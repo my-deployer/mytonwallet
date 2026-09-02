@@ -54,7 +54,7 @@ final class WalletSettingsViewModel {
     }
     
     func navigationHeaderTitle(in accounts: some Collection<MAccount>) -> String {
-        lang("$wallets_amount", arg1: walletCount(in: accounts))
+        L10n.walletsAmount(count: walletCount(in: accounts))
     }
     
     @MainActor func totalBalance(from balanceDataStore: _BalanceDataStore) -> BaseCurrencyAmount {
@@ -66,7 +66,7 @@ final class WalletSettingsViewModel {
         layoutDirection: UIUserInterfaceLayoutDirection = .leftToRight
     ) -> String {
         let balance = totalBalance(from: balanceDataStore).formatted(.baseCurrencyEquivalent)
-        return lang("$total_balance", arg1: balance.leftToRightMarked(in: layoutDirection))
+        return L10n.totalBalance(balance: balance.leftToRightMarked(in: layoutDirection))
     }
 
     var onStartReordering: (() -> Void)?

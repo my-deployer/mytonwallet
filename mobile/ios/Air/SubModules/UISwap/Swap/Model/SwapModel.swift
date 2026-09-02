@@ -13,6 +13,21 @@ import AsyncAlgorithms
 private let estimateRefreshInterval: Duration = .seconds(1.5)
 private let estimateInputDebounce: Duration = .milliseconds(250)
 
+/// The longest gap a run of failing estimates can stretch the refresh to, counted in ticks.
+let maxEstimateBackoffTicks = 32
+
+/// How many ticks to let pass before the next attempt, given how many in a row have failed.
+///
+/// The refresh follows a moving market, which a failing estimate is not doing: a pair with no route,
+/// or an amount the network fee already exceeds, answers the same way however often it is asked. The
+/// first retry stays immediate, since one failure is most cheaply explained as a blip, and only a run
+/// of them is evidence of something that asking again will not resolve.
+func estimateTicksToWait(failedAttempts: Int) -> Int {
+    // `maxEstimateBackoffTicks` is the only ceiling here; the shift is clamped purely to keep it in range.
+    let doublings = min(max(failedAttempts - 1, 0), Int.bitWidth - 2)
+    return min(1 << doublings, maxEstimateBackoffTicks)
+}
+
 private enum SwapModelIntent: Sendable {
     case inputChanged(side: SwapSide, source: SwapInputChangeSource)
     case slippageChanged
@@ -25,8 +40,7 @@ private enum SwapModelIntent: Sendable {
     private(set) var isValidPair = true
     private(set) var swapType = SwapType.onChain
 
-    private(set) var onchain = OnchainSwapModel()
-    private(set) var crosschain = CrosschainSwapModel()
+    private(set) var estimateState = SwapEstimateModel()
     let input: SwapInputModel
     let buttonModel = SwapButtonModel()
     private let contextModel = SwapContextModel()
@@ -41,6 +55,10 @@ private enum SwapModelIntent: Sendable {
     private var intentTask: Task<Void, Never>?
     @PerceptionIgnored
     private var refreshTimerTask: Task<Void, Never>?
+    @PerceptionIgnored
+    private var failedEstimateAttempts = 0
+    @PerceptionIgnored
+    private var ticksSinceEstimateAttempt = 0
     @PerceptionIgnored
     private var debounceTask: Task<Void, Never>?
     @PerceptionIgnored
@@ -69,6 +87,7 @@ private enum SwapModelIntent: Sendable {
         defaultSellingToken: String?,
         defaultBuyingToken: String?,
         defaultSellingAmount: Double?,
+        defaultBuyingAmount: Double? = nil,
         accountContext: AccountContext
     ) {
         self.delegate = delegate
@@ -86,6 +105,8 @@ private enum SwapModelIntent: Sendable {
             accountContext: accountContext
         )
         inputModel.sellingAmount = defaultSellingAmount.flatMap { doubleToBigInt($0, decimals: sellingToken.decimals) }
+        inputModel.buyingAmount = defaultBuyingAmount.flatMap { doubleToBigInt($0, decimals: buyingToken.decimals) }
+        inputModel.inputSource = defaultBuyingAmount == nil ? .selling : .buying
         self.input = inputModel
         let onchainValidator = OnchainSwapValidator()
         let crosschainValidator = CrosschainSwapValidator()
@@ -110,7 +131,9 @@ private enum SwapModelIntent: Sendable {
 
         self.input.delegate = self
         self.startIntentStream()
-        if inputModel.sellingAmount ?? 0 > 0 {
+        if inputModel.buyingAmount ?? 0 > 0 {
+            self.sendIntent(.inputChanged(side: .buying, source: .user))
+        } else if inputModel.sellingAmount ?? 0 > 0 {
             self.sendIntent(.inputChanged(side: .selling, source: .user))
         }
     }
@@ -156,6 +179,7 @@ private enum SwapModelIntent: Sendable {
         estimateTask?.cancel()
         isInputDebouncePending = false
         estimateGate.reset()
+        resetEstimateBackoff()
         clearEstimates()
         $account.accountId = accountId
         input.refreshTokenBalanceFromAccount()
@@ -171,7 +195,7 @@ private enum SwapModelIntent: Sendable {
     }
 
     var displayImpactWarning: Double? {
-        flow(for: swapType).priceImpactWarning(state: flowState)
+        flow(for: swapType).priceImpactWarning(state: estimateState)
     }
 
     var detailsSection: SwapDetailsSection {
@@ -179,7 +203,7 @@ private enum SwapModelIntent: Sendable {
     }
 
     var detailsVM: SwapDetailsVM {
-        SwapDetailsVM(onchainModel: onchain, inputModel: input)
+        SwapDetailsVM(swapEstimate: estimateState.dexEstimate, inputModel: input)
     }
 
     func confirmationAmounts() -> SwapConfirmationAmounts? {
@@ -196,7 +220,7 @@ private enum SwapModelIntent: Sendable {
     }
 
     func continueRoute() -> SwapRoute? {
-        guard let route = flow(for: swapType).route(context: currentPresentationContext(), state: flowState) else {
+        guard let route = flow(for: swapType).route(context: currentPresentationContext(), state: estimateState) else {
             return nil
         }
         guard route.allowsPriceImpactWarning, let impact = displayImpactWarning else {
@@ -214,7 +238,7 @@ private enum SwapModelIntent: Sendable {
             slippage: slippage.doubleAbsRepresentation(decimals: SLIPPAGE_DECIMALS),
             payoutAddress: payoutAddress,
             account: currentAccountSnapshot(),
-            flowState: flowState
+            estimateState: estimateState
         )
     }
 
@@ -227,7 +251,7 @@ private enum SwapModelIntent: Sendable {
             payoutAddress: snapshot.payoutAddress,
             account: snapshot.account,
             enclaveToken: enclaveToken
-        ), state: snapshot.flowState)
+        ), state: snapshot.estimateState)
     }
 
     func commitSlippage(_ slippage: BigInt) {
@@ -293,11 +317,29 @@ private extension SwapModel {
         case .slippageChanged:
             handleSlippageChanged()
         case .refreshTick:
-            submitCurrentEstimate(visible: false)
+            handleRefreshTick()
         }
     }
 
+    func handleRefreshTick() {
+        ticksSinceEstimateAttempt += 1
+        guard ticksSinceEstimateAttempt >= estimateTicksToWait(failedAttempts: failedEstimateAttempts) else {
+            return
+        }
+
+        // A tick that turns out to have nothing to send - a form past editing, or one still holding
+        // an input debounce - keeps the wait it had earned and sends the moment it can again.
+        submitCurrentEstimate(visible: false)
+    }
+
+    /// Clears the backoff, so an estimate the user asked for is never made to wait behind it.
+    func resetEstimateBackoff() {
+        failedEstimateAttempts = 0
+        ticksSinceEstimateAttempt = 0
+    }
+
     func handleInputChanged(side: SwapSide, source: SwapInputChangeSource) {
+        resetEstimateBackoff()
         updateSwapType(selling: input.sellingTokenAmount, buying: input.buyingTokenAmount)
         let amount = side == .selling ? input.sellingAmount : input.buyingAmount
         guard let amount, amount > 0 else {
@@ -325,6 +367,7 @@ private extension SwapModel {
     }
 
     func handleSlippageChanged() {
+        resetEstimateBackoff()
         guard flow(for: swapType).refreshesOnSlippageChange, currentEstimateInput() != nil else { return }
         beginEstimating(changedFrom: input.inputSource)
         submitCurrentEstimate(visible: true)
@@ -341,23 +384,33 @@ private extension SwapModel {
         }
     }
 
-    func submitCurrentEstimate(visible: Bool) {
-        guard stage.allowsEstimation else { return }
-        guard visible || !isInputDebouncePending else { return }
-        guard let estimateInput = currentEstimateInput() else { return }
+    /// Starts an estimate, and reports whether one actually began.
+    ///
+    /// Every reason to decline is a reason not to charge the caller for an attempt, so the answer is
+    /// the method's own rather than a set of conditions each caller has to restate and keep in step.
+    @discardableResult
+    func submitCurrentEstimate(visible: Bool) -> Bool {
+        guard stage.allowsEstimation else { return false }
+        guard visible || !isInputDebouncePending else { return false }
+        guard let estimateInput = currentEstimateInput() else { return false }
         if visible {
             beginEstimating(changedFrom: estimateInput.inputSource)
         }
-        guard estimateGate.start(estimateInput) else { return }
+        guard let slot = estimateGate.start(estimateInput) else { return false }
+
+        // The wait is measured from the last attempt that actually began, whichever path began it -
+        // a refresh tick, an edit, or the follow-up that runs when an estimate in flight finishes.
+        ticksSinceEstimateAttempt = 0
         estimateTask = Task { [weak self] in
-            await self?.performEstimate(estimateInput)
+            await self?.performEstimate(estimateInput, slot: slot)
         }
+        return true
     }
 
-    func performEstimate(_ estimateInput: SwapEstimateInput) async {
+    func performEstimate(_ estimateInput: SwapEstimateInput, slot: SwapEstimateGate.Slot) async {
         var changedFromForReset = estimateInput.inputSource
         defer {
-            if estimateGate.finish() {
+            if estimateGate.finish(slot) {
                 submitCurrentEstimate(visible: input.isEstimating)
             }
         }
@@ -401,6 +454,11 @@ private extension SwapModel {
             applyEstimate(update)
         } catch {
             if !(error is CancellationError) {
+                // The backoff belongs to the inputs on screen, the same way the applied estimate does.
+                // A request the user has since edited away from says nothing about them.
+                if estimateInput.matchesCurrent(currentEstimateInput()) {
+                    failedEstimateAttempts += 1
+                }
                 input.clearEstimatedAmount(changedFrom: changedFromForReset)
                 finishEstimating()
             }
@@ -416,14 +474,10 @@ private extension SwapModel {
             isMaxAmount: input.isUsingMax,
             maxAmount: input.maxAmount ?? input.tokenBalance,
             slippage: slippage.doubleAbsRepresentation(decimals: SLIPPAGE_DECIMALS),
-            previousNetworkFee: flow(for: swapType).previousNetworkFee(state: flowState),
-            cexLabel: swapType == .onChain ? nil : crosschain.cexEstimate?.cexLabel
+            previousNetworkFee: flow(for: swapType).previousNetworkFee(state: estimateState),
+            cexLabel: swapType.route == .dex ? nil : estimateState.cexEstimate?.cexLabel
         )
         return estimateInput.inputAmount > 0 ? estimateInput : nil
-    }
-
-    var flowState: SwapFlowState {
-        SwapFlowState(onchain: onchain, crosschain: crosschain)
     }
 
     func currentAccountSnapshot() -> SwapAccountSnapshot {
@@ -457,6 +511,14 @@ private extension SwapModel {
     }
 
     func applyEstimate(_ update: SwapEstimateUpdate) {
+        // A quote is the market answering, so the refresh returns to following it at full rate. An
+        // attempt that came back without one is a failure the engines report in place of throwing.
+        if update.hasQuote {
+            failedEstimateAttempts = 0
+        } else {
+            failedEstimateAttempts += 1
+        }
+
         guard !update.keepsCurrentState else {
             applyCurrentButtonConfiguration()
             return
@@ -501,7 +563,7 @@ private extension SwapModel {
             swapType: swapType,
             sellingToken: sellingToken,
             nativeTokenInBalance: nativeTokenInBalance,
-            state: flowState
+            state: estimateState
         )
         input.updateMaxAmountContext(
             swapType: context.swapType,
@@ -511,7 +573,7 @@ private extension SwapModel {
     }
 
     func applyCurrentButtonConfiguration() {
-        let state = flow(for: swapType).buttonState(context: currentPresentationContext(), state: flowState)
+        let state = flow(for: swapType).buttonState(context: currentPresentationContext(), state: estimateState)
         applyButtonState(state)
     }
 
@@ -524,21 +586,11 @@ private extension SwapModel {
     }
 
     func clearEstimates() {
-        onchain = OnchainSwapModel()
-        crosschain = CrosschainSwapModel()
+        estimateState.clear()
     }
 
-    func applyStateUpdate(_ update: SwapEstimateStateUpdate?) {
+    func applyStateUpdate(_ update: SwapEstimateResult?) {
         guard let update else { return }
-        switch update {
-        case .onchain(let result):
-            var next = onchain
-            next.applyEstimate(result)
-            onchain = next
-        case .crosschain(let result):
-            var next = crosschain
-            next.applyEstimate(result)
-            crosschain = next
-        }
+        estimateState.apply(update)
     }
 }

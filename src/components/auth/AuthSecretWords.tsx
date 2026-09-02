@@ -34,7 +34,7 @@ const AuthSecretWords = ({ isActive, mnemonic }: OwnProps) => {
     <div className={styles.wrapper}>
       <Header
         isActive={isActive}
-        title={lang('%1$d Secret Words', wordsCount) as string}
+        title={lang('%count% Secret Words', wordsCount) as string}
         topTargetRef={triggerElementRef}
         withBorder={isScrolled}
         forceShowTitle

@@ -97,7 +97,7 @@ private final class PortfolioRangeSegmentedControl: UISegmentedControl {
             bgLayer.frame = bounds
             layer.insertSublayer(bgLayer, at: 0)
             backgroundLayer = bgLayer
-            
+
             layer.cornerRadius = bounds.height / 2
             layer.masksToBounds = true
             updateTheme()
@@ -106,9 +106,9 @@ private final class PortfolioRangeSegmentedControl: UISegmentedControl {
 
     override func sendActions(for controlEvents: UIControl.Event) {
         super.sendActions(for: controlEvents)
-        
+
         guard #available(iOS 26, *), controlEvents.contains(.valueChanged) else { return }
-        
+
         isPillAnimating = true
         UIView.animate(
             withDuration: 0.3,

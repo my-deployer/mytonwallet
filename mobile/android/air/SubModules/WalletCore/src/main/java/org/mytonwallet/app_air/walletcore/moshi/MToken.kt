@@ -56,6 +56,15 @@ interface IApiToken {
         return false
     }
 
+    fun matchesSearchExactly(search: String): Boolean {
+        val keyword = search.trim()
+        if (keyword.isEmpty()) return false
+        return name?.equals(keyword, ignoreCase = true) == true ||
+            localizedName?.equals(keyword, ignoreCase = true) == true ||
+            symbol?.equals(keyword, ignoreCase = true) == true ||
+            tokenAddress?.equals(keyword, ignoreCase = true) == true
+    }
+
     private fun String.toSearchableChainTitle(): String =
         replace('_', ' ').replace('-', ' ').lowercase()
 }

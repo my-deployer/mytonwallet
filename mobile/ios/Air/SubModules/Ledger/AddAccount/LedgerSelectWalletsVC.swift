@@ -53,7 +53,7 @@ private struct LedgerSelectWalletsNavigationHeader: View {
                 Text(lang("Select Ledger Wallets"))
             } subtitle: {
                 if model.canContinue {
-                    Text(lang("$n_wallets_selected", arg1: model.selectedCount))
+                    Text(L10n.nWalletsSelected(count: model.selectedCount))
                 }
             }
         }

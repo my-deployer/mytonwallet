@@ -187,6 +187,16 @@ jobs:
             fi
           done <<< "$CHANGED"
 
+          # A release branch is a release candidate, so every push off it owes testers a build of
+          # each mobile platform regardless of what the tip commit happens to touch. The filter
+          # above reads HEAD~1..HEAD, which describes one commit rather than the push: on 26.9 an
+          # Android-only commit landed last and took the whole iOS matrix down with it, leaving the
+          # Agent V1 restoration with no TestFlight build to verify it.
+          if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+            ANDROID_ONLY="false"
+            IOS_ONLY="false"
+          fi
+
           echo "android-only=$ANDROID_ONLY" >> "$GITHUB_OUTPUT"
           echo "ios-only=$IOS_ONLY" >> "$GITHUB_OUTPUT"
           echo "electron-changed=$ELECTRON_CHANGED" >> "$GITHUB_OUTPUT"
@@ -833,6 +843,18 @@ jobs:
           else
             bundle exec fastlane release
           fi
+
+      # Fastlane leaves the Gradle and Kotlin daemons resident with a 4 GB heap each, and the next step
+      # runs two more unminified webpack builds on the same 7 GB runner. That overlap is what killed the
+      # gram job on every run since 2026-08-29: the runner is shot down mid-webpack, so setup-gradle's
+      # Post step never runs, so the Gradle cache is never refreshed, so the next run compiles cold, holds
+      # even more heap and dies the same way. Reclaiming the JVM memory here breaks that loop; the
+      # following step starts a fresh daemon in a few seconds and reads the same on-disk build cache.
+      - name: Stop the JVM daemons before the second web build
+        run: |
+          (cd mobile/android && ./gradlew --stop) || true
+          pkill -f KotlinCompileDaemon || true
+          free -m
 
       - name: Build project for direct apk
         env:

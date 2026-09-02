@@ -7,6 +7,22 @@ import WalletCore
 @MainActor
 struct MfaConfirmationModelTests {
     @Test
+    func `background dismissal is offered only while submission is in flight`() {
+        var state = MfaConfirmationPresentationState()
+
+        #expect(state.closeBehavior == .cancel)
+        #expect(!state.shouldShowBackgroundToastAfterDismissal)
+
+        state.beginSubmission()
+        #expect(state.closeBehavior == .dismissInBackground)
+        #expect(state.shouldShowBackgroundToastAfterDismissal)
+
+        state.resolveSubmission()
+        #expect(state.closeBehavior == .ignore)
+        #expect(!state.shouldShowBackgroundToastAfterDismissal)
+    }
+
+    @Test
     func `confirmed request is emitted`() async throws {
         let request = try makeRequest(isConfirmed: true)
         let model = MfaConfirmationModel(

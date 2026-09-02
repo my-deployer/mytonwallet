@@ -253,6 +253,16 @@
   object-fit: contain;
   background-color: var(--color-background-second);
 
+  &.imageNoData {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: min(100vw, calc(100vh - 14rem));
+
+    background-color: #131314;
+  }
+
   -webkit-touch-callout: default;
 
   :global(body.ghost-animating) & {
@@ -262,6 +272,11 @@
   @include mixins.respond-below(xs) {
     border-radius: 0;
   }
+}
+
+.noImageIcon {
+  width: 5rem;
+  opacity: 0.5;
 }
 
 .contentDescription {

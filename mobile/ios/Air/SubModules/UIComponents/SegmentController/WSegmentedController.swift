@@ -63,6 +63,7 @@ public class WSegmentedController: WTouchPassView {
     private let primaryTextColor: UIColor?
     private let secondaryTextColor: UIColor?
     private let capsuleFillColor: UIColor?
+    private let isGlassInteractive: Bool
     private let leadingViewControllers: [WSegmentedControllerContent]
     private let segmentedItemPageOffset: Int
     private weak var delegate: Delegate?
@@ -93,6 +94,7 @@ public class WSegmentedController: WTouchPassView {
                 primaryTextColor: UIColor? = nil,
                 secondaryTextColor: UIColor? = nil,
                 capsuleFillColor: UIColor? = nil,
+                isGlassInteractive: Bool = false,
                 style: SegmentedControlStyle = .regular,
                 delegate: Delegate? = nil) {
         self.barHeight = barHeight
@@ -101,6 +103,7 @@ public class WSegmentedController: WTouchPassView {
         self.primaryTextColor = primaryTextColor
         self.secondaryTextColor = secondaryTextColor
         self.capsuleFillColor = capsuleFillColor
+        self.isGlassInteractive = isGlassInteractive
         self.leadingViewControllers = leadingViewControllers
         self.segmentedItemPageOffset = leadingViewControllers.count
         self.model = .init(items: items, style: style)
@@ -213,7 +216,10 @@ public class WSegmentedController: WTouchPassView {
 
         NSLayoutConstraint.activate(constraints)
 
-        segmentedControl = WSegmentedControl(model: model)
+        segmentedControl = WSegmentedControl(
+            model: model,
+            isGlassInteractive: isGlassInteractive
+        )
         segmentedControl.translatesAutoresizingMaskIntoConstraints = false
         addSubview(segmentedControl)
 

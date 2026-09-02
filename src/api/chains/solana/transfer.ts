@@ -63,6 +63,7 @@ import {
   getCreateAssociatedToken2022IdempotentInstructionAsync,
   getTransferCheckedInstruction,
 } from '../../../lib/solana-program/token2022';
+import { throwIfAborted } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { explainApiTransferFee, getDieselTokenAmount, isDieselAvailable } from '../../../util/fee/transferFee';
 import { logDebugError } from '../../../util/logs';
@@ -98,6 +99,7 @@ async function checkTransactionDraftWithGasless({
   toAddress,
   allowGasless,
   nativeBalance,
+  signal,
 }: {
   draft: ApiCheckTransactionDraftResult;
   fee: bigint;
@@ -111,11 +113,12 @@ async function checkTransactionDraftWithGasless({
   toAddress: string;
   allowGasless?: boolean;
   nativeBalance: bigint;
+  signal?: AbortSignal;
 }) {
   let isEnoughBalanceForGasless: boolean | undefined;
   const client = getSolanaClient(network);
 
-  const tokenBalance = await getTokenBalance(network, address, tokenAddress);
+  const tokenBalance = await getTokenBalance(network, address, tokenAddress, signal);
 
   draft.diesel = DIESEL_NOT_AVAILABLE;
 
@@ -128,7 +131,7 @@ async function checkTransactionDraftWithGasless({
     destination: toAddress,
     payload,
     isGasless: true,
-  });
+  }, signal);
 
   if (allowGasless) {
     draft.diesel = await getDiesel({
@@ -137,6 +140,7 @@ async function checkTransactionDraftWithGasless({
       tokenAddress,
       nativeBalance,
       tokenBalance,
+      signal,
     });
   }
 
@@ -192,6 +196,7 @@ async function checkTransactionDraftWithGasless({
 
 export async function checkTransactionDraft(
   options: ApiCheckTransactionDraftOptions,
+  signal?: AbortSignal,
 ): Promise<ApiCheckTransactionDraftResult> {
   const {
     accountId, amount, toAddress, tokenAddress, payload, allowGasless,
@@ -213,7 +218,7 @@ export async function checkTransactionDraft(
     result.resolvedAddress = toAddress;
 
     const { address } = await fetchStoredWallet(accountId, 'solana');
-    const walletBalance = await getWalletBalance(network, address);
+    const walletBalance = await getWalletBalance(network, address, signal);
 
     const serializedB64Transaction = await buildTransaction(client, network, {
       type: 'simulation',
@@ -222,9 +227,9 @@ export async function checkTransactionDraft(
       source: address,
       destination: toAddress,
       payload,
-    });
+    }, signal);
 
-    const estimationResult = await estimateTransactionFee({ network, serializedB64Transaction });
+    const estimationResult = await estimateTransactionFee({ network, serializedB64Transaction, signal });
 
     if ('error' in estimationResult) {
       if (estimationResult.error === ApiTransactionDraftError.InsufficientBalance) {
@@ -242,6 +247,7 @@ export async function checkTransactionDraft(
             toAddress,
             allowGasless,
             nativeBalance: walletBalance,
+            signal,
           });
 
           if (isEnoughBalanceForGasless) {
@@ -287,6 +293,7 @@ export async function checkTransactionDraft(
           toAddress,
           nativeBalance: walletBalance,
           allowGasless,
+          signal,
         });
 
         if (isEnoughBalanceForGasless) {
@@ -313,6 +320,7 @@ export async function checkTransactionDraft(
 
     return result;
   } catch (err) {
+    if (signal) throw err;
     logDebugError('solana:checkTransactionDraft', err);
     return {
       ...handleServerError(err),
@@ -445,12 +453,14 @@ async function getDiesel({
   tokenAddress,
   nativeBalance,
   tokenBalance,
+  signal,
 }: {
   transaction: string;
   accountId: string;
   tokenAddress: string;
   nativeBalance: bigint;
   tokenBalance: bigint;
+  signal?: AbortSignal;
 }): Promise<ApiFetchEstimateDieselResult> {
   const { network } = parseAccountId(accountId);
 
@@ -469,6 +479,7 @@ async function getDiesel({
       transaction,
       tokenAddress,
       storedWallet.address,
+      signal,
     );
 
     const diesel: ApiFetchEstimateDieselResult = {
@@ -492,6 +503,7 @@ async function getDiesel({
 
     return canPayDiesel ? diesel : DIESEL_NOT_AVAILABLE;
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('solana:getDiesel', err);
 
     return DIESEL_NOT_AVAILABLE;
@@ -501,8 +513,13 @@ async function getDiesel({
 export async function estimateTransactionFee(options: {
   network: ApiNetwork;
   serializedB64Transaction: string;
+  signal?: AbortSignal;
 }): Promise<{ fee: bigint } | { error: ApiAnyDisplayError }> {
-  const emulatedTransaction = await emulateTransaction(options.serializedB64Transaction, options.network);
+  const emulatedTransaction = await emulateTransaction(
+    options.serializedB64Transaction,
+    options.network,
+    options.signal,
+  );
 
   // eslint-disable-next-line no-null/no-null
   if (emulatedTransaction && !emulatedTransaction.err && emulatedTransaction.fee !== null) {
@@ -539,6 +556,7 @@ function estimateDiesel(
   transaction: string,
   feeToken: string,
   sourceWallet: string,
+  signal?: AbortSignal,
 ) {
   return callBackendPost<{
     fee_in_lamports: number;
@@ -551,7 +569,7 @@ function estimateDiesel(
     fee_token: feeToken,
     source_wallet: sourceWallet,
     signer_key: SOLANA_GASLESS_PAYER_ADDRESS,
-  });
+  }, { signal });
 }
 
 async function getTokenTransferATAs(
@@ -786,11 +804,12 @@ export async function buildTransaction(
     type: 'simulation';
     source: string;
   }>,
+  signal?: AbortSignal,
 ) {
   // We don't have access to privateKey on simulation step, so we create fake signer by publicKey(address) only
   const signer = options.type === 'simulation' ? createNoopSigner(options.source as Address) : options.signer;
 
-  const { value: latestBlockhash } = await client.getLatestBlockhash().send();
+  const { value: latestBlockhash } = await client.getLatestBlockhash().send({ abortSignal: signal });
 
   let payloadInstructions: Instruction[] = [];
 

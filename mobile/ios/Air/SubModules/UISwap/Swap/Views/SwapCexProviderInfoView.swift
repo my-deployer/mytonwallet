@@ -33,7 +33,7 @@ struct SwapCexProviderInfoView: View {
     }
     
     var header: some View {
-        Text(lang("Cross-chain exchange provided by %provider%", arg1: providerName))
+        Text(L10n.crossChainExchangeProvidedByProvider(provider: providerName))
             .foregroundStyle(Color.air.secondaryLabel)
     }
     
@@ -58,15 +58,11 @@ struct SwapCexProviderInfoView: View {
         }
 
         if let terms, let policy, let aml {
-            return lang("$swap_cex_legal_message_with_aml",
-                arg1: terms,
-                arg2: policy,
-                arg3: aml
-            )
+            return L10n.swapCexLegalMessageWithAml(terms: terms, policy: policy, aml: aml)
         }
 
         if let terms, let policy {
-            return lang("$swap_cex_legal_message", arg1: terms, arg2: policy)
+            return L10n.swapCexLegalMessage(terms: terms, policy: policy)
         }
 
         return langJoin([terms, policy, aml].compactMap { $0 }, .and)

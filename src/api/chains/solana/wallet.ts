@@ -5,6 +5,7 @@ import type { SolanaSPLToken, SolanaSplTokenAccountsByAddressRaw, SolanaSPLToken
 import { ApiCommonError } from '../../types';
 
 import { SOLANA } from '../../../config';
+import { throwIfAborted } from '../../../util/abortSignal';
 import { fetchJson } from '../../../util/fetch';
 import withCacheAsync from '../../../util/withCacheAsync';
 import { getSolanaClient } from './util/client';
@@ -14,14 +15,19 @@ import { buildTokenSlug, updateTokens } from '../../common/tokens';
 import { isValidAddress } from './address';
 import { NETWORK_CONFIG, SOLANA_DERIVATION_PATHS, SOLANA_PROGRAM_IDS } from './constants';
 
-export async function getWalletBalance(network: ApiNetwork, address: string) {
+export async function getWalletBalance(network: ApiNetwork, address: string, signal?: AbortSignal) {
   const client = getSolanaClient(network);
 
-  const { value } = await client.getBalance(address as Address).send();
+  const { value } = await client.getBalance(address as Address).send({ abortSignal: signal });
 
   return BigInt(value);
 }
-export async function getTokenBalance(network: ApiNetwork, address: string, tokenAddress: string) {
+export async function getTokenBalance(
+  network: ApiNetwork,
+  address: string,
+  tokenAddress: string,
+  signal?: AbortSignal,
+) {
   const request = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -36,7 +42,11 @@ export async function getTokenBalance(network: ApiNetwork, address: string, toke
     }),
   };
 
-  const res = await fetchJson<SolanaSplTokenAccountsByAddressRaw>(NETWORK_CONFIG[network].rpcUrl, undefined, request);
+  const res = await fetchJson<SolanaSplTokenAccountsByAddressRaw>(
+    NETWORK_CONFIG[network].rpcUrl,
+    undefined,
+    { ...request, signal },
+  );
 
   return BigInt(res.result.token_accounts[0].amount);
 }
@@ -53,7 +63,9 @@ export async function fetchAccountAssets(
   network: ApiNetwork,
   address: string,
   sendUpdateTokens: NoneToVoidFunction,
+  requestOptions?: { signal?: AbortSignal },
 ): Promise<ApiBalanceBySlug> {
+  const { signal } = requestOptions ?? {};
   const options = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -82,8 +94,9 @@ export async function fetchAccountAssets(
   const response = await fetchJson<SolanaSPLTokensByAddressRaw>(
     NETWORK_CONFIG[network].rpcUrl,
     undefined,
-    options,
+    { ...options, signal },
   );
+  throwIfAborted(signal);
 
   response.result.items
     .filter((e) => e.content.metadata.symbol && e.content.metadata.name)
@@ -123,6 +136,7 @@ export async function fetchAccountAssets(
 export async function fetchAssetsByAddresses(
   network: ApiNetwork,
   addreses: string[],
+  signal?: AbortSignal,
 ): Promise<ApiTokenWithMaybePrice[]> {
   const options = {
     method: 'POST',
@@ -147,7 +161,7 @@ export async function fetchAssetsByAddresses(
   const { result: assets } = await fetchJson<{ result: SolanaSPLToken[] }>(
     NETWORK_CONFIG[network].rpcUrl,
     undefined,
-    options,
+    { ...options, signal },
   );
 
   assets

@@ -7,7 +7,7 @@ final class ContextMenuGlassBackgroundView: UIView {
     private let legacyStrokeView: UIView?
     let contentView = UIView()
 
-    override init(frame: CGRect) {
+    init() {
         if ContextMenuVisuals.supportsNativeGlass {
             self.legacyTintView = nil
             self.legacyStrokeView = nil
@@ -22,7 +22,7 @@ final class ContextMenuGlassBackgroundView: UIView {
             self.legacyStrokeView = legacyStrokeView
         }
 
-        super.init(frame: frame)
+        super.init(frame: .zero)
 
         self.effectView.clipsToBounds = true
         self.effectView.layer.cornerCurve = .continuous
@@ -41,13 +41,21 @@ final class ContextMenuGlassBackgroundView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(size: CGSize, cornerRadius: CGFloat, traits: UITraitCollection, isInteractive: Bool) {
+    func update(
+        size: CGSize,
+        cornerRadius: CGFloat,
+        traits: UITraitCollection,
+        isInteractive: Bool
+    ) {
         self.effectView.frame = CGRect(origin: .zero, size: size)
         self.effectView.layer.cornerRadius = cornerRadius
         self.contentView.frame = CGRect(origin: .zero, size: size)
 
         if #available(iOS 26.0, *) {
-            self.effectView.effect = ContextMenuVisuals.nativePanelEffect(for: traits, interactive: isInteractive)
+            self.effectView.effect = ContextMenuVisuals.nativePanelEffect(
+                for: traits,
+                interactive: isInteractive
+            )
         } else {
             self.effectView.effect = ContextMenuVisuals.legacyPanelEffect(for: traits)
 

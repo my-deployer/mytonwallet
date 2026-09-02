@@ -82,7 +82,7 @@ private struct HeaderView: View {
             HeaderDappIcon(dapp: dapp)
                 .skeletonPlaceholder(surface: .dark, cornerRadius: HeaderDappIcon.cornerRadius)
             VStack(spacing: 4) {
-                Text(lang("$connect_dapp_title", arg1: dapp.name))
+                Text(L10n.connectDappTitle(name: dapp.name))
                     .textStyle(.prominentTitle)
                     .frame(minHeight: 32)
                     .skeletonPlaceholder(surface: .dark, cornerRadius: 8)

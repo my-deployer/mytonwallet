@@ -13,7 +13,12 @@ import WalletCore
 import WalletContext
 
 @MainActor
-public class TokenVC: ActivityListViewController {
+public class TokenVC: ActivityListViewController, SharedBottomToolbarContentProviding {
+
+    private enum SharedToolbarActionID {
+        static let buy = "token.buy"
+        static let sell = "token.sell"
+    }
 
     @MainActor
     private enum TradeActionsLayout {
@@ -49,6 +54,26 @@ public class TokenVC: ActivityListViewController {
     }
     private var hasSellableBalance: Bool {
         ($account.balances[token.slug] ?? 0) > 0
+    }
+    private var isSharedBottomToolbarHosted = false
+
+    public var onSharedBottomToolbarActionsChange: (() -> Void)?
+
+    public var sharedBottomToolbarActions: [SharedBottomToolbarAction] {
+        guard areTradeActionsAvailable else { return [] }
+        var actions = [SharedBottomToolbarAction(
+            id: SharedToolbarActionID.buy,
+            title: lang("Buy"),
+            style: .positive
+        )]
+        if hasSellableBalance {
+            actions.append(SharedBottomToolbarAction(
+                id: SharedToolbarActionID.sell,
+                title: lang("Sell"),
+                style: .negative
+            ))
+        }
+        return actions
     }
 
     public init(accountSource: AccountSource, token: ApiToken, isInModal: Bool) async {
@@ -135,6 +160,7 @@ public class TokenVC: ActivityListViewController {
     private var infoCustomSectionDescriptor: CustomSectionDescriptor?
 
     private var suppressScrollUpdates = false
+    private var infoTransitionScrollAnchor: CGPoint?
 
     private struct NavigationHeaderSnapshot: Equatable {
         var title: String
@@ -151,7 +177,11 @@ public class TokenVC: ActivityListViewController {
             updateNavigationBarChrome(scrollOffset: scrollOffset(for: collectionView))
         }
 
-        let savedOffset = collectionView.contentOffset
+        let savedOffset = if id == infoCustomSectionID, let infoTransitionScrollAnchor {
+            infoTransitionScrollAnchor
+        } else {
+            collectionView.contentOffset
+        }
         UIView.performWithoutAnimation {
             self.invalidateCustomSectionLayout(id: id)
             self.collectionView.layoutIfNeeded()
@@ -161,11 +191,20 @@ public class TokenVC: ActivityListViewController {
         }
     }
 
+    private func setInfoTransitionActive(_ isActive: Bool) {
+        if isActive {
+            infoTransitionScrollAnchor = infoTransitionScrollAnchor ?? collectionView.contentOffset
+        } else {
+            infoTransitionScrollAnchor = nil
+            updateScroll()
+        }
+    }
+
     public override var headerPlaceholderHeight: CGFloat {
         expandableContentView.metrics.headerPlaceholderHeight
     }
 
-    public override var customSections: [CustomSectionDescriptor] {
+    public override var customSections: [any CustomSectionDataProvider] {
         if isLpToken {
             return [actionsCustomSectionDescriptor, infoCustomSectionDescriptor].compactMap { $0 }
         }
@@ -207,10 +246,16 @@ public class TokenVC: ActivityListViewController {
     }
     private func configureInfoCustomSection(cell: TokenInfoCell) {
         tokenInfoModel.configure(state: tokenVM.tokenInfoState)
-        cell.configure(model: tokenInfoModel, onHeightChange: { [weak self] in
-            guard let self else { return }
-            updateCustomSectionHeight(id: infoCustomSectionID)
-        })
+        cell.configure(
+            model: tokenInfoModel,
+            onHeightChange: { [weak self] in
+                guard let self else { return }
+                updateCustomSectionHeight(id: infoCustomSectionID)
+            },
+            onUserToggleAnimationChange: { [weak self] isActive in
+                self?.setInfoTransitionActive(isActive)
+            }
+        )
     }
     private func configureCustomSections() {
         let actionsCustomSectionCellRegistration = UICollectionView.CellRegistration<TokenActionsCell, Row> { [unowned self] cell, _, _ in
@@ -331,10 +376,15 @@ public class TokenVC: ActivityListViewController {
         updateSafeAreaInsets()
     }
 
-    private func updateSafeAreaInsets() {
-        collectionView.contentInset.bottom = view.safeAreaInsets.bottom
+    private var minimumBottomContentInset: CGFloat {
+        let reservesLocalTradeActions = areTradeActionsAvailable && !isSharedBottomToolbarHosted
+        return view.safeAreaInsets.bottom
             + 16
-            + (areTradeActionsAvailable ? TradeActionsLayout.reservedHeight : 0)
+            + (reservesLocalTradeActions ? TradeActionsLayout.reservedHeight : 0)
+    }
+
+    private func updateSafeAreaInsets() {
+        collectionView.contentInset.bottom = minimumBottomContentInset
 
         if !IOS_26_MODE_ENABLED {
             scrollViewDidScroll(collectionView)
@@ -365,13 +415,16 @@ public class TokenVC: ActivityListViewController {
             + collectionView.frame.height
             - automaticTopInset
             - safeBottom
-        let minimumBottomInset = safeBottom
-            + 16
-            + (areTradeActionsAvailable ? TradeActionsLayout.reservedHeight : 0)
-        collectionView.contentInset.bottom = max(minimumBottomInset, requiredBottomInset)
+        collectionView.contentInset.bottom = max(minimumBottomContentInset, requiredBottomInset)
     }
 
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if let infoTransitionScrollAnchor {
+            if abs(scrollView.contentOffset.y - infoTransitionScrollAnchor.y) > 0.01 {
+                scrollView.contentOffset = infoTransitionScrollAnchor
+            }
+            return
+        }
         guard !suppressScrollUpdates else { return }
         updateScroll()
     }
@@ -422,13 +475,33 @@ public class TokenVC: ActivityListViewController {
     }
 
     private func updateTradeActions() {
+        onSharedBottomToolbarActionsChange?()
         guard isViewLoaded else { return }
 
         let actionsAvailable = areTradeActionsAvailable
-        tradeActionsHostView.isHidden = !actionsAvailable
+        tradeActionsHostView.isHidden = isSharedBottomToolbarHosted || !actionsAvailable
         sellButton.isHidden = !hasSellableBalance
 
         updateSafeAreaInsets()
+    }
+
+    public func setSharedBottomToolbarHosted(_ isHosted: Bool) {
+        guard isSharedBottomToolbarHosted != isHosted else { return }
+        isSharedBottomToolbarHosted = isHosted
+        updateTradeActions()
+    }
+
+    public func performSharedBottomToolbarAction(id: String) {
+        guard areTradeActionsAvailable else { return }
+        switch id {
+        case SharedToolbarActionID.buy:
+            presentSwap(isBuying: true)
+        case SharedToolbarActionID.sell:
+            guard hasSellableBalance else { return }
+            presentSwap(isBuying: false)
+        default:
+            break
+        }
     }
 
     private func presentSwap(isBuying: Bool) {

@@ -1,23 +1,18 @@
 import WalletContext
 
-enum SwapEstimateStateUpdate {
-    case onchain(OnchainSwapEstimateResult)
-    case crosschain(CrosschainSwapEstimateResult)
-}
-
 @MainActor struct SwapEstimateUpdate {
     let changedFrom: SwapSide
     let estimatedAmounts: SwapInputModel.Estimate?
     let backendMaxAmount: BigInt?
     let keepsCurrentState: Bool
-    let stateUpdate: SwapEstimateStateUpdate?
+    let stateUpdate: SwapEstimateResult?
 
     init(
         changedFrom: SwapSide,
         estimatedAmounts: SwapInputModel.Estimate?,
         backendMaxAmount: BigInt?,
         keepsCurrentState: Bool = false,
-        stateUpdate: SwapEstimateStateUpdate?
+        stateUpdate: SwapEstimateResult?
     ) {
         self.changedFrom = changedFrom
         self.estimatedAmounts = estimatedAmounts
@@ -34,6 +29,15 @@ enum SwapEstimateStateUpdate {
             keepsCurrentState: true,
             stateUpdate: nil
         )
+    }
+
+    /// True when the attempt came back with a quote.
+    ///
+    /// The estimate engines answer a rejected request, an unreachable router or a pair with no route by
+    /// returning a result that carries no response rather than by throwing, and a rate-limited attempt
+    /// keeps the current state instead. None of the three is the market answering.
+    var hasQuote: Bool {
+        !keepsCurrentState && stateUpdate?.response != nil
     }
 
     func apply(to input: SwapInputModel) {

@@ -65,7 +65,7 @@ function BackupSecretWords({
     <div className={settingsStyles.slide}>
       {isInsideModal ? (
         <ModalHeader
-          title={lang('%1$d Secret Words', wordsCount) as string}
+          title={lang('%count% Secret Words', wordsCount) as string}
           withNotch={isScrolled}
           className={settingsStyles.modalHeader}
           onBackButtonClick={onBackClick}
@@ -76,7 +76,7 @@ function BackupSecretWords({
             <i className={buildClassName(settingsStyles.iconChevron, 'icon-chevron-left')} aria-hidden />
             <span>{lang('Back')}</span>
           </Button>
-          <span className={settingsStyles.headerTitle}>{lang('%1$d Secret Words', wordsCount) as string}</span>
+          <span className={settingsStyles.headerTitle}>{lang('%count% Secret Words', wordsCount) as string}</span>
         </div>
       )}
       <div

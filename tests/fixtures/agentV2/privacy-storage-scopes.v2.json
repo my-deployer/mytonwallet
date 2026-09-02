@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 2,
+  "contractVersion": "privacy-storage-scopes-v2",
+  "scopes": [
+    "message_content",
+    "structured_message_metadata",
+    "audit_metadata",
+    "operational_logs",
+    "event_journal",
+    "dialogue_state"
+  ],
+  "cases": [
+    {
+      "id": "dialogue.valid-amount-reference",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 1800000,
+        "hasSearchIndex": false,
+        "referencedKind": "amount"
+      },
+      "expectedDecision": "allow"
+    },
+    {
+      "id": "dialogue.valid-recipient-reference",
+      "scenario": "prepare-send",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 600000,
+        "hasSearchIndex": false,
+        "referencedKind": "contact_label"
+      },
+      "expectedDecision": "allow"
+    },
+    {
+      "id": "dialogue.valid-wallet-label-reference",
+      "scenario": "prepare-send",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 1200000,
+        "hasSearchIndex": false,
+        "referencedKind": "account_label"
+      },
+      "expectedDecision": "allow"
+    },
+    {
+      "id": "dialogue.cross-owner-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": false,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.cross-thread-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": false,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.assistant-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "assistant",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.out-of-range-span-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": false,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "amount"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.expired-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 1800001,
+        "hasSearchIndex": false,
+        "referencedKind": "asset_symbol"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.edited-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "edited",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.cleared-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "cleared",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.deleted-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "deleted",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": false,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    },
+    {
+      "id": "dialogue.searchable-reference-rejected",
+      "scenario": "dialogue-routing",
+      "scope": "dialogue_state",
+      "provenance": "conversation_evidence_reference",
+      "sensitiveKinds": ["conversation_evidence_reference"],
+      "referenceValidation": {
+        "sameOwner": true,
+        "sameThread": true,
+        "messageRole": "user",
+        "messageState": "complete",
+        "spanWithinMessage": true,
+        "closedFieldCode": true,
+        "ttlMs": 300000,
+        "hasSearchIndex": true,
+        "referencedKind": "query"
+      },
+      "expectedDecision": "reject"
+    }
+  ]
+}

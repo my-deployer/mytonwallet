@@ -1,9 +1,14 @@
 package org.mytonwallet.app_air.walletcontext.helpers
 
+import android.animation.TimeInterpolator
 import android.graphics.Path
 import android.view.animation.PathInterpolator
 import androidx.core.view.animation.PathInterpolatorCompat
+import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.pow
+import kotlin.math.sin
+import kotlin.math.sqrt
 
 class WInterpolator {
     companion object {
@@ -17,6 +22,20 @@ class WInterpolator {
                     cubicTo(0.208333f, 0.82f, 0.25f, 1f, 1f, 1f)
                 }
             )
+
+        fun spring(dampingRatio: Float = 0.72f, stiffness: Float = 11f): TimeInterpolator {
+            val omegaD = stiffness * sqrt(1f - dampingRatio * dampingRatio)
+            return TimeInterpolator { t ->
+                if (t >= 1f) {
+                    1f
+                } else {
+                    val decay = exp(-dampingRatio * stiffness * t)
+                    val oscillation =
+                        cos(omegaD * t) + (dampingRatio * stiffness / omegaD) * sin(omegaD * t)
+                    1f - decay * oscillation
+                }
+            }
+        }
 
         fun easeOut(progress: Float): Float = 1 - (1 - progress).pow(3f)
 

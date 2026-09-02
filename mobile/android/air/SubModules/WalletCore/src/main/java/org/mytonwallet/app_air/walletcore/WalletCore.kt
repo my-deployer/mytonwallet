@@ -442,6 +442,7 @@ object WalletCore {
                     Logger.LogTag.JS_WEBVIEW_BRIDGE,
                     "setupBridge: promoted bridgeId=${newBridge.id} previousBridgeId=${previousBridge?.id} callbacks=$readyCallbackCount"
                 )
+                TokenStore.onBridgeReady()
                 setupWalletCore()
                 completePendingBridgeSetup(true)
             }

@@ -1,7 +1,7 @@
 import type { ApiSwapEstimateVariant, ApiToken } from '../../api/types';
 import type { GlobalState } from '../../global/types';
 import type { FeePrecision, FeeTerms } from './types';
-import { SwapType } from '../../global/types';
+import { SwapType } from '../swap/types';
 
 import { Big } from '../../lib/big.js';
 import { bigintMax } from '../bigint';

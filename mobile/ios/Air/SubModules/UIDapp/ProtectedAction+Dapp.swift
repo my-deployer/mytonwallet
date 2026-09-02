@@ -102,7 +102,7 @@ extension ProtectedAction where HeaderView == DappHeaderView, Result == DappSend
             return lang("Send")
         }
         guard request.transactions.count == 1, let transaction = request.transactions.first else {
-            return lang("$many_transactions", arg1: request.transactions.count)
+            return L10n.manyTransactions(count: request.transactions.count)
         }
 
         var subjects = transaction.displayedAmounts(
@@ -111,7 +111,7 @@ extension ProtectedAction where HeaderView == DappHeaderView, Result == DappSend
         )
         .map { $0.formatted(.defaultAdaptive) }
         if transaction.isNftTransferPayload {
-            subjects.insert(lang("%amount% NFTs", arg1: 1), at: 0)
+            subjects.insert(L10n.amountNfts(amount: 1), at: 0)
         }
         let subject = subjects.joined(separator: " + ").nilIfEmpty ?? lang("Send")
         return "\(subject) \(lang("to")) \(formatStartEndAddress(transaction.displayedToAddress))"

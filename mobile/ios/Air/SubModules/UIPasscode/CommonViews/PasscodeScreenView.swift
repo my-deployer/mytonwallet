@@ -31,6 +31,7 @@ public class PasscodeScreenView: UIView {
     /// An external config used for `effectiveBiometryType` in the work context.
     private let biometricPassAllowed: Bool
     private let authSessionKind: AuthSessionKind
+    private let extraAuthUsages: Int
     private let canShowSignOutWhenEmpty: Bool
     private var showsSignOutWhenEmpty: Bool
     private weak var delegate: PasscodeScreenViewDelegate? = nil
@@ -42,6 +43,7 @@ public class PasscodeScreenView: UIView {
         compactLayout: Bool = false,
         biometricPassAllowed: Bool,
         authSessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         allowsSignOutWhenEmpty: Bool = false,
         showsSignOutWhenEmpty: Bool = false,
         delegate: PasscodeScreenViewDelegate,
@@ -49,6 +51,7 @@ public class PasscodeScreenView: UIView {
     ) {
             self.biometricPassAllowed = biometricPassAllowed
             self.authSessionKind = authSessionKind
+            self.extraAuthUsages = extraAuthUsages
             self.canShowSignOutWhenEmpty = allowsSignOutWhenEmpty
             self.showsSignOutWhenEmpty = showsSignOutWhenEmpty
             self.delegate = delegate
@@ -499,7 +502,8 @@ public class PasscodeScreenView: UIView {
 
             do {
                 guard let enclaveToken = try await AuthSupport.authorizeWithBiometrics(
-                    sessionKind: authSessionKind
+                    sessionKind: authSessionKind,
+                    extraUsages: extraAuthUsages
                 ) else {
                     // nil is not a cancellation (that throws); the stored credential failed to authorize
                     delegate?.onBiometricFailure()

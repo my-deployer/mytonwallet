@@ -20,23 +20,23 @@ import WalletContext
         true
     }
 
-    func previousNetworkFee(state: SwapFlowState) -> MDouble? {
-        state.onchain.swapEstimate?.networkFee
+    func previousNetworkFee(state: SwapEstimateModel) -> MDouble? {
+        state.dexEstimate?.networkFee
     }
 
-    func priceImpactWarning(state: SwapFlowState) -> Double? {
-        guard let impact = state.onchain.swapEstimate?.impact, impact > MAX_PRICE_IMPACT_VALUE else {
+    func priceImpactWarning(state: SwapEstimateModel) -> Double? {
+        guard let impact = state.dexEstimate?.impact, impact > MAX_PRICE_IMPACT_VALUE else {
             return nil
         }
         return impact
     }
 
     func supports(swapType: SwapType) -> Bool {
-        swapType == .onChain
+        swapType.route == .dex
     }
 
     func detailsSection(swapType: SwapType) -> SwapDetailsSection {
-        .onchain
+        .dex
     }
 
     func estimate(
@@ -54,21 +54,21 @@ import WalletContext
         if result.isRateLimited {
             return .rateLimited(changedFrom: result.changedFrom)
         }
-        let estimatedAmounts = result.swapEstimate.map {
+        let estimatedAmounts = result.dexEstimate.map {
             SwapInputModel.Estimate(
                 changedFrom: result.changedFrom,
-                fromAmount: $0.fromAmount?.value ?? 0,
-                toAmount: $0.toAmount?.value ?? 0
+                fromAmount: $0.fromAmount.value,
+                toAmount: $0.toAmount.value
             )
         }
-        let backendMaxAmount = input.isMaxAmount ? result.swapEstimate?.fromAmount.flatMap {
-            DecimalAmount.fromDouble($0.value, input.selling.token).roundedForSwap.amount
+        let backendMaxAmount = input.isMaxAmount ? result.dexEstimate.map {
+            DecimalAmount.fromDouble($0.fromAmount.value, input.selling.token).roundedForSwap.amount
         } : nil
         return SwapEstimateUpdate(
             changedFrom: result.changedFrom,
             estimatedAmounts: estimatedAmounts,
             backendMaxAmount: backendMaxAmount,
-            stateUpdate: .onchain(result)
+            stateUpdate: result
         )
     }
 
@@ -76,15 +76,15 @@ import WalletContext
         swapType: SwapType,
         sellingToken: ApiToken,
         nativeTokenInBalance: BigInt?,
-        state: SwapFlowState
+        state: SwapEstimateModel
     ) -> SwapMaxAmountContext {
         let explainedFee = explainSwapFee(.init(
             swapType: .onChain,
             tokenIn: sellingToken,
-            networkFee: state.onchain.swapEstimate?.networkFee,
-            realNetworkFee: state.onchain.swapEstimate?.realNetworkFee,
-            dieselStatus: state.onchain.swapEstimate?.dieselStatus,
-            dieselFee: state.onchain.swapEstimate?.dieselFee,
+            networkFee: state.dexEstimate?.networkFee,
+            realNetworkFee: state.dexEstimate?.realNetworkFee,
+            dieselStatus: state.dexEstimate?.dieselStatus,
+            dieselFee: state.dexEstimate?.dieselFee,
             nativeTokenInBalance: nativeTokenInBalance
         ))
         return SwapMaxAmountContext(
@@ -93,17 +93,21 @@ import WalletContext
         )
     }
 
-    func buttonState(context: SwapPresentationContext, state: SwapFlowState) -> SwapButtonState {
-        presenter.buttonState(context: context, state: state.onchain)
+    func buttonState(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapButtonState {
+        presenter.buttonState(context: context, state: state)
     }
 
-    func route(context: SwapPresentationContext, state: SwapFlowState) -> SwapRoute? {
-        presenter.route(context: context, state: state.onchain)
+    func route(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapRoute? {
+        presenter.route(context: context, state: state)
     }
 
-    func performSwap(context: SwapExecutionContext, state: SwapFlowState) async throws -> SwapExecutionResult {
-        try await executor.performSwap(
-            swapEstimate: state.onchain.swapEstimate,
+    func performSwap(context: SwapExecutionContext, state: SwapEstimateModel) async throws -> SwapExecutionResult {
+        guard let swapMode = state.swapMode else {
+            throw SdkError.unexpected(message: "Missing swap estimate mode")
+        }
+        return try await executor.performSwap(
+            swapEstimate: state.dexEstimate,
+            swapMode: swapMode,
             confirmation: context.confirmation,
             maxAmount: context.maxAmount,
             slippage: context.slippage,

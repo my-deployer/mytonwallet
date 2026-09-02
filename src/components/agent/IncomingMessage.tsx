@@ -155,12 +155,14 @@ function IncomingMessage({
               shouldAnimate={shouldAnimateTextStreaming}
               revealSessionKey={activeTextRevealPresentation.key}
               shouldRevealFromStart={shouldRevealFromStart}
+              shouldCommitMarkdownTail
+              areLinksEnabled
               onRevealStart={handleTextRevealStart}
               onRevealProgress={onTextRevealProgress}
               onRevealComplete={handleTextRevealComplete}
             />
           ) : (
-            <StaticText text={text} />
+            <StaticText text={text} areLinksEnabled />
           )
         )}
       </div>

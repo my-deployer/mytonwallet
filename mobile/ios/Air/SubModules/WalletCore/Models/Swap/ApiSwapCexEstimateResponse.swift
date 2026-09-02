@@ -16,8 +16,7 @@ public struct NetworkFeeData {
 }
 
 public struct ApiSwapCexEstimateResponse: Equatable, Hashable, Codable, Sendable {
-    public var route: String?
-    public var cexLabel: ApiSwapCexLabel?
+    public var cexLabel: ApiSwapCexLabel
     public var providerName: String?
     public var termsOfUseUrl: String?
     public var privacyPolicyUrl: String?
@@ -32,8 +31,8 @@ public struct ApiSwapCexEstimateResponse: Equatable, Hashable, Codable, Sendable
     public var networkFee: MDouble? = nil
     public var realNetworkFee: MDouble? = nil
     // additional
-    public var fromMin: MDouble?
-    public var fromMax: MDouble?
+    public var fromMin: MDouble
+    public var fromMax: MDouble
     public var toMin: MDouble?
     public var toMax: MDouble?
     public var dieselStatus: DieselStatus?

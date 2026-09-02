@@ -29,6 +29,7 @@ public class AssetsAndActivityVC: WViewController {
         case blockchains
         case hiddenNfts
         case hideNoCost
+        case percentChangeThreshold
         case tokens
 
         var headerTitle: String? {
@@ -37,7 +38,7 @@ public class AssetsAndActivityVC: WViewController {
                 lang("Blockchains")
             case .hideNoCost:
                 lang("Tokens")
-            case .general, .hiddenNfts, .tokens:
+            case .general, .hiddenNfts, .percentChangeThreshold, .tokens:
                 nil
             }
         }
@@ -50,6 +51,7 @@ public class AssetsAndActivityVC: WViewController {
         case hideUnverifiedNfts
         case hiddenNfts
         case hideNoCost
+        case percentChangeThreshold
         case localizedTokenNames
         case addToken
         case token(tokenID: TokenID, token: HashableExcluded<ApiToken>)
@@ -149,7 +151,7 @@ public class AssetsAndActivityVC: WViewController {
             if sectionId?.headerTitle != nil {
                 listConfig.headerMode = .supplementary
             }
-            if sectionId == .general || sectionId == .hideNoCost {
+            if sectionId == .general || sectionId == .hideNoCost || sectionId == .percentChangeThreshold {
                 listConfig.footerMode = .supplementary
             }
             return NSCollectionLayoutSection.list(using: listConfig, layoutEnvironment: environment)
@@ -215,6 +217,16 @@ public class AssetsAndActivityVC: WViewController {
             cell.isSelectable = false
             cell.configureSwitchAccessory(isOn: AppStorageHelper.useLocalizedTokenNames) { isOn in
                 AppStorageHelper.useLocalizedTokenNames = isOn
+            }
+        }
+
+        let percentChangeThresholdReg = UICollectionView.CellRegistration<UICollectionViewListCell, Item> { cell, _, _ in
+            cell.contentConfiguration = UIHostingConfiguration {
+                TokenPercentChangeThresholdPicker()
+            }
+            .margins(.all, 0)
+            .background {
+                Color.air.groupedItem
             }
         }
 
@@ -291,6 +303,8 @@ public class AssetsAndActivityVC: WViewController {
                 return collectionView.dequeueConfiguredReusableCell(using: hideNoCostReg, for: indexPath, item: item)
             case .localizedTokenNames:
                 return collectionView.dequeueConfiguredReusableCell(using: localizedTokenNamesReg, for: indexPath, item: item)
+            case .percentChangeThreshold:
+                return collectionView.dequeueConfiguredReusableCell(using: percentChangeThresholdReg, for: indexPath, item: item)
             case .token:
                 return collectionView.dequeueConfiguredReusableCell(using: tokenReg, for: indexPath, item: item)
             }
@@ -313,6 +327,10 @@ public class AssetsAndActivityVC: WViewController {
         let hideNoCostFooterReg = UICollectionView.SupplementaryRegistration<SimpleGroupSectionFooter>(elementKind: UICollectionView.elementKindSectionFooter) { view, _, _ in
             view.text = lang("Don’t show tokens on your account with value less than $0.01. You can also selectively enable and disable particular tokens using the list below.")
         }
+
+        let percentChangeThresholdFooterReg = UICollectionView.SupplementaryRegistration<SimpleGroupSectionFooter>(elementKind: UICollectionView.elementKindSectionFooter) { view, _, _ in
+            view.text = lang("$settings_token_change_threshold_description")
+        }
         
         ds.supplementaryViewProvider = { [weak self] collectionView, kind, indexPath in
             switch kind {
@@ -324,6 +342,8 @@ public class AssetsAndActivityVC: WViewController {
                     return collectionView.dequeueConfiguredReusableSupplementary(using: baseCurrencyFooterReg, for: indexPath)
                 case .hideNoCost:
                     return collectionView.dequeueConfiguredReusableSupplementary(using: hideNoCostFooterReg, for: indexPath)
+                case .percentChangeThreshold:
+                    return collectionView.dequeueConfiguredReusableSupplementary(using: percentChangeThresholdFooterReg, for: indexPath)
                 default:
                     return nil
                 }
@@ -348,6 +368,8 @@ public class AssetsAndActivityVC: WViewController {
         }
         snapshot.appendSections([.hideNoCost])
         snapshot.appendItems(hasLocalizedTokenNames ? [.localizedTokenNames, .hideNoCost] : [.hideNoCost])
+        snapshot.appendSections([.percentChangeThreshold])
+        snapshot.appendItems([.percentChangeThreshold])
         snapshot.appendSections([.tokens])
         snapshot.appendItems([.addToken])
         let tokens = tokensToDisplay.map { Item.token(tokenID: $0, token: HashableExcluded($1)) }
@@ -397,7 +419,7 @@ public class AssetsAndActivityVC: WViewController {
 extension AssetsAndActivityVC: UICollectionViewDelegate {
     public func collectionView(_: UICollectionView, shouldHighlightItemAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
-        case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames: return false
+        case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames, .percentChangeThreshold: return false
         case .baseCurrency, .blockchains, .addToken, .hiddenNfts, .token, nil: return true
         }
     }
@@ -405,14 +427,14 @@ extension AssetsAndActivityVC: UICollectionViewDelegate {
     public func collectionView(_: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         switch dataSource.itemIdentifier(for: indexPath) {
         case .baseCurrency, .blockchains, .addToken, .hiddenNfts: return true
-        case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames, .token, nil: return false
+        case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames, .percentChangeThreshold, .token, nil: return false
         }
     }
 
     public func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         if let identifier = dataSource.itemIdentifier(for: indexPath) {
             switch identifier {
-            case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames, .token:
+            case .hideNoCost, .hideTinyTransfers, .hideUnverifiedNfts, .localizedTokenNames, .percentChangeThreshold, .token:
                 break
             case .baseCurrency:
                 navigationController?.pushViewController(BaseCurrencyVC(isModal: isModal), animated: true)
@@ -428,6 +450,34 @@ extension AssetsAndActivityVC: UICollectionViewDelegate {
             }
         }
         collectionView.deselectItem(at: indexPath, animated: true)
+    }
+}
+
+private struct TokenPercentChangeThresholdPicker: View {
+    @AppStorage(WalletTokenPercentChangeThreshold.userDefaultsKey)
+    private var selection = WalletTokenPercentChangeThreshold.initialPresetRawValue
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(lang("$settings_token_change_threshold"))
+                .foregroundStyle(Color.air.primaryLabel)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Picker("", selection: $selection) {
+                ForEach(WalletTokenPercentChangeThreshold.Preset.allCases) { preset in
+                    Text(preset.title).tag(preset.rawValue)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .tint(Color.air.secondaryLabel)
+        }
+        .textStyle(.body, scaling: .dynamic)
+        .padding(.leading, 16)
+        .padding(.trailing, 8)
+        .frame(minHeight: 44)
+        .onChange(of: selection) { _ in
+            WalletCoreData.notify(event: .tokensChanged)
+        }
     }
 }
 

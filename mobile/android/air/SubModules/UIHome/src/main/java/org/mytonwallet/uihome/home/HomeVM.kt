@@ -3,6 +3,8 @@ package org.mytonwallet.uihome.home
 import android.os.Handler
 import android.os.Looper
 import java.lang.ref.WeakReference
+import org.mytonwallet.app_air.uicomponents.commonViews.UpdateStatusView
+import org.mytonwallet.app_air.uicomponents.helpers.HomeStatusController
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
@@ -15,8 +17,6 @@ import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
-import org.mytonwallet.uihome.home.status.HomeStatusController
-import org.mytonwallet.uihome.home.views.UpdateStatusView
 
 class HomeVM(private val mode: MScreenMode, delegate: Delegate) : WalletCore.EventObserver {
 
@@ -83,8 +83,11 @@ class HomeVM(private val mode: MScreenMode, delegate: Delegate) : WalletCore.Eve
     }
 
     fun destroy() {
+        isDestroyed = true
         HomeStatusController.removeListener(statusListener)
         WalletCore.unregisterObserver(this)
+        swapAssetsRetryHandler.removeCallbacksAndMessages(null)
+        swapAssetsRetryScheduled = false
     }
 
     // Remove temporary account
@@ -107,6 +110,11 @@ class HomeVM(private val mode: MScreenMode, delegate: Delegate) : WalletCore.Eve
     }
 
     private var waitingForNetwork = false
+
+    private var isDestroyed = false
+
+    private val swapAssetsRetryHandler = Handler(Looper.getMainLooper())
+    private var swapAssetsRetryScheduled = false
 
     // The account that should be shown on the home screen
     private val showingAccountId: String?
@@ -164,13 +172,19 @@ class HomeVM(private val mode: MScreenMode, delegate: Delegate) : WalletCore.Eve
         // make sure assets are loaded
         if (!TokenStore.swapAssetsLoaded) {
             Logger.d(Logger.LogTag.HomeVM, "dataUpdated: Swap assets not loaded yet")
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (!TokenStore.swapAssetsLoaded) {
-                    WalletCore.swapGetAssets(true) { _, _ ->
-                        dataUpdated(updateBalance)
+            if (!swapAssetsRetryScheduled) {
+                swapAssetsRetryScheduled = true
+                swapAssetsRetryHandler.postDelayed({
+                    if (!TokenStore.swapAssetsLoaded) {
+                        WalletCore.swapGetAssets(true) { _, _ ->
+                            swapAssetsRetryScheduled = false
+                            if (!isDestroyed) dataUpdated(updateBalance)
+                        }
+                    } else {
+                        swapAssetsRetryScheduled = false
                     }
-                }
-            }, 5000)
+                }, 5000)
+            }
             return
         }
 

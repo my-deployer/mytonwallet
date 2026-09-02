@@ -348,6 +348,7 @@ class HomeTabletAssetsCell(
         }
 
         if (homeNftCollections.isNotEmpty()) {
+            val nftCollectionsByAddress = nftCollections.associateBy { it.address }
             homeNftCollections.forEach { homeNftCollection ->
                 when (homeNftCollection.address) {
                     AssetsTabVC.TAB_COINS -> items.add(tokensColumn())
@@ -361,7 +362,7 @@ class HomeTabletAssetsCell(
                             ) {
                                 AssetsVC.CollectionMode.TelegramGifts
                             } else {
-                                nftCollections.find { it.address == homeNftCollection.address }
+                                nftCollectionsByAddress[homeNftCollection.address]
                                     ?.let {
                                         AssetsVC.CollectionMode.SingleCollection(collection = it)
                                     }

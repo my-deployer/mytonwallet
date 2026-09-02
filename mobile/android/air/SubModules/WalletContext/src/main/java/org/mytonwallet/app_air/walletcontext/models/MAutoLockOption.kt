@@ -24,23 +24,23 @@ enum class MAutoLockOption(val value: String, val period: Int?) {
                 }
 
                 THIRTY_SECONDS -> {
-                    LocaleController.getFormattedString(
-                        "%1$@ seconds",
-                        listOf("30".withLocalizedNumbers)
+                    LocaleController.getStringWithKeyValues(
+                        "%count% seconds",
+                        listOf("%count%" to "30".withLocalizedNumbers)
                     )
                 }
 
                 THREE_MINUTES -> {
-                    LocaleController.getFormattedString(
-                        "%1$@ minutes",
-                        listOf("3".withLocalizedNumbers)
+                    LocaleController.getStringWithKeyValues(
+                        "%count% minutes",
+                        listOf("%count%" to "3".withLocalizedNumbers)
                     )
                 }
 
                 TEN_MINUTES -> {
-                    LocaleController.getFormattedString(
-                        "%1$@ minutes",
-                        listOf("10".withLocalizedNumbers)
+                    LocaleController.getStringWithKeyValues(
+                        "%count% minutes",
+                        listOf("%count%" to "10".withLocalizedNumbers)
                     )
                 }
             }

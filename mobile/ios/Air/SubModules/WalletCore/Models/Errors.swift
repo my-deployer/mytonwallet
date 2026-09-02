@@ -328,13 +328,13 @@ public enum ApiAnyDisplayError: RawRepresentable, Codable, Error, Sendable, Equa
         case .concurrentTransaction:
             return lang("Another transaction was sent from this wallet simultaneously. Please try again.")
         case .hardwareOutdated, .notSupportedHardwareOperation:
-            return lang("$ledger_outdated")
+            return L10n.ledgerOutdated(chain: "TON")
         case .blindSigningNotEnabled:
-            return lang("$hardware_blind_sign_not_enabled")
+            return L10n.hardwareBlindSignNotEnabled(chain: "TON")
         case .rejectedByUser:
             return lang("Canceled by the user")
         case .proofTooLarge:
-            return lang("The proof for signing provided by the Dapp is too large")
+            return lang("The proof for signing provided by the app is too large")
         case .connectionBroken:
             return lang("$ledger_connection_broken")
         case .wrongDevice:

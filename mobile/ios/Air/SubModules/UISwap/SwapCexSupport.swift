@@ -6,11 +6,11 @@ enum SwapCexSupport {
     static func swapCexCreateTransaction(
         accountId: String,
         sellingToken: ApiToken,
-        params: ApiSwapCexCreateTransactionParams,
+        request: ApiSwapBuildRequest,
         shouldTransfer: Bool,
         enclaveToken: EnclaveToken
     ) async throws -> SwapExecutionResult {
-        let createResult = try await Api.swapCexCreateTransaction(accountId: accountId, enclaveToken: enclaveToken, params: params)
+        let createResult = try await Api.swapCexCreateTransaction(accountId: accountId, enclaveToken: enclaveToken, request: request)
         if shouldTransfer {
             
             let amount = createResult.swap.fromAmount.bigintAmount(decimals: sellingToken.decimals)
@@ -25,7 +25,7 @@ enum SwapCexSupport {
             let nativeDecimals = sellingToken.chain.nativeToken.decimals
             let fee = networkFee.bigintAmount(decimals: nativeDecimals)
             let payload = try makeDepositMemoPayload(
-                cexLabel: createResult.swap.cexLabel ?? params.cexLabel,
+                cexLabel: createResult.swap.cexLabel ?? request.cexLabel,
                 memo: createResult.swap.cex?.payinExtraId?.nilIfEmpty,
                 sourceChain: sellingToken.chain,
                 createResult: createResult

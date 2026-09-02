@@ -47,9 +47,9 @@ final class AgentLocalBackend: AgentBackend {
         reset()
         context = nil
     }
-    
+
     func loadHints(animated: Bool) {
-        
+
     }
 
     func prepareForEditing(_ editContext: AgentBackendEditContext) {

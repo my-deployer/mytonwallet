@@ -786,10 +786,10 @@ class SwapViewModel :
             if (sendAmount > maxAmount) {
                 return ButtonState(
                     ButtonStatus.MoreThanMaxCex,
-                    LocaleController.getFormattedString(
-                        "Max %1$@",
+                    LocaleController.getStringWithKeyValues(
+                        "Max %amount%",
                         listOf(
-                            maxAmount.toString(
+                            "%amount%" to maxAmount.toString(
                                 decimals = tokenToSend.decimals,
                                 currency = tokenToSend.symbol ?: "",
                                 currencyDecimals = tokenToSend.decimals,
@@ -820,9 +820,9 @@ class SwapViewModel :
                             val requestAmount = estimated.fromAmount ?: estimated.request.amount
                             if (walletBalance >= requestAmount && state.tokenToSendIsSupported) {
                                 state.nativeTokenToSend?.symbol?.let { symbol ->
-                                    LocaleController.getFormattedString(
-                                        "Insufficient %1$@ Balance",
-                                        listOf(symbol)
+                                    LocaleController.getStringWithKeyValues(
+                                        "Insufficient %symbol% Balance",
+                                        listOf("%symbol%" to symbol)
                                     )
                                 }
                                     ?: LocaleController.getString("Insufficient Balance")
@@ -854,9 +854,9 @@ class SwapViewModel :
                 if (shouldAuthorizeDiesel) {
                     return ButtonState(
                         ButtonStatus.AuthorizeDiesel,
-                        LocaleController.getFormattedString(
-                            "Authorize %1$@ fee",
-                            listOf(tokenToSend.symbol ?: "")
+                        LocaleController.getStringWithKeyValues(
+                            "Authorize %token% fee",
+                            listOf("%token%" to (tokenToSend.symbol ?: ""))
                         )
                     )
                 }
@@ -877,9 +877,9 @@ class SwapViewModel :
                 return ButtonState(
                     ButtonStatus.NotEnoughNativeToken,
                     state.nativeTokenToSend?.symbol?.let {
-                        LocaleController.getFormattedString(
-                            "Insufficient %1$@ Balance",
-                            listOf(it)
+                        LocaleController.getStringWithKeyValues(
+                            "Insufficient %symbol% Balance",
+                            listOf("%symbol%" to it)
                         )
                     } ?: LocaleController.getString("Insufficient Balance")
                 )
@@ -888,9 +888,12 @@ class SwapViewModel :
 
         return ButtonState(
             ButtonStatus.Ready,
-            LocaleController.getFormattedString(
-                "Swap %1$@ to %2$@",
-                listOf(tokenToSend.symbol ?: "", tokenToReceive.symbol ?: "")
+            LocaleController.getStringWithKeyValues(
+                "Swap %from% to %to%",
+                listOf(
+                    "%from%" to (tokenToSend.symbol ?: ""),
+                    "%to%" to (tokenToReceive.symbol ?: "")
+                )
             )
         )
     }

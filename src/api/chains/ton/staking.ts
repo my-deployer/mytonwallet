@@ -9,6 +9,7 @@ import type {
   ApiLoyaltyType,
   ApiNetwork,
   ApiStakingCommonData,
+  ApiStakingCommonResponse,
   ApiStakingJettonPool,
   ApiStakingState,
   ApiSubmitGasfullTransferResult,
@@ -141,7 +142,7 @@ export async function checkUnstakeDraft(
 ) {
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'ton');
-  const commonData = await getStakingCommonCache();
+  const commonData = await getStakingCommonCache('ton');
 
   let result: ApiCheckTransactionDraftResult;
   let tokenAmount: bigint | undefined;
@@ -756,4 +757,34 @@ export async function submitUnstakeEthenaLocked(
       toAddress: address,
     },
   };
+}
+
+export async function getStakingCommonData(): Promise<ApiStakingCommonData> {
+  const tonClient = getTonClient('mainnet');
+  const response = await callBackendGet<ApiStakingCommonResponse>('/staking/common');
+
+  const data: ApiStakingCommonData = {
+    ...response,
+    liquid: {
+      ...response.liquid,
+      available: fromDecimal(response.liquid.available),
+      tvl: fromDecimal(response.liquid.tvl),
+    },
+    jettonPools: await Promise.all(response.jettonPools.map(async (pool) => {
+      const poolContract = tonClient.open(StakingPool.createFromAddress(Address.parse(pool.pool)));
+      const poolConfig = await poolContract.getStorageData();
+      return {
+        ...pool,
+        poolConfig,
+      };
+    })),
+  };
+  data.round.start *= 1000;
+  data.round.end *= 1000;
+  data.round.unlock *= 1000;
+  data.prevRound.start *= 1000;
+  data.prevRound.end *= 1000;
+  data.prevRound.unlock *= 1000;
+
+  return data;
 }

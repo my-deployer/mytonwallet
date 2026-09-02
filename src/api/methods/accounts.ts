@@ -2,9 +2,11 @@ import type { ApiActivityTimestamps, OnApiUpdate } from '../types';
 
 import { IS_EXTENSION } from '../../config';
 import { getOrderedAccountChains } from '../../util/chain';
+import { logDebugError } from '../../util/logs';
 import { SOLANA_DERIVATION_PATHS } from '../chains/solana/constants';
 import { TRON_BIP39_PATH } from '../chains/tron/constants';
 import {
+  fetchMaybeStoredAccount,
   fetchStoredAccount,
   fetchStoredAccounts,
   getAccountChains,
@@ -31,6 +33,10 @@ export async function activateAccount(
   const prevAccountId = await getCurrentAccountId();
   const isFirstLogin = !prevAccountId;
 
+  // Detached on purpose: activation keeps the behaviour it has for every account, known or not. The check only
+  // records the disagreement between the two account stores, which is silent today.
+  void reportUnknownAccount(accountId, prevAccountId);
+
   await storage.setItem('currentAccountId', accountId);
   loginResolve();
 
@@ -43,6 +49,29 @@ export async function activateAccount(
   }
 
   void setActivePollingAccount(accountId, newestActivityTimestamps, shouldResetBalances);
+}
+
+/**
+ * The frontend cache and the worker storage hold the account list independently, with no point where one is
+ * reconciled against the other. When they diverge, every later read of this account throws `Account <id> doesn't
+ * exist` from deep inside polling, naming neither the divergence nor the state the app was in. Report it once,
+ * at the only place that knows the account the frontend asked for.
+ */
+async function reportUnknownAccount(accountId: string, prevAccountId?: string) {
+  try {
+    if (await fetchMaybeStoredAccount(accountId)) return;
+
+    logDebugError('activateAccount: the account is missing from the worker storage', {
+      accountId,
+      // Spelled out, because an undefined field would vanish from the serialized entry and read as an omission.
+      prevAccountId: prevAccountId ?? 'none',
+      // Account ids carry no secrets, and the surviving set is what tells a lost update apart from a wiped store.
+      // Sorted so that the same set folds into one entry however the storage happens to order its keys.
+      storedAccountIds: Object.keys(await fetchStoredAccounts()).sort(),
+    });
+  } catch (err) {
+    logDebugError('activateAccount: failed to inspect the worker account storage', accountId, err);
+  }
 }
 
 export async function loadAccountsDerivations() {

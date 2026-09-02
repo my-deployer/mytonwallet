@@ -28,7 +28,7 @@ function NftChips({ nfts, className }: OwnProps) {
   function renderNft(nft: NftTransfer) {
     return (
       <div key={nft.address} className={styles.nft}>
-        <img src={nft.thumbnail} alt={nft.name} className={styles.image} />
+        {nft.thumbnail && <img src={nft.thumbnail} alt={nft.name} className={styles.image} />}
         <span className={styles.name}>{nft.name || nft.address}</span>
       </div>
     );

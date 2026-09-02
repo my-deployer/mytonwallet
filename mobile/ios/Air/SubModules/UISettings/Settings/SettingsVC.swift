@@ -15,16 +15,6 @@ import Perception
 
 private let log = Log("SettingsVC")
 
-public enum SettingsPresentationStyle: Sendable {
-    case standard
-    case drawer
-}
-
-public enum SettingsDrawerCloseControl: Equatable, Sendable {
-    case closeButton
-    case mainTabTitle(String)
-}
-
 @MainActor
 public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver, UICollectionViewDelegate {
     
@@ -36,28 +26,6 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
     private var settingsHeaderView = SettingsHeaderView()
     private var navBarBlurView: UIView?
     private var pauseReloadData: Bool = false
-    public var presentationStyle: SettingsPresentationStyle = .standard {
-        didSet {
-            settingsHeaderView.presentationStyle = presentationStyle
-            if isViewLoaded {
-                configureNavigationItems()
-            }
-        }
-    }
-    public var drawerCloseControl: SettingsDrawerCloseControl = .closeButton {
-        didSet {
-            if isViewLoaded {
-                configureNavigationItems()
-            }
-        }
-    }
-    public var onDrawerClose: (() -> Void)? {
-        didSet {
-            if isViewLoaded {
-                configureNavigationItems()
-            }
-        }
-    }
     private var isExpandedSplitLayout: Bool {
         splitViewController?.isCollapsed == false
     }
@@ -80,7 +48,6 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
     }
 
     private func setupViews() {
-        settingsHeaderView.presentationStyle = presentationStyle
         if IS_DEBUG_OR_TESTFLIGHT_DEFAULT {
             settingsHeaderView.onLargeAvatarLongPress = {
                 AppActions.showDebugView()
@@ -108,9 +75,7 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
         _configuration.separatorConfiguration.bottomSeparatorInsets.leading = 62
         _configuration.headerMode = .none
         
-        let topSectionInset = presentationStyle == .drawer
-            ? settingsHeaderView.layoutGeometry.drawerTopSectionInset
-            : settingsHeaderView.layoutGeometry.topSectionInset
+        let topSectionInset = settingsHeaderView.layoutGeometry.topSectionInset
         let layout = UICollectionViewCompositionalLayout(sectionProvider: { [weak self] sectionIdx, env in
             var configuration = _configuration
             configuration.footerMode = sectionIdx + 1 == self?.collectionView.numberOfSections ? .supplementary : .none
@@ -200,31 +165,17 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
     }
 
     private func configureNavigationItems() {
-        navigationItem.leftItemsSupplementBackButton = true
-        settingsHeaderView.onDrawerCloseTap = presentationStyle == .drawer ? onDrawerClose : nil
-        switch presentationStyle {
-        case .standard:
-            navigationItem.leftBarButtonItem = UIBarButtonItem(
-                title: lang("Receive"),
-                image: UIImage.airBundle("QRIcon").withRenderingMode(.alwaysTemplate),
-                primaryAction: UIAction { [weak self] _ in self?.showReceiveWithQR() }
+        let receiveBarButtonItem = UIBarButtonItem(
+            title: lang("Receive"),
+            image: UIImage.airBundle("QRIcon").withRenderingMode(.alwaysTemplate),
+            primaryAction: UIAction { [weak self] _ in self?.showReceiveWithQR() }
+        )
+        navigationItem.trailingItemGroups = [
+            UIBarButtonItemGroup(
+                barButtonItems: [receiveBarButtonItem, makeMoreBarButtonItem()],
+                representativeItem: nil
             )
-            navigationItem.rightBarButtonItem = makeMoreBarButtonItem()
-        case .drawer:
-            navigationItem.leftBarButtonItem = makeMoreBarButtonItem()
-            navigationItem.rightBarButtonItem = switch drawerCloseControl {
-            case .closeButton:
-                UIBarButtonItem(
-                    systemItem: .close,
-                    primaryAction: UIAction { [weak self] _ in self?.onDrawerClose?() }
-                )
-            case .mainTabTitle(let title):
-                UIBarButtonItem(
-                    title: title,
-                    primaryAction: UIAction { [weak self] _ in self?.onDrawerClose?() }
-                )
-            }
-        }
+        ]
     }
 
     private func makeMoreBarButtonItem() -> UIBarButtonItem {
@@ -274,7 +225,12 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
             navigationController?.pushViewController(AssetsAndActivityVC(), animated: true)
         case .subwallets:
             Task { @MainActor in
-                if let enclaveToken = await UnlockVC.presentAuthAsync(on: self) {
+                if let enclaveToken = await UnlockVC.presentAuthAsync(
+                    on: self,
+                    sessionKind: .oneShot,
+                    // Loading variants and creating a subwallet each read the secret.
+                    extraAuthUsages: 1
+                ) {
                     self.navigationController?.pushViewController(SubwalletsVC(enclaveToken: enclaveToken), animated: true)
                 }
             }
@@ -408,9 +364,7 @@ public class SettingsVC: SettingsBaseVC, Sendable, WalletCoreData.EventsObserver
             snapshot.appendItems([.support])
         }
         snapshot.appendItems([.helpCenter])
-        if !IS_GRAM_WALLET {
-            snapshot.appendItems([.tips])
-        }
+        snapshot.appendItems([.tips])
         snapshot.appendItems([.useResponsibly])
 
         // About

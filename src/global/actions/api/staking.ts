@@ -101,29 +101,35 @@ addActionHandler('switchStakingAccount', async (global, actions, { accountId, mo
 });
 
 addActionHandler('startStaking', (global, actions, payload) => {
-  const { tokenSlug } = payload || {};
+  const { stakingId, tokenSlug, initialAmount } = payload || {};
   const currentAccountId = selectCurrentAccountId(global)!;
-
-  if (tokenSlug) {
-    const stakingState = selectAccountStakingStatesBySlug(global, currentAccountId)[tokenSlug];
-    if (stakingState) {
-      global = getGlobal();
-      global = updateAccountStaking(global, currentAccountId, { stakingId: stakingState.id });
-      setGlobal(global);
-
-      global = getGlobal();
-    }
+  const states = selectAccountStakingStates(global, currentAccountId);
+  const requestedState = stakingId
+    ? states.find(({ id }) => id === stakingId)
+    : tokenSlug
+      ? selectAccountStakingStatesBySlug(global, currentAccountId)[tokenSlug]
+      : selectAccountStakingState(global, currentAccountId);
+  if (
+    (stakingId || tokenSlug)
+    && (!requestedState || (tokenSlug !== undefined && requestedState.tokenSlug !== tokenSlug))
+  ) {
+    return;
   }
 
-  const effectiveTokenSlug = tokenSlug ?? selectAccountStakingState(global, currentAccountId)?.tokenSlug;
+  const effectiveTokenSlug = requestedState?.tokenSlug;
   if (!getIsNewStakeAllowed(effectiveTokenSlug)) {
     return;
+  }
+
+  if (requestedState) {
+    global = updateAccountStaking(global, currentAccountId, { stakingId: requestedState.id });
   }
 
   const state = StakingState.StakeInitial;
 
   setGlobal(updateCurrentStaking(global, {
     state,
+    initialAmount,
     error: undefined,
   }));
 });

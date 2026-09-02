@@ -1,7 +1,6 @@
 import React, { memo } from '../../lib/teact/teact';
 import { getActions, withGlobal } from '../../global';
 
-import { IS_FEATURE_LIMITED } from '../../config';
 import { getChainsSupportingLedger } from '../../util/chain';
 import { IS_LEDGER_SUPPORTED } from '../../util/windowEnvironment';
 
@@ -69,16 +68,14 @@ function AuthImportWalletModal({ isOpen }: StateProps) {
         )}
       </div>
 
-      {!IS_FEATURE_LIMITED && (
-        <div className={styles.actionsSection}>
-          <ListItem
-            icon="wallet-view"
-            label={lang('View Any Address')}
-            description={lang('Watch wallet in read-only mode')}
-            onClick={handleImportViewAccountClick}
-          />
-        </div>
-      )}
+      <div className={styles.actionsSection}>
+        <ListItem
+          icon="wallet-view"
+          label={lang('View Any Address')}
+          description={lang('Watch wallet in read-only mode')}
+          onClick={handleImportViewAccountClick}
+        />
+      </div>
     </Modal>
   );
 }

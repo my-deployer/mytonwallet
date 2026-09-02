@@ -69,7 +69,9 @@ class WNftTagsChipGroup(context: Context) : ChipGroup(context) {
         nfts.take(visibleCount).forEach { nft ->
             addView(
                 WTagView(context).apply {
-                    configure(Content.ofUrl(nft.thumbnail ?: nft.image ?: ""), nft.name)
+                    // An NFT without a proxied preview has no image at all, and the tag shows just its name
+                    val imageUrl = nft.thumbnail ?: nft.image
+                    configure(imageUrl?.let { Content.ofUrl(it) }, nft.name)
                 }
             )
         }
@@ -165,8 +167,11 @@ class WNftTagsChipGroup(context: Context) : ChipGroup(context) {
         }
     }
 
-    private fun remainingText(remainingCount: Int): String =
-        "+${LocaleController.getPlural(remainingCount, "%amount% NFTs")}"
+    private fun remainingText(remainingCount: Int): String = "+" + LocaleController.getPlural(
+        remainingCount,
+        "%amount% NFTs",
+        placeholder = "%amount%"
+    )
 
     private fun TextPaint.measureTextCeil(text: String): Int = ceil(measureText(text)).toInt()
 

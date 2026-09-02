@@ -15,6 +15,34 @@
     {
       "target" : {
         "containerPath" : "container:..\/Air",
+        "identifier" : "UniversalSearchCoreTests",
+        "name" : "UniversalSearchCoreTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
+        "identifier" : "UniversalSearchPersistenceTests",
+        "name" : "UniversalSearchPersistenceTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
+        "identifier" : "UniversalSearchWalletCoreTests",
+        "name" : "UniversalSearchWalletCoreTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
+        "identifier" : "UniversalSearchFeatureTests",
+        "name" : "UniversalSearchFeatureTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
         "identifier" : "WalletContextTests",
         "name" : "WalletContextTests"
       }
@@ -31,6 +59,13 @@
         "containerPath" : "container:..\/Air",
         "identifier" : "UIComponentsTests",
         "name" : "UIComponentsTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
+        "identifier" : "UIAgentTests",
+        "name" : "UIAgentTests"
       }
     },
     {
@@ -73,6 +108,13 @@
         "containerPath" : "container:..\/Air",
         "identifier" : "UISendTests",
         "name" : "UISendTests"
+      }
+    },
+    {
+      "target" : {
+        "containerPath" : "container:..\/Air",
+        "identifier" : "UIEarnTests",
+        "name" : "UIEarnTests"
       }
     },
     {

@@ -7,6 +7,8 @@ import org.mytonwallet.app_air.walletcore.models.MExploreHistory
 
 object ExploreHistoryStore : IStore {
 
+    const val RECENT_TOKENS_LIMIT = 9
+
     private val adapter by lazy { WalletCore.moshi.adapter(MExploreHistory::class.java) }
     private var accountId = AccountStore.activeAccountId
 
@@ -46,15 +48,34 @@ object ExploreHistoryStore : IStore {
         saveBrowserHistory(accountId, exploreHistory)
     }
 
+    fun saveTokenVisit(accountId: String, tokenSlug: String) {
+        if (this.accountId != accountId) return
+        val history = exploreHistory ?: return
+        if (!history.rememberOpenedToken(tokenSlug, RECENT_TOKENS_LIMIT)) return
+        saveBrowserHistory(accountId, history)
+    }
+
+    fun clearSearchHistory() {
+        val history = exploreHistory ?: return
+        if (history.searchHistory.isEmpty()) return
+        history.searchHistory.clear()
+        saveBrowserHistory(accountId, history)
+    }
+
     fun clearAccountHistory() {
         exploreHistory = MExploreHistory()
         saveBrowserHistory(accountId, exploreHistory)
     }
 
     private fun saveBrowserHistory(accountId: String?, browserHistory: MExploreHistory?) {
-        if (AccountStore.activeAccountId != accountId) return
-        accountId?.let {
-            WCacheStorage.setExploreHistory(accountId, adapter.toJson(browserHistory))
+        if (accountId == null) return
+        val historySnapshot = browserHistory?.copy(
+            searchHistory = browserHistory.searchHistory.toMutableList(),
+            visitedSites = browserHistory.visitedSites.toMutableList(),
+            mutableRecentTokenSlugs = browserHistory.recentTokenSlugs().toMutableList()
+        )
+        cacheExecutor.execute {
+            WCacheStorage.setExploreHistory(accountId, adapter.toJson(historySnapshot))
         }
     }
 

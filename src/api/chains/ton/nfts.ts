@@ -1,12 +1,9 @@
-import type { NftItem } from 'tonapi-sdk-js';
 import type { Cell } from '@ton/core';
 import { Address, Builder } from '@ton/core';
 
 import type {
   ApiCheckTransactionDraftResult,
-  ApiNetwork,
   ApiNft,
-  ApiNftSuperCollection,
   ApiNftUpdate,
   ApiSubmitNftTransferResult,
 } from '../../types';
@@ -28,15 +25,13 @@ import { compact } from '../../../util/iteratees';
 import { logDebug, logDebugError } from '../../../util/logs';
 import { getNativeToken } from '../../../util/tokens';
 import { generateQueryId } from './util';
-import { parseTonapiioNft } from './util/metadata';
 import { getSigner } from './util/signer';
-import {
-  fetchAccountEvents, fetchAccountNfts, fetchNftByAddress, fetchNftItems,
-} from './util/tonapiio';
 import { commentToBytes, packBytesAsSnakeCell, storeInlineOrRefCell, toBase64Address } from './util/tonCore';
 import { fetchStoredChainAccount, fetchStoredWallet } from '../../common/accounts';
 import { getNftSuperCollectionsByCollectionAddress } from '../../common/addresses';
 import { fetchAllPaginated, streamPaginated } from '../../common/pagination';
+import { parseToncenterNft } from './toncenter/actions';
+import { fetchNftItems, fetchNftTransfers, parseNftItem, parseNftItems } from './toncenter/nfts';
 import {
   NFT_PAYLOAD_SAFE_MARGIN,
   NFT_TRANSFER_AMOUNT,
@@ -47,13 +42,7 @@ import {
 import { checkMultiTransactionDraft, checkToAddress, submitMultiTransferWithMfa } from './transfer';
 import { isActiveSmartContract } from './wallet';
 
-function parseNfts(
-  rawNfts: NftItem[],
-  network: ApiNetwork,
-  nftSuperCollectionsByCollectionAddress: Record<string, ApiNftSuperCollection>,
-) {
-  return compact(rawNfts.map((rawNft) => parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress)));
-}
+const NFT_TRANSFER_BATCH_SIZE = 100;
 
 export async function getAccountNfts(accountId: string, options?: {
   collectionAddress?: string;
@@ -64,26 +53,27 @@ export async function getAccountNfts(accountId: string, options?: {
   const { address } = await fetchStoredWallet(accountId, 'ton');
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
 
-  // We skip the request, since the super collection is an abstraction, and the TON address for the TonAPI is not valid.
+  // The super collection is an abstraction of ours, so it has no address the indexer would accept
   if (options?.collectionAddress === TELEGRAM_GIFTS_SUPER_COLLECTION) return [];
 
   if (options?.offset !== undefined || options?.limit !== undefined) {
-    const rawNfts = await fetchAccountNfts(network, address, options);
-    return parseNfts(rawNfts, network, nftSuperCollectionsByCollectionAddress);
+    const response = await fetchNftItems(network, { ownerAddress: address, ...options });
+    return compact(parseNftItems(network, response, nftSuperCollectionsByCollectionAddress));
   }
 
   const { nftBatchLimit, nftBatchPauseMs } = getChainConfig('ton');
-  const rawNfts = await fetchAllPaginated({
+  const nfts = await fetchAllPaginated({
     batchLimit: nftBatchLimit!,
     pauseMs: nftBatchPauseMs!,
-    fetchBatch: (cursor) => fetchAccountNfts(network, address, {
+    fetchBatch: (cursor) => fetchNftItems(network, {
+      ownerAddress: address,
       collectionAddress: options?.collectionAddress,
       offset: cursor * nftBatchLimit!,
       limit: nftBatchLimit!,
-    }),
+    }).then((response) => parseNftItems(network, response, nftSuperCollectionsByCollectionAddress)),
   });
 
-  return parseNfts(rawNfts, network, nftSuperCollectionsByCollectionAddress);
+  return compact(nfts);
 }
 
 export async function streamAllAccountNfts(accountId: string, options: {
@@ -99,21 +89,25 @@ export async function streamAllAccountNfts(accountId: string, options: {
     signal: options.signal,
     batchLimit: nftBatchLimit!,
     pauseMs: nftBatchPauseMs!,
-    fetchBatch: (cursor) => fetchAccountNfts(network, address, {
+    fetchBatch: (cursor) => fetchNftItems(network, {
+      ownerAddress: address,
       offset: cursor * nftBatchLimit!,
       limit: nftBatchLimit!,
-    }),
-    onBatch: (batch) => options.onBatch(parseNfts(batch, network, nftSuperCollectionsByCollectionAddress)),
+    }).then((response) => parseNftItems(network, response, nftSuperCollectionsByCollectionAddress)),
+    onBatch: (batch) => options.onBatch(compact(batch)),
   });
 }
 
 export async function checkNftOwnership(accountId: string, nftAddress: string) {
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'ton');
-  const rawNft = await fetchNftByAddress(network, nftAddress);
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
 
-  const nft = parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress);
+  const response = await fetchNftItems(network, { addresses: [nftAddress] });
+  const item = response.nft_items[0];
+  if (!item) return false;
+
+  const nft = parseNftItem(network, item, response.metadata, nftSuperCollectionsByCollectionAddress);
 
   return address === nft?.ownerAddress;
 }
@@ -123,67 +117,50 @@ export async function getNftUpdates(accountId: string, fromSec: number) {
   const { address } = await fetchStoredWallet(accountId, 'ton');
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
 
-  const events = await fetchAccountEvents(network, address, fromSec);
-  fromSec = events[0]?.timestamp ?? fromSec;
-  events.reverse();
+  const { nft_transfers: transfers, metadata } = await fetchNftTransfers(network, {
+    ownerAddress: address,
+    startUtime: fromSec,
+    limit: NFT_TRANSFER_BATCH_SIZE,
+  });
+
+  // The response is sorted from the newest to the oldest
+  fromSec = transfers[0]?.transaction_now ?? fromSec;
   const updates: ApiNftUpdate[] = [];
 
-  for (const event of events) {
-    for (const action of event.actions) {
-      let to: string;
-      let nftAddress: string;
-      let rawNft: NftItem | undefined;
-      const isPurchase = !!action.NftPurchase;
+  for (const transfer of transfers.slice().reverse()) {
+    const nftAddress = toBase64Address(transfer.nft_address, true, network);
+    const newOwnerAddress = toBase64Address(transfer.new_owner, false, network);
 
-      if (action.NftItemTransfer) {
-        const { sender, recipient, nft: rawNftAddress } = action.NftItemTransfer;
-        if (!sender || !recipient) continue;
-        to = recipient.address;
-        nftAddress = toBase64Address(rawNftAddress, true, network);
-      } else if (action.NftPurchase) {
-        const { buyer } = action.NftPurchase;
-        to = buyer.address;
-        rawNft = action.NftPurchase.nft;
-        if (!rawNft) {
-          continue;
-        }
-        nftAddress = toBase64Address(rawNft.address, true, network);
-      } else {
-        continue;
+    if (Address.parse(newOwnerAddress).equals(Address.parse(address))) {
+      const { nft } = parseToncenterNft(
+        network,
+        metadata,
+        transfer.nft_address,
+        nftSuperCollectionsByCollectionAddress,
+        {
+          rawCollectionAddress: transfer.nft_collection ?? undefined,
+          // `/nft/transfers` reports no ownership, but the check above has just confirmed that this
+          // transfer handed the NFT to our wallet
+          ownerAddress: address,
+        },
+      );
+
+      if (nft) {
+        updates.push({ type: 'nftReceived', accountId, nftAddress, nft });
       }
-
-      if (Address.parse(to).equals(Address.parse(address))) {
-        if (!rawNft) {
-          [rawNft] = await fetchNftItems(network, [nftAddress]);
-        }
-
-        if (rawNft) {
-          const nft = parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress);
-
-          if (nft) {
-            updates.push({
-              type: 'nftReceived',
-              accountId,
-              nftAddress,
-              nft,
-            });
-          }
-        }
-      } else if (!isPurchase && await isActiveSmartContract(network, to)) {
-        updates.push({
-          type: 'nftPutUpForSale',
-          accountId,
-          nftAddress,
-        });
-      } else {
-        updates.push({
-          type: 'nftSent',
-          accountId,
-          chain: 'ton',
-          nftAddress,
-          newOwnerAddress: to,
-        });
-      }
+    } else if (await isActiveSmartContract(network, newOwnerAddress)) {
+      // A finished sale never hits this branch: its transfer goes from the sale contract to the
+      // buyer, so the `owner_address` filter does not return it for the seller at all. The seller's
+      // gallery catches up on the next full reload instead
+      updates.push({ type: 'nftPutUpForSale', accountId, nftAddress });
+    } else {
+      updates.push({
+        type: 'nftSent',
+        accountId,
+        chain: 'ton',
+        nftAddress,
+        newOwnerAddress,
+      });
     }
   }
 

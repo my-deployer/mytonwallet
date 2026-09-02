@@ -12,10 +12,16 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.extensions.setPaddingLocalized
 import org.mytonwallet.app_air.uicomponents.widgets.SpringSnapHelper
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
+import org.mytonwallet.app_air.uicomponents.widgets.WView
+import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
+import org.mytonwallet.app_air.walletbasecontext.theme.WColor
+import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcore.models.MExploreSite
 
 @SuppressLint("ViewConstructor")
@@ -56,6 +62,8 @@ class ExploreTrendingCell(
     private val recyclerView = WRecyclerView(context).apply {
         layoutParams = ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         isHorizontalScrollBarEnabled = false
+        setPaddingLocalized(4.dp, 0, 0, 0)
+        clipToPadding = false
         layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
         addItemDecoration(object : RecyclerView.ItemDecoration() {
             override fun getItemOffsets(
@@ -107,19 +115,26 @@ class ExploreTrendingCell(
         }
     }
 
+    private val containerView = WView(context).apply {
+        addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        setConstraints { allEdges(recyclerView) }
+    }
+
     init {
         recyclerView.adapter = trendingAdapter
         springSnap.attachTo(recyclerView)
-        addView(recyclerView)
-        setConstraints {
-            toTop(recyclerView, 0f)
-            toBottom(recyclerView)
-            toCenterX(recyclerView)
-        }
-        updateTheme()
+        setPaddingLocalized(
+            ViewConstants.HORIZONTAL_PADDINGS.dp,
+            0,
+            ViewConstants.HORIZONTAL_PADDINGS.dp,
+            12.dp
+        )
+        addView(containerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        setConstraints { allEdges(containerView) }
     }
 
     fun configure(sites: List<MExploreSite>?) {
+        updateTheme()
         if (sites == trendingAdapter.sites) return
 
         stopAutoScroll()
@@ -157,5 +172,10 @@ class ExploreTrendingCell(
     }
 
     override fun updateTheme() {
+        containerView.setBackgroundColor(
+            WColor.Background.color,
+            0f,
+            ViewConstants.BLOCK_RADIUS.dp
+        )
     }
 }

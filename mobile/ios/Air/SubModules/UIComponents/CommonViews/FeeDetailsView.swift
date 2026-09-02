@@ -114,21 +114,12 @@ public struct FeeDetailsView: View {
             precision: precision
         )
         if !showExcess {
-            let explanation = lang(
-                "$dapp_return_details",
-                arg1: "**\(fullAmountText)**",
-                arg2: ""
-            )
+            let explanation = L10n.dappReturnDetails(feeAmount: "**\(fullAmountText)**", receivedAmount: "")
             let firstParagraph = explanation.components(separatedBy: "\n\n").first ?? explanation
             return Text(LocalizedStringKey(firstParagraph))
         }
 
-        let explanation = lang(
-            "$fee_details",
-            arg1: "**\(fullAmountText)**",
-            arg2: nativeToken.symbol,
-            arg3: nativeToken.chain.title
-        )
+        let explanation = L10n.feeDetails(fullFee: "**\(fullAmountText)**", excessSymbol: nativeToken.symbol, chainName: nativeToken.chain.title)
         return Text(LocalizedStringKey(explanation))
     }
 }

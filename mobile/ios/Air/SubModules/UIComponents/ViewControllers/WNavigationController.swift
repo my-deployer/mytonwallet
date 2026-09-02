@@ -28,14 +28,6 @@ open class WNavigationController: UINavigationController {
     public var onWillShowViewController: ((UIViewController) -> Void)?
     public var pushViewControllerInterceptor: ((UIViewController, Bool) -> Bool)?
     public var popViewControllerInterceptor: ((Bool) -> Bool)?
-    public var navigationTransitionAnimationController: ((
-        UINavigationController.Operation,
-        UIViewController,
-        UIViewController
-    ) -> UIViewControllerAnimatedTransitioning?)?
-    public var navigationTransitionInteractionController: ((
-        UIViewControllerAnimatedTransitioning
-    ) -> UIViewControllerInteractiveTransitioning?)?
     
     public var isExtraSheetDimmingEnabled: Bool = false {
         didSet {
@@ -110,22 +102,6 @@ open class WNavigationController: UINavigationController {
 }
 
 extension WNavigationController: UINavigationControllerDelegate {
-    public func navigationController(
-        _ navigationController: UINavigationController,
-        animationControllerFor operation: UINavigationController.Operation,
-        from fromViewController: UIViewController,
-        to toViewController: UIViewController
-    ) -> UIViewControllerAnimatedTransitioning? {
-        navigationTransitionAnimationController?(operation, fromViewController, toViewController)
-    }
-
-    public func navigationController(
-        _ navigationController: UINavigationController,
-        interactionControllerFor animationController: UIViewControllerAnimatedTransitioning
-    ) -> UIViewControllerInteractiveTransitioning? {
-        navigationTransitionInteractionController?(animationController)
-    }
-
     public func navigationController(_ navigationController: UINavigationController,
                                      willShow viewController: UIViewController, animated: Bool) {
         onWillShowViewController?(viewController)

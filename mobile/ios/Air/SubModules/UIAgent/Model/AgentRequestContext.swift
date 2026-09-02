@@ -8,6 +8,7 @@ private enum AgentRequestContextMetrics {
 }
 
 struct AgentRequestContext: Encodable {
+    let appName: String
     let platform: String
     let client: String
     let lang: String?
@@ -45,6 +46,7 @@ struct AgentRequestContext: Encodable {
         }()
 
         return AgentRequestContext(
+            appName: APP_NAME,
             platform: AgentRequestContextMetrics.platform,
             client: AgentRequestContextMetrics.client,
             lang: LocalizationSupport.shared.langCode,

@@ -210,6 +210,11 @@ class WNavigationBar(
     }
 
     private var oldTitle: String? = null
+
+    fun setTitleContentVisible(visible: Boolean) {
+        titleLinearLayout.isVisible = visible
+    }
+
     fun setTitle(title: String, animated: Boolean) {
         if (oldTitle == title) return
         if (animated) {

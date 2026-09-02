@@ -4,7 +4,7 @@
   var RTL_LANG_CODES = ['ar', 'fa']; // mirrors the `rtl: true` entries of LANG_LIST
 
   var langCode;
-  // The build injects the exact, flavor-specific cache key (Core/Gram/Explorer)
+  // The build injects the exact, flavor-specific cache key (Gram/Explorer)
   var exactKey = document.documentElement.getAttribute('data-global-state-key');
   if (exactKey) {
     try {

@@ -2,6 +2,7 @@ import SwiftUI
 import UIComponents
 import UIKit
 import WalletContext
+import WalletCore
 
 final class MarketTokenListVC: WViewController, UICollectionViewDelegate {
     private enum Section {
@@ -44,14 +45,19 @@ final class MarketTokenListVC: WViewController, UICollectionViewDelegate {
         collectionView.delaysContentTouches = false
         view.addStretchedToBounds(subview: collectionView)
 
-        let registration = UICollectionView.CellRegistration<UICollectionViewListCell, MarketToken> {
+        let registration = UICollectionView.CellRegistration<WHighlightCollectionViewCell, MarketToken> {
             cell, _, token in
             cell.contentConfiguration = UIHostingConfiguration {
                 MarketTokenRow(token: token, showsChevron: false)
             }
             .margins(.all, 0)
             .background {
-                Color.air.background
+                Color.clear
+            }
+            cell.baseBackgroundColor = .air.background
+            cell.highlightBackgroundColor = .air.highlight
+            cell.configurationUpdateHandler = { tokenCell, state in
+                tokenCell.isHighlighted = state.isHighlighted
             }
         }
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) {
@@ -74,5 +80,11 @@ final class MarketTokenListVC: WViewController, UICollectionViewDelegate {
             CGPoint(x: 0, y: -collectionView.adjustedContentInset.top),
             animated: animated
         )
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        collectionView.deselectItem(at: indexPath, animated: true)
+        guard let token = dataSource.itemIdentifier(for: indexPath) else { return }
+        AppActions.showTokenBySlug(token.token.slug)
     }
 }

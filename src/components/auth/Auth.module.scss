@@ -529,10 +529,6 @@ $footerPaddingBottomMin: 1rem;
   margin-bottom: 1rem;
 }
 
-.responsibilityCheckboxSimple {
-  margin-bottom: 0;
-}
-
 .responsibilityCheckboxContent {
   margin-top: 0.0625rem;
   font-size: 0.9375rem;
@@ -592,47 +588,6 @@ $footerPaddingBottomMin: 1rem;
   &InModal {
     padding: 0;
   }
-}
-
-.coreWalletButtons {
-  gap: 2rem;
-}
-
-.importText {
-  position: relative;
-
-  font-size: 0.9375rem !important;
-  font-weight: 400;
-  line-height: 1.0625rem;
-  color: var(--color-gray-3);
-
-  &::before,
-  &::after {
-    content: '';
-
-    position: absolute;
-    bottom: 0.5rem;
-    inset-inline-start: -5.125rem;
-    inset-inline-end: 0;
-
-    width: 4.5rem;
-    height: 0.0625rem;
-
-    box-shadow: inset 0 -0.0375rem 0 0 var(--color-separator);
-  }
-
-  &::after {
-    position: absolute;
-    inset-inline-start: auto;
-    inset-inline-end: -5.125rem;
-  }
-}
-
-.coreWalletStartButtons {
-  display: flex;
-  gap: 1rem;
-  width: 100%;
-  margin: 0 -1rem;
 }
 
 .biometricsStep {

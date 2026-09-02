@@ -247,7 +247,7 @@ function SecurityMain({
           <p className={styles.blockDescription}>
             {
               lang(
-                'App will not ask for signature for %1$d minutes after last entry.',
+                'App will not ask for signature for %minutes% minutes after last entry.',
                 AUTO_CONFIRM_DURATION_MINUTES,
               )
             }

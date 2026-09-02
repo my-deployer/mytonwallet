@@ -82,10 +82,7 @@ public class ImportWalletVC: CreateWalletBaseVC {
         animationName: "animation_snitch",
         animationPlaybackMode: .once,
         title: lang("Enter Secret Words"),
-        description: lang(
-            "$auth_import_mnemonic_description",
-            arg1: langJoin([localizedIntegerString(12), localizedIntegerString(24)], .or)
-        ),
+        description: L10n.authImportMnemonicDescription(counts: langJoin([localizedIntegerString(12), localizedIntegerString(24)], .or)),
         animationSize: 96,
     )
     private lazy var bottomActionsView = BottomActionsView(

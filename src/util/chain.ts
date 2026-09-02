@@ -16,7 +16,6 @@ import {
   ETH_USDT_MAINNET,
   HYPERLIQUID,
   HYPERLIQUID_USDC_MAINNET,
-  IS_CORE_WALLET,
   IS_GRAM_WALLET,
   MONAD,
   MYCOIN_MAINNET,
@@ -37,8 +36,8 @@ import {
 } from '../config';
 import { EVM_DERIVATION_PATHS } from '../api/chains/evm/constants';
 import { SOLANA_DERIVATION_PATHS } from '../api/chains/solana/constants';
-import { SOLANA_DERIVATION_SPEC, SOLANA_DERIVATION_VERSION } from '../api/chains/solana/derivation';
-import { TON_BIP39_PATH } from '../api/chains/ton/constants';
+import { SOLANA_DERIVATION_SPEC, SOLANA_DERIVATION_VERSION } from '../api/chains/solana/derivationConstants';
+import { TON_BIP39_PATH } from '../api/chains/ton/derivationConstants';
 import { TRON_BIP39_PATH } from '../api/chains/tron/constants';
 import formatTonTransferUrl from './ton/formatTransferUrl';
 import { buildCollectionByKey, compact } from './iteratees';
@@ -1088,7 +1087,7 @@ export function getChainTitle(chain: ApiChain) {
 }
 
 export function getIsSupportedChain(chain?: string): chain is ApiChain {
-  return !!findChainConfig(chain);
+  return chain !== undefined && Object.prototype.hasOwnProperty.call(CHAIN_CONFIG, chain);
 }
 
 export function getSupportedChains() {
@@ -1137,11 +1136,11 @@ export const getTrustedUsdtSlugs = /* #__PURE__ */ withCache((): ReadonlySet<str
 });
 
 export const getDefaultEnabledSlugs = /* #__PURE__ */ withCache((network: ApiNetwork): ReadonlySet<string> => {
-  // Deliberately keyed on the build, not on the feature axis: the TON-forward brands default to TON tokens even
-  // though they support every chain, matching Air (`ApiToken.defaultSlugs`). It also spares the wallet.ton.org
-  // accounts, whose TON-native mnemonic cannot derive foreign addresses, zero-balance rows they can never use:
-  // `updateBalances` (`global/reducers/misc.ts`) seeds every default slug and empty wallets render them all.
-  const chainConfigs = IS_CORE_WALLET ? [CHAIN_CONFIG.ton] : Object.values(CHAIN_CONFIG);
+  // The TON-forward Gram brand defaults to TON tokens even though it supports every chain, matching Air
+  // (`ApiToken.defaultSlugs`). It also spares the legacy wallet.ton.org accounts, whose TON-native mnemonic cannot
+  // derive foreign addresses, zero-balance rows they can never use: `updateBalances` (`global/reducers/misc.ts`)
+  // seeds every default slug and empty wallets render them all.
+  const chainConfigs = IS_GRAM_WALLET ? [CHAIN_CONFIG.ton] : Object.values(CHAIN_CONFIG);
 
   return new Set(
     chainConfigs.flatMap((chainConfig) => chainConfig.defaultEnabledSlugs[network]),

@@ -17,7 +17,20 @@ import { SEC } from '../constants';
 import { handleServerError } from '../errors';
 import { storage } from '../storages';
 
-import RECEIVE_GRADIENT_SVGS from '../../assets/receiveGradientSvgs';
+/**
+ * Loaded lazily so a `NO_EXTRA_FEATURES` build drops the inlined SVG set, which is presentation data
+ * that headless embedders with their own receive screen do not use.
+ */
+function requireReceiveGradientSvgs() {
+  // Inline `process.env` so the `require` lands in a statically false branch and Webpack drops the asset.
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const module = require('../../assets/receiveGradientSvgs') as typeof import('../../assets/receiveGradientSvgs');
+    return module.default;
+  }
+
+  throw new Error('Receive backgrounds are not supported in this build');
+}
 
 export function isBackendAuthTokenValid(authToken: string, publicKey: string) {
   try {
@@ -215,7 +228,7 @@ export async function renderBlurredReceiveBg(
 ): Promise<string> {
   const { width = 412, height = 422, blurPx = 24, quality = 0.85, overlay = '#ffffff', scale = 1 } = opts ?? {};
 
-  const svg = RECEIVE_GRADIENT_SVGS[chain];
+  const svg = requireReceiveGradientSvgs()[chain];
 
   const svgBlob = new Blob([svg], {
     type: 'image/svg+xml;charset=utf-8',

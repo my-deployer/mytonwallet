@@ -8,8 +8,8 @@ import { recognizeDappMethod } from '../../types/methods';
 
 import { createPostMessageInterface } from '../../../util/createPostMessageInterface';
 import { getProtocolManager } from '../../dappProtocols';
-import * as methods from '../../methods';
 import init from '../../methods/init';
+import { methods } from '../../methods/registry';
 
 createPostMessageInterface((name: string, origin?: string, ...args: any[]) => {
   if (name === 'init') {

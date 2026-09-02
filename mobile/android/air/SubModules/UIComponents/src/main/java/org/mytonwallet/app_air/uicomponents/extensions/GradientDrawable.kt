@@ -76,6 +76,26 @@ object GradientDrawables {
                 )
             )
         }
+    val orangeDrawable: GradientDrawable
+        get() {
+            val alpha = if (ThemeManager.isDark) 230 else 255
+            return gradientDrawable(
+                intArrayOf(
+                    "#FFC65C".toColorInt().colorWithAlpha(alpha),
+                    "#FF9A2E".toColorInt().colorWithAlpha(alpha)
+                )
+            )
+        }
+    val violetDrawable: GradientDrawable
+        get() {
+            val alpha = if (ThemeManager.isDark) 230 else 255
+            return gradientDrawable(
+                intArrayOf(
+                    "#E39BFF".toColorInt().colorWithAlpha(alpha),
+                    "#B45CF3".toColorInt().colorWithAlpha(alpha)
+                )
+            )
+        }
     val redDrawable: GradientDrawable
         get() {
             val alpha = if (ThemeManager.isDark) 230 else 255

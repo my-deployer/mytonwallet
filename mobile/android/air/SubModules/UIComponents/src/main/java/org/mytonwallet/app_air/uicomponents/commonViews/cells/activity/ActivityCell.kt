@@ -72,6 +72,13 @@ class ActivityCell(
 
     private val dateView = ActivityDateLabel(context)
     private val mainContentView = ActivityMainContentView(context)
+
+    // Dates go into the subtitle instead of day headers (see ActivityMainContentView).
+    var showsInlineDate: Boolean
+        get() = mainContentView.showsInlineDate
+        set(value) {
+            mainContentView.showsInlineDate = value
+        }
     private val commentLabel: WLabel by lazy {
         WLabel(context).apply {
             setStyle(adaptiveFontSize())
@@ -101,6 +108,10 @@ class ActivityCell(
 
     var onTap: ((MApiTransaction) -> Unit)? = null
 
+    // Called once the collapse started by `Positioning.isRemoving` has fully finished (not when it
+    // is cancelled by a rebind), so the owner can drop the row from the list.
+    var onRemoved: ((MApiTransaction) -> Unit)? = null
+
     var allowNftMenu: Boolean = false
     private var transaction: MApiTransaction? = null
     private var accountId: String? = null
@@ -129,14 +140,21 @@ class ActivityCell(
             toBottom(mainContentView)
         }
 
-        if (withoutTagAndComment && isFirstInDay != null) {
-            layoutParams.height =
-                if (isFirstInDay) FIRST_DAY_MAIN_CONTENT_HEIGHT.dp else MAIN_CONTENT_HEIGHT.dp
-        } else {
-            layoutParams.height = WRAP_CONTENT
+        // A cell bound before its first attach already carries the start height of a running or
+        // pending height animation; the rest height must not overwrite it.
+        if (heightSpringAnimation == null && positioning?.isAdded != true) {
+            if (withoutTagAndComment && isFirstInDay != null) {
+                layoutParams.height =
+                    if (isFirstInDay) FIRST_DAY_MAIN_CONTENT_HEIGHT.dp else MAIN_CONTENT_HEIGHT.dp
+            } else {
+                layoutParams.height = WRAP_CONTENT
+            }
         }
 
-        setOnClickListener { onTap?.let { onTap -> transaction?.let(onTap) } }
+        setOnClickListener {
+            if (positioning?.isRemoving == true) return@setOnClickListener
+            onTap?.let { onTap -> transaction?.let(onTap) }
+        }
     }
 
     data class Positioning(
@@ -145,12 +163,19 @@ class ActivityCell(
         val isLastInDay: Boolean,
         val isLast: Boolean,
         val isAdded: Boolean = false,
-        val isAddedAsNewDay: Boolean = false
+        val isAddedAsNewDay: Boolean = false,
+        // The row is leaving the list: collapse its height to 0 while fading the content out
+        // (the reverse of the `isAdded` reveal), then report through `onRemoved`.
+        val isRemoving: Boolean = false,
+        // The `isAdded` reveal grows from 0 instead of the card corner radius: another row is
+        // collapsing in step with it, so the list must not gain any height on the first frame.
+        val revealsFromZero: Boolean = false
     ) {
         fun matches(comparing: Positioning): Boolean = this.isFirst == comparing.isFirst &&
             this.isFirstInDay == comparing.isFirstInDay &&
             this.isLast == comparing.isLast &&
-            this.isLastInDay == comparing.isLastInDay
+            this.isLastInDay == comparing.isLastInDay &&
+            this.isRemoving == comparing.isRemoving
     }
 
     fun configure(
@@ -174,6 +199,7 @@ class ActivityCell(
             }
             return
         }
+        val wasShowingSameTransaction = this.transaction?.isSame(transaction) == true
         this.transaction = transaction
         this.accountId = accountId
         this.transactionAddressName = transaction.addressName()
@@ -181,6 +207,7 @@ class ActivityCell(
         this.baseCurrencyRate = TokenStore.baseCurrencyRate
         val firstChanged = this.positioning?.isFirst != positioning.isFirst
         val lastChanged = this.positioning?.isLast != positioning.isLast
+        val wasRemoving = this.positioning?.isRemoving == true
         this.positioning = positioning
 
         dateView.visibility = if (positioning.isFirstInDay) VISIBLE else GONE
@@ -195,12 +222,13 @@ class ActivityCell(
 
         updateTheme(forceUpdate = firstChanged || lastChanged)
 
-        if (positioning.isAdded) {
-            val startHeight = if (positioning.isFirstInDay && !positioning.isAddedAsNewDay) {
-                (FIRST_DAY_MAIN_CONTENT_HEIGHT - MAIN_CONTENT_HEIGHT).dp
-            } else {
-                bigRadius.roundToInt()
-            }
+        if (positioning.isRemoving) {
+            heightSpringAnimation?.cancel()
+            startRemoveAnimation(collapseFromLaidOutHeight = wasShowingSameTransaction)
+        } else if (positioning.isAdded) {
+            heightSpringAnimation?.cancel()
+            resetTransientState()
+            val startHeight = insertStartHeight(positioning)
 
             updateLayoutParams {
                 height = startHeight
@@ -213,12 +241,120 @@ class ActivityCell(
                 requestLayout()
                 startInsertAnimation()
             }
-        } else if (heightSpringAnimation?.isRunning == true) {
+        } else if (heightSpringAnimation?.isRunning == true || wasRemoving) {
             heightSpringAnimation?.cancel()
+            resetTransientState()
+        }
+    }
+
+    private fun insertStartHeight(positioning: Positioning): Int = when {
+        positioning.isFirstInDay && !positioning.isAddedAsNewDay ->
+            (FIRST_DAY_MAIN_CONTENT_HEIGHT - MAIN_CONTENT_HEIGHT).dp
+
+        positioning.revealsFromZero -> 0
+
+        else -> bigRadius.roundToInt()
+    }
+
+    // Restores the resting look after an interrupted or finished height animation.
+    private fun resetTransientState() {
+        children.forEach {
+            it.scaleX = 1f
+            it.scaleY = 1f
+            it.alpha = 1f
+            it.translationY = 0f
+        }
+        val restHeight = if (cellHeight > 0) cellHeight else WRAP_CONTENT
+        if (layoutParams.height != restHeight) {
             updateLayoutParams {
-                height = if (cellHeight > 0) cellHeight else WRAP_CONTENT
+                height = restHeight
             }
         }
+    }
+
+    // Measures the natural height of the currently configured content (all visible children).
+    private fun measureContentHeight(): Int {
+        val widthSpec = parentView.width.exactly
+        val heightSpec = 0.unspecified
+        mainContentView.measure(widthSpec, heightSpec)
+        var contentHeight = mainContentView.measuredHeight
+        if (dateView.isVisible) {
+            dateView.measure(widthSpec, heightSpec)
+            contentHeight += dateView.measuredHeight
+        }
+        if (!withoutTagAndComment) {
+            if (singleTagView?.isVisible == true) {
+                singleTagView?.measure(widthSpec, heightSpec)
+                contentHeight += singleTagView?.measuredHeight ?: 0
+            }
+            if (singleTagView?.isVisible == true && commentView?.isVisible == true) {
+                contentHeight += SPACING_BETWEEN_TAG_AND_COMMENT.dp
+            }
+            if (commentView?.isVisible == true) {
+                commentView?.measure(widthSpec, heightSpec)
+                contentHeight += commentView?.measuredHeight ?: 0
+            }
+            if (singleTagView?.isVisible == true || commentView?.isVisible == true) {
+                contentHeight += SPACING_BELOW_TAG_AND_COMMENT.dp
+            }
+        }
+        return contentHeight
+    }
+
+    private fun startRemoveAnimation(collapseFromLaidOutHeight: Boolean) {
+        val transaction = transaction ?: return
+        // A cell already showing this activity collapses from where it stands (it may have been
+        // mid-reveal); a recycled or fresh one from the natural height of its new content.
+        val startHeight =
+            if (collapseFromLaidOutHeight && height > 0) height else measureContentHeight()
+        if (startHeight <= 0) {
+            updateLayoutParams { height = 0 }
+            onRemoved?.invoke(transaction)
+            return
+        }
+        if (layoutParams.height != startHeight) {
+            updateLayoutParams { height = startHeight }
+        }
+        // Mirror of the reveal: the content is fully faded once the row is at 70% of its height,
+        // the remaining collapse happens on an empty row.
+        val fadeStartHeight = 0.7f * startHeight
+        val fadeRange = startHeight - fadeStartHeight
+
+        heightSpringAnimation = SpringAnimation(FloatValueHolder()).apply {
+            setStartValue(startHeight.toFloat())
+            spring = SpringForce(0f).apply {
+                stiffness = 500f
+                dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+            }
+            setMinValue(0f)
+
+            addUpdateListener { _, value, _ ->
+                updateLayoutParams {
+                    height = value.toInt().coerceAtLeast(0)
+                }
+                val fraction = ((value - fadeStartHeight) / fadeRange).coerceIn(0f, 1f)
+                val scale = lerp(0.95f, 1f, fraction)
+                children.forEach {
+                    it.alpha = fraction
+                    it.scaleX = scale
+                    it.scaleY = scale
+                }
+            }
+
+            addEndListener { _, canceled, _, _ ->
+                if (canceled) {
+                    resetTransientState()
+                    return@addEndListener
+                }
+                updateLayoutParams { height = 0 }
+                if (positioning?.isRemoving == true &&
+                    this@ActivityCell.transaction === transaction
+                ) {
+                    onRemoved?.invoke(transaction)
+                }
+            }
+        }
+        heightSpringAnimation?.start()
     }
 
     private fun startInsertAnimation() {
@@ -251,11 +387,7 @@ class ActivityCell(
             }
         }
 
-        val startHeight = if (positioning.isFirstInDay && !positioning.isAddedAsNewDay) {
-            (FIRST_DAY_MAIN_CONTENT_HEIGHT - MAIN_CONTENT_HEIGHT).dp
-        } else {
-            bigRadius.roundToInt()
-        }
+        val startHeight = insertStartHeight(positioning)
 
         heightSpringAnimation = SpringAnimation(FloatValueHolder()).apply {
             setStartValue(startHeight.toFloat())
@@ -276,8 +408,11 @@ class ActivityCell(
                         1f
                     )
                 mainContentView.alpha = lerp(0f, 1f, fraction)
-                mainContentView.scaleX = lerp(0.95f, 1f, mainContentView.alpha)
+                mainContentView.scaleX = lerp(0.85f, 1f, mainContentView.alpha)
                 mainContentView.scaleY = mainContentView.scaleX
+                val overflowShift = ((value - mainContentViewBottom) / 2f).coerceAtMost(0f)
+                mainContentView.translationY = overflowShift
+                dateView.translationY = overflowShift
                 if (positioning.isAddedAsNewDay) {
                     dateView.alpha = mainContentView.alpha
                     dateView.scaleX = mainContentView.scaleX
@@ -318,6 +453,8 @@ class ActivityCell(
                         it.alpha = 1f
                     }
                 }
+                mainContentView.translationY = 0f
+                dateView.translationY = 0f
 
                 val newHeight = if (cellHeight > 0) cellHeight else WRAP_CONTENT
                 if (layoutParams.height != newHeight) {

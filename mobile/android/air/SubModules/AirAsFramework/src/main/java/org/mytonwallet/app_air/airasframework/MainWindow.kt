@@ -23,6 +23,7 @@ import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
+import org.mytonwallet.app_air.walletcontext.cacheStorage.WCacheStorage
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.helpers.AutoLockHelper
 import org.mytonwallet.app_air.walletcore.WalletCore
@@ -142,6 +143,7 @@ class MainWindow : WWindow() {
             WalletContextManager.delegate?.get()?.restartApp()
             WGlobalStorage.setLangCode(langCode)
             TokenStore.clearLocalizedNames()
+            WCacheStorage.setMarketAssets(null)
             WalletCore.call(ApiMethod.Other.SetLangCode(langCode), callback = { _, _ -> })
             WidgetsConfigurations.reloadWidgets(this)
             AirAsFrameworkApplication.initTheme(applicationContext)

@@ -57,7 +57,7 @@ public enum AccountSwitcherAccountSupport: Equatable, Sendable {
     func isSupported(by account: MAccount) -> Bool {
         switch self {
         case .receive:
-            !account.supportedChains.isEmpty
+            account.supportsReceive
         case .send:
             account.supportsSend
         case .swap:

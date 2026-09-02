@@ -12,6 +12,7 @@ import androidx.core.text.buildSpannedString
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
 import java.math.BigInteger
+import java.util.Date
 import kotlin.math.abs
 import org.mytonwallet.app_air.uicomponents.commonViews.IconView
 import org.mytonwallet.app_air.uicomponents.extensions.dp
@@ -38,6 +39,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletbasecontext.utils.doubleAbsRepresentation
 import org.mytonwallet.app_air.walletbasecontext.utils.formatTime
+import org.mytonwallet.app_air.walletbasecontext.utils.formatTimeOrDate
 import org.mytonwallet.app_air.walletbasecontext.utils.negative
 import org.mytonwallet.app_air.walletbasecontext.utils.requireDrawableCompat
 import org.mytonwallet.app_air.walletbasecontext.utils.toBigInteger
@@ -188,6 +190,13 @@ class ActivityMainContentView(context: Context) :
     }
 
     private var transaction: MApiTransaction? = null
+
+    // When set, the subtitle carries the date instead of relying on day headers around the cell.
+    var showsInlineDate = false
+
+    private fun formatSubtitleTime(dt: Date): String =
+        if (showsInlineDate) dt.formatTimeOrDate() else dt.formatTime()
+
     fun configure(transaction: MApiTransaction, accountId: String, isMultichain: Boolean) {
         this.transaction = transaction
         when (transaction) {
@@ -377,7 +386,7 @@ class ActivityMainContentView(context: Context) :
     private fun configureTransactionSubtitle(accountId: String, isMultichain: Boolean) {
         val transaction = transaction as MApiTransaction.Transaction
         val token = transaction.token
-        val timeStr = transaction.dt.formatTime()
+        val timeStr = formatSubtitleTime(transaction.dt)
         val builder = SpannableStringBuilder()
         if (transaction.status == ApiTransactionStatus.FAILED) {
             builder.append(
@@ -457,7 +466,7 @@ class ActivityMainContentView(context: Context) :
     private fun configureSwapSubtitle() {
         val swap = transaction as MApiTransaction.Swap
         val subtitle = swap.subtitle(ignoreInProgress = true) ?: ""
-        val timeStr = swap.dt.formatTime()
+        val timeStr = formatSubtitleTime(swap.dt)
         val builder = SpannableStringBuilder()
         if (subtitle.isNotEmpty()) {
             builder.append(subtitle)

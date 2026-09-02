@@ -1,6 +1,6 @@
 import type { Account, AgentHint, SavedAddress, Theme, UserToken } from '../../global/types';
 
-import { AGENT_API_URL } from '../../config';
+import { AGENT_API_URL, APP_NAME } from '../../config';
 import { logDebugError } from '../logs';
 import { DEFAULT_LANG_CODE } from '../windowEnvironment';
 import agentStore from './agentStore';
@@ -146,6 +146,7 @@ export function buildRequestContext(
   }
 
   return {
+    appName: APP_NAME,
     userAddresses: topAccounts.map(([id, account]) => ({
       name: account.title ?? '',
       addresses: Object.entries(account.byChain)

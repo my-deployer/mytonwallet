@@ -11,25 +11,34 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.FrameLayout
 import androidx.appcompat.widget.AppCompatImageView
 import androidx.core.text.buildSpannedString
+import androidx.core.text.inSpans
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.mytonwallet.app_air.icons.R
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.exactly
+import org.mytonwallet.app_air.uicomponents.extensions.setBoundsFit
 import org.mytonwallet.app_air.uicomponents.extensions.styleDots
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.adaptiveFontSize
+import org.mytonwallet.app_air.uicomponents.helpers.spans.WSpacingSpan
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WMultichainAddressLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
+import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSensitiveDataContainer
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.formatStartEndAddress
 import org.mytonwallet.app_air.walletbasecontext.utils.getDrawableCompat
+import org.mytonwallet.app_air.walletbasecontext.utils.toString
 import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
+import org.mytonwallet.app_air.walletcontext.utils.VerticalImageSpan
+import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MAccount.AccountChain
+import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 
 @SuppressLint("ViewConstructor")
 class AccountItemView(
@@ -38,6 +47,7 @@ class AccountItemView(
     showArrow: Boolean,
     isTrusted: Boolean,
     private val hasSeparator: Boolean,
+    showBalance: Boolean = false,
     onSelect: () -> Unit
 ) : FrameLayout(context),
     WThemedView {
@@ -62,10 +72,30 @@ class AccountItemView(
         ellipsize = TextUtils.TruncateAt.END
     }
 
-    private val subtitleLabel = WMultichainAddressLabel(context).apply {
-        setStyle(13f)
-        setTextColor(WColor.SecondaryText)
-        applyFontOffsetFix = true
+    private val subtitleLabel by lazy {
+        WMultichainAddressLabel(context).apply {
+            setStyle(13f)
+            setTextColor(WColor.SecondaryText)
+            applyFontOffsetFix = true
+        }
+    }
+
+    private val balanceLabel by lazy {
+        WLabel(context).apply {
+            setStyle(13f)
+            setTextColor(WColor.SecondaryText)
+        }
+    }
+
+    private val balanceContainer by lazy {
+        WSensitiveDataContainer(
+            balanceLabel,
+            WSensitiveDataContainer.MaskConfig(
+                0,
+                2,
+                Gravity.START or Gravity.CENTER_VERTICAL
+            )
+        )
     }
 
     private val arrowView = AppCompatImageView(context)
@@ -120,7 +150,7 @@ class AccountItemView(
                 }
             )
             addView(
-                subtitleLabel,
+                if (showBalance) balanceContainer else subtitleLabel,
                 LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
                     gravity = Gravity.START
                     topMargin = 31.dp
@@ -130,32 +160,39 @@ class AccountItemView(
                 }
             )
             label.text = accountData.title
-            val style =
-                if (isTrusted) {
-                    when (accountData.accountType) {
-                        MAccount.AccountType.VIEW -> WMultichainAddressLabel.miniCardWalletViewStyle
+            if (showBalance) {
+                balanceContainer.setMaskCols(8 + abs(accountData.title.hashCode()) % 8)
+                balanceLabel.text = buildBalanceText(accountData)
+            } else {
+                val style =
+                    if (isTrusted) {
+                        when (accountData.accountType) {
+                            MAccount.AccountType.VIEW ->
+                                WMultichainAddressLabel.miniCardWalletViewStyle
 
-                        MAccount.AccountType.HARDWARE ->
-                            WMultichainAddressLabel.miniCardWalletHardwareStyle
+                            MAccount.AccountType.HARDWARE ->
+                                WMultichainAddressLabel.miniCardWalletHardwareStyle
 
-                        else -> WMultichainAddressLabel.miniCardWalletStyle
+                            else -> WMultichainAddressLabel.miniCardWalletStyle
+                        }
+                    } else {
+                        when (accountData.accountType) {
+                            MAccount.AccountType.VIEW ->
+                                WMultichainAddressLabel.cardRowWalletViewStyle
+
+                            MAccount.AccountType.HARDWARE ->
+                                WMultichainAddressLabel.cardRowWalletHardwareStyle
+
+                            else -> WMultichainAddressLabel.cardRowWalletStyle
+                        }
                     }
-                } else {
-                    when (accountData.accountType) {
-                        MAccount.AccountType.VIEW -> WMultichainAddressLabel.cardRowWalletViewStyle
-
-                        MAccount.AccountType.HARDWARE ->
-                            WMultichainAddressLabel.cardRowWalletHardwareStyle
-
-                        else -> WMultichainAddressLabel.cardRowWalletStyle
-                    }
-                }
-            subtitleLabel.displayAddresses(
-                accountData.network,
-                accountData.accountId,
-                byChain,
-                style
-            )
+                subtitleLabel.displayAddresses(
+                    accountData.network,
+                    accountData.accountId,
+                    byChain,
+                    style
+                )
+            }
         } ?: run {
             addView(
                 label,
@@ -177,6 +214,46 @@ class AccountItemView(
         updateTheme()
         setOnClickListener {
             onSelect()
+        }
+    }
+
+    private fun buildBalanceText(accountData: AccountData): CharSequence {
+        val baseCurrency = WalletCore.baseCurrency
+        val balanceText = accountData.accountId
+            ?.let { BalanceStore.totalBalanceInBaseCurrency(it) }
+            ?.toString(
+                baseCurrency.decimalsCount,
+                baseCurrency.sign,
+                baseCurrency.decimalsCount,
+                true
+            ) ?: ""
+        val prefixIcons = buildList {
+            if (accountData.network.isTestnet) add(R.drawable.ic_wallet_testnet)
+            when (accountData.accountType) {
+                MAccount.AccountType.VIEW -> add(R.drawable.ic_wallet_eye)
+                MAccount.AccountType.HARDWARE -> add(R.drawable.ic_wallet_ledger)
+                else -> {}
+            }
+        }
+        return buildSpannedString {
+            prefixIcons.forEach { resId ->
+                context.getDrawableCompat(resId)?.mutate()?.let { drawable ->
+                    drawable.setTint(WColor.SecondaryText.color)
+                    drawable.setBoundsFit(12.dp)
+                    inSpans(
+                        VerticalImageSpan(
+                            drawable,
+                            verticalAlignment = VerticalImageSpan.VerticalAlignment.TOP_BOTTOM
+                        )
+                    ) {
+                        append(" ")
+                    }
+                    inSpans(WSpacingSpan(4.dp)) {
+                        append(" ")
+                    }
+                }
+            }
+            append(balanceText)
         }
     }
 

@@ -173,11 +173,11 @@ class EarnHeaderCell: UICollectionViewCell {
         let amount = TokenAmount(amnt, stakingConfig.baseToken).formatted(.none, maxDecimals: 4)
 
         if stakingState.type == .ethena {
-            yourBalanceHintLabel.text = lang("$unstaking_when_receive_with_amount_ethena", arg1: amount, arg2: time)
+            yourBalanceHintLabel.text = L10n.unstakingWhenReceiveWithAmountEthena(amount: amount, time: time)
         } else if stakingState.type == .nominators {
-            yourBalanceHintLabel.text = lang("$unstaking_when_receive", arg1: time)
+            yourBalanceHintLabel.text = L10n.unstakingWhenReceive(time: time)
         } else {
-            yourBalanceHintLabel.text = lang("$unstaking_when_receive_with_amount", arg1: amount, arg2: time)
+            yourBalanceHintLabel.text = L10n.unstakingWhenReceiveWithAmount(amount: amount, time: time)
         }
         layoutIfNeeded()
     }
@@ -246,7 +246,7 @@ class EarnHeaderCell: UICollectionViewCell {
         }
         if let readyToUnstakeAmount = config.readyToUnstakeAmount(stakingData: stakingData) {
             let amount = TokenAmount(readyToUnstakeAmount, config.baseToken)
-            unstakeButton.setTitle(lang("Unstake %amount%", arg1: amount.formatted(.none, maxDecimals: 2)), for: .normal)
+            unstakeButton.setTitle(L10n.unstakeAmount(amount: amount.formatted(.none, maxDecimals: 2)), for: .normal)
         } else {
             unstakeButton.setTitle(lang("Unstake"), for: .normal)
         }

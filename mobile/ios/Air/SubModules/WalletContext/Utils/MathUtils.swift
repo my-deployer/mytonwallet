@@ -11,22 +11,14 @@ public func interpolate(from: Double, to: Double, progress: Double) -> Double {
     from * (1 - progress) + to * progress
 }
 
-/// Clamps between min and max value
-///
-/// - Parameters:
-///     - min: lowest possible value
-///     - max: highest possoble value
-public func clamp(_ value: Double, min: Double, max: Double) -> Double {
+/// Returns `value` constrained to the inclusive bounds `min...max`.
+public func clamp<T: Comparable>(_ value: T, min: T, max: T) -> T {
     Swift.min(max, Swift.max(min, value))
 }
 
-/// Clamps between min and max value
-///
-/// - Parameters:
-///     - min: lowest possible value
-///     - max: highest possoble value
-public func clamp(_ value: Double, to range: ClosedRange<Double>) -> Double {
-    min(range.upperBound, Swift.max(range.lowerBound, value))
+/// Returns `value` constrained to `range`.
+public func clamp<T: Comparable>(_ value: T, to range: ClosedRange<T>) -> T {
+    clamp(value, min: range.lowerBound, max: range.upperBound)
 }
 
 

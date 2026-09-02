@@ -1,4 +1,5 @@
 import UIKit
+import UIAgent
 import UIHome
 import UIAssets
 import UIComponents
@@ -9,11 +10,12 @@ import UICreateWallet
 
 @MainActor
 protocol RootContainerRouting {
+    func closeSearchIfNeeded(completion: @escaping () -> Void)
     func isHomeRootSelected() -> Bool
     func pushOnHome(_ viewController: UIViewController) -> Bool
     func showAddWallet(network: ApiNetwork)
     func showAgent()
-    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter)
+    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?)
     func showExplore()
     func showHome(popToRoot: Bool)
     func showImportWalletVersion()
@@ -22,6 +24,10 @@ protocol RootContainerRouting {
 }
 
 extension RootContainerRouting {
+    func closeSearchIfNeeded(completion: @escaping () -> Void) {
+        completion()
+    }
+
     @MainActor
     func showTab(_ id: AppTabId, popToRoot: Bool = false) {
         if let topTabsVC = findActiveViewController(of: TopTabsRootViewController.self),
@@ -32,9 +38,7 @@ extension RootContainerRouting {
             presentTabModally(id, path: [])
             return
         }
-        if let tabVC = findActiveViewController(of: HomeTabBarController.self) {
-            tabVC.selectTab(id, popToRoot: popToRoot)
-        } else if let splitVC = findActiveViewController(of: SplitRootViewController.self) {
+        if let splitVC = findActiveViewController(of: SplitRootViewController.self) {
             splitVC.select(tab: id, popToRoot: popToRoot)
         }
     }
@@ -52,36 +56,30 @@ extension RootContainerRouting {
 
 
 @MainActor
-struct TabRootContainerRouter: RootContainerRouting {
-    private var tabVC: HomeTabBarController? {
-        findActiveViewController()
-    }
+struct TopTabsRootContainerRouter: RootContainerRouting {
     private var topTabsVC: TopTabsRootViewController? {
         findActiveViewController()
     }
 
+    func closeSearchIfNeeded(completion: @escaping () -> Void) {
+        guard let topTabsVC else {
+            completion()
+            return
+        }
+        topTabsVC.closeSearch(completion: completion)
+    }
+
     func isHomeRootSelected() -> Bool {
-        if let topTabsVC {
-            return topTabsVC.isHomeRootSelected
-        }
-        guard let nav = tabVC?.selectedViewController as? UINavigationController else {
-            return false
-        }
-        return nav.viewControllers.first is HomeVC
+        topTabsVC?.isHomeRootSelected == true
     }
 
     func pushOnHome(_ viewController: UIViewController) -> Bool {
-        if let topTabsVC,
-           topTabsVC.currentTabId == .wallet,
-           let navigationController = topTabsVC.homeVC.navigationController {
-            navigationController.pushViewController(viewController, animated: true)
-            return true
-        }
-        guard let nav = tabVC?.selectedViewController as? UINavigationController,
-              nav.viewControllers.first is HomeVC else {
+        guard let topTabsVC,
+              topTabsVC.currentTabId == .wallet,
+              let navigationController = topTabsVC.homeVC.navigationController else {
             return false
         }
-        nav.pushViewController(viewController, animated: true)
+        navigationController.pushViewController(viewController, animated: true)
         return true
     }
 
@@ -90,11 +88,19 @@ struct TabRootContainerRouter: RootContainerRouting {
     }
 
     func showAgent() {
-        showTab(.agent)
+        topTabsVC?.navigationController?.pushViewController(
+            AgentEntryPoint.makeRootViewController(),
+            animated: true
+        )
     }
 
-    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) {
-        presentAssetsModally(accountSource: accountSource, selectedTab: selectedTab, collectionsFilter: collectionsFilter)
+    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?) {
+        presentAssetsModally(
+            accountSource: accountSource,
+            selectedTab: selectedTab,
+            collectionsFilter: collectionsFilter,
+            initialPosition: initialPosition
+        )
     }
 
     func showExplore() {
@@ -102,11 +108,7 @@ struct TabRootContainerRouter: RootContainerRouting {
     }
 
     func showHome(popToRoot: Bool) {
-        if let topTabsVC {
-            topTabsVC.switchToHome(popToRoot: popToRoot)
-        } else {
-            tabVC?.switchToHome(popToRoot: popToRoot)
-        }
+        topTabsVC?.switchToHome(popToRoot: popToRoot)
     }
 
     func showImportWalletVersion() {
@@ -114,42 +116,22 @@ struct TabRootContainerRouter: RootContainerRouting {
     }
 
     func showSettings(path: [UIViewController]) {
-        if let topTabsVC {
-            topTabsVC.switchToSettings(path: path)
-            return
-        }
-        if AppTabManager.shared.contains(.settings) {
-            tabVC?.switchToSettings(path: path)
-        } else {
-            guard let nc = AppTabManager.shared.makeNavigationController(for: .settings, layout: .tab) else { return }
-            if !path.isEmpty, let root = nc.viewControllers.first {
-                nc.setViewControllers([root] + path, animated: false)
-            }
-            nc.modalPresentationStyle = .fullScreen
-            topViewController()?.present(nc, animated: true)
-        }
+        topTabsVC?.switchToSettings(path: path)
     }
 
     func showTemporaryViewAccount(accountId: String) {
-        let rootContainer = (topTabsVC as UIViewController?) ?? tabVC
-        if let rootVC = rootContainer?.view.window?.rootViewController, rootVC.presentedViewController != nil {
+        if let rootVC = topTabsVC?.view.window?.rootViewController, rootVC.presentedViewController != nil {
             rootVC.dismiss(animated: true)
         }
         showTab(.wallet)
-        if let topTabsVC {
-            topTabsVC.homeVC.navigationController?.pushViewController(
-                HomeVC(
-                    accountSource: .accountId(accountId),
-                    rootNavigationStyle: .topTabsNavigationBar
-                ),
-                animated: true
-            )
-        } else {
-            tabVC?.homeVC?.navigationController?.pushViewController(
-                HomeVC(accountSource: .accountId(accountId)),
-                animated: true
-            )
-        }
+        topTabsVC?.homeVC.navigationController?.pushViewController(
+            HomeVC(
+                accountSource: .accountId(accountId),
+                rootNavigationStyle: .topTabsNavigationBar,
+                showsActionsRow: WalletActionButtonsSettings.showsActionButtonsRow
+            ),
+            animated: true
+        )
     }
 }
 
@@ -182,12 +164,22 @@ struct SplitRootContainerRouter: RootContainerRouting {
         showTab(.agent)
     }
 
-    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) {
+    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?) {
         guard let splitVC, !splitVC.isCollapsed else {
-            presentAssetsModally(accountSource: accountSource, selectedTab: selectedTab, collectionsFilter: collectionsFilter)
+            presentAssetsModally(
+                accountSource: accountSource,
+                selectedTab: selectedTab,
+                collectionsFilter: collectionsFilter,
+                initialPosition: initialPosition
+            )
             return
         }
-        splitVC.showAssets(accountSource: accountSource, selectedTab: selectedTab, collectionsFilter: collectionsFilter)
+        splitVC.showAssets(
+            accountSource: accountSource,
+            selectedTab: selectedTab,
+            collectionsFilter: collectionsFilter,
+            initialPosition: initialPosition
+        )
     }
 
     func showExplore() {
@@ -242,9 +234,20 @@ private func presentAddWalletModally(network: ApiNetwork) {
 }
 
 @MainActor
-private func presentAssetsModally(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) {
+private func presentAssetsModally(
+    accountSource: AccountSource,
+    selectedTab: DisplayAssetTab,
+    collectionsFilter: NftCollectionFilter,
+    initialPosition: AssetListInitialPosition?
+) {
     let topVC = topViewController()
-    if let nc = topVC as? WNavigationController, nc.showExistingAssetsTab(accountSource: accountSource, selectedTab: selectedTab, animated: true) {
+    if let nc = topVC as? WNavigationController,
+       nc.showExistingAssetsTab(
+        accountSource: accountSource,
+        selectedTab: selectedTab,
+        initialPosition: initialPosition,
+        animated: true
+       ) {
         return
     }
 
@@ -255,15 +258,37 @@ private func presentAssetsModally(accountSource: AccountSource, selectedTab: Dis
     )
 
     if shouldPushCollection, let nc = topVC as? WNavigationController, (nc.visibleViewController is AssetsTabVC || nc.visibleViewController is NftDetailsVC) {
-        nc.pushViewController(NftsFullScreenVC(accountSource: accountSource, filter: collectionsFilter), animated: true)
+        nc.pushViewController(
+            NftsFullScreenVC(
+                accountSource: accountSource,
+                filter: collectionsFilter,
+                initialNftID: initialPosition?.nftID
+            ),
+            animated: true
+        )
     } else if shouldPushCollection {
-        let assetsVC = AssetsTabVC(accountSource: accountSource, defaultTab: selectedTab)
+        let assetsVC = AssetsTabVC(
+            accountSource: accountSource,
+            defaultTab: selectedTab,
+            initialPosition: initialPosition
+        )
         let nc = WNavigationController(rootViewController: assetsVC)
-        nc.pushViewController(NftsFullScreenVC(accountSource: accountSource, filter: collectionsFilter), animated: false)
+        nc.pushViewController(
+            NftsFullScreenVC(
+                accountSource: accountSource,
+                filter: collectionsFilter,
+                initialNftID: initialPosition?.nftID
+            ),
+            animated: false
+        )
         topVC?.present(nc, animated: true)
         assetsVC.view.layoutIfNeeded()
     } else {
-        let assetsVC = AssetsTabVC(accountSource: accountSource, defaultTab: selectedTab)
+        let assetsVC = AssetsTabVC(
+            accountSource: accountSource,
+            defaultTab: selectedTab,
+            initialPosition: initialPosition
+        )
         let nc = WNavigationController(rootViewController: assetsVC)
         topVC?.present(nc, animated: true)
     }
@@ -279,9 +304,19 @@ func shouldPushNftCollectionFullscreen(accountSource: AccountSource, selectedTab
 extension WNavigationController {
     @MainActor
     @discardableResult
-    func showExistingAssetsTab(accountSource: AccountSource, selectedTab: DisplayAssetTab, animated: Bool) -> Bool {
+    func showExistingAssetsTab(
+        accountSource: AccountSource,
+        selectedTab: DisplayAssetTab,
+        initialPosition: AssetListInitialPosition? = nil,
+        animated: Bool
+    ) -> Bool {
         guard let assetsVC = viewControllers.compactMap({ $0 as? AssetsTabVC }).last,
-              assetsVC.show(accountSource: accountSource, tab: selectedTab, animated: animated) else {
+              assetsVC.show(
+                accountSource: accountSource,
+                tab: selectedTab,
+                initialPosition: initialPosition,
+                animated: animated
+              ) else {
             return false
         }
         if topViewController !== assetsVC {

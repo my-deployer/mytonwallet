@@ -236,7 +236,11 @@ public class WalletTokenCell: WHighlightCollectionViewCell {
         let token = TokenStore.getToken(slug: walletToken.tokenSlug)
 
         // configure icon view
-        configureIcon(token: token, accessoryContent: stakingAccessoryContent)
+        configureIcon(
+            token: token,
+            accessoryContent: stakingAccessoryContent,
+            badgeContent: badgeContent
+        )
         
         // pin icon
         pinIconView.isHidden = !isPinned
@@ -269,7 +273,7 @@ public class WalletTokenCell: WHighlightCollectionViewCell {
             if let percentChange24h = token?.percentChange24h, let percentChange24hRounded = token?.percentChange24hRounded {
                 let color = abs(percentChange24h) < 0.005 ? UIColor.air.secondaryLabel : percentChange24h > 0 ? UIColor.air.positiveAmount : UIColor.air.negativeAmount
                 if percentChange24hRounded != 0,
-                   WalletTokenPercentChangeThresholdExperiment.shouldShow(
+                   WalletTokenPercentChangeThreshold.shouldShow(
                        percentChange: percentChange24h
                    ) {
                     percentChangeText = formatPercent(percentChange24hRounded / 100)
@@ -327,18 +331,26 @@ public class WalletTokenCell: WHighlightCollectionViewCell {
         guard let walletToken else { return }
         configureIcon(
             token: TokenStore.getToken(slug: walletToken.tokenSlug),
-            accessoryContent: accessoryContent
+            accessoryContent: accessoryContent,
+            badgeContent: badgeContent
         )
     }
 
-    private func configureIcon(token: ApiToken?, accessoryContent: StakingAccessoryContent?) {
+    private func configureIcon(
+        token: ApiToken?,
+        accessoryContent: StakingAccessoryContent?,
+        badgeContent: BadgeContent?
+    ) {
         guard let walletToken else { return }
         iconView.config(
             with: token,
             isStaking: walletToken.isStaking,
             isWalletView: true,
             stakingAccessory: accessoryContent,
-            shouldShowChain: isMultichain
+            shouldShowChain: WalletTokenChainAccessoryExperiment.shouldShow(
+                isMultichain: isMultichain,
+                showsTokenLabel: badgeContent?.isTokenLabel == true
+            )
         )
     }
 

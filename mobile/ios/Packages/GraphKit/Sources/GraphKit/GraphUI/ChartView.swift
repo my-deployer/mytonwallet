@@ -83,6 +83,11 @@ class ChartView: UIControl {
         return recognizer
     }()
 
+    var minimumPressDuration: TimeInterval {
+        get { longPressGestureRecognizer.minimumPressDuration }
+        set { longPressGestureRecognizer.minimumPressDuration = newValue }
+    }
+
     override var isTracking: Bool {
         return self._isTracking
     }

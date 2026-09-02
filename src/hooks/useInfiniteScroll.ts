@@ -19,12 +19,13 @@ type GetMore<ListId = string | number> = (args: {
   offsetId?: ListId;
 }) => void;
 type ResetScroll = () => void;
-type LoadMoreBackwards = (args: { offsetId?: string | number }) => void;
+type LoadMore = (args: { offsetId?: string | number }) => void;
 
 const DEFAULT_LIST_SLICE = 30;
 
 const useInfiniteScroll = <ListId extends string | number>({
   loadMoreBackwards,
+  loadMoreForwards,
   listIds,
   isDisabled = false,
   listSlice = DEFAULT_LIST_SLICE,
@@ -33,8 +34,11 @@ const useInfiniteScroll = <ListId extends string | number>({
   withResetOnInactive = false,
   startFromEnd = false,
   shouldKeepViewportAtEnd = false,
+  shouldPreserveViewport = false,
+  maxPreservedViewportSize,
 }: {
-  loadMoreBackwards?: LoadMoreBackwards;
+  loadMoreBackwards?: LoadMore;
+  loadMoreForwards?: LoadMore;
   listIds?: ListId[];
   isDisabled?: boolean;
   listSlice?: number;
@@ -43,8 +47,12 @@ const useInfiniteScroll = <ListId extends string | number>({
   withResetOnInactive?: boolean;
   startFromEnd?: boolean;
   shouldKeepViewportAtEnd?: boolean;
+  /** Keeps already rendered items when moving the viewport; `resetScroll` still collapses it. */
+  shouldPreserveViewport?: boolean;
+  maxPreservedViewportSize?: number;
 }): [ListId[]?, GetMore<ListId>?, ResetScroll?] => {
   const currentStateRef = useRef<{ viewportIds: ListId[]; isOnTop: boolean } | undefined>();
+  let didInitializeCurrentState = false;
   if (!currentStateRef.current && listIds && !isDisabled) {
     const direction = startFromEnd ? LoadMoreDirection.Backwards : LoadMoreDirection.Forwards;
     const offsetId = startFromEnd ? listIds[listIds.length - 1] : listIds[0];
@@ -53,6 +61,7 @@ const useInfiniteScroll = <ListId extends string | number>({
       newIsOnTop,
     } = getViewportSlice(listIds, direction, listSlice, offsetId);
     currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
+    didInitializeCurrentState = true;
   }
 
   const forceUpdate = useForceUpdate();
@@ -80,9 +89,12 @@ const useInfiniteScroll = <ListId extends string | number>({
 
   const prevListIds = usePrevious(listIds);
   const prevIsDisabled = usePrevious(isDisabled);
-  if (listIds && !isDisabled && (listIds !== prevListIds || isDisabled !== prevIsDisabled)) {
+  if (
+    listIds && !didInitializeCurrentState && !isDisabled
+    && (listIds !== prevListIds || isDisabled !== prevIsDisabled)
+  ) {
     const { viewportIds: oldViewportIds, isOnTop: oldIsOnTop } = currentStateRef.current ?? {};
-    const { newViewportIds, newIsOnTop } = getViewportSliceAfterListChange(
+    const nextViewport = getViewportSliceAfterListChange(
       listIds,
       prevListIds,
       oldViewportIds,
@@ -90,6 +102,15 @@ const useInfiniteScroll = <ListId extends string | number>({
       listSlice,
       shouldKeepViewportAtEnd,
     );
+    const newViewportIds = shouldPreserveViewport && !shouldKeepViewportAtEnd
+      ? getPreservedViewportSlice(
+        listIds,
+        oldViewportIds,
+        nextViewport.newViewportIds,
+        maxPreservedViewportSize,
+      )
+      : nextViewport.newViewportIds;
+    const newIsOnTop = newViewportIds[0] === listIds[0];
 
     if (!oldViewportIds || !areSortedArraysEqual(oldViewportIds, newViewportIds)) {
       currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
@@ -113,31 +134,39 @@ const useInfiniteScroll = <ListId extends string | number>({
         : undefined;
 
     if (!listIds) {
-      if (loadMoreBackwards) {
-        loadMoreBackwards({ offsetId });
-      }
+      const loadMore = direction === LoadMoreDirection.Forwards ? loadMoreForwards : loadMoreBackwards;
+      loadMore?.({ offsetId });
 
       return;
     }
 
-    const {
-      newViewportIds, areSomeLocal, areAllLocal, newIsOnTop,
-    } = getViewportSlice(listIds, direction, listSlice, offsetId);
+    const nextViewport = getViewportSlice(listIds, direction, listSlice, offsetId);
+    const newViewportIds = shouldPreserveViewport
+      ? getPreservedViewportSlice(
+        listIds,
+        viewportIds,
+        nextViewport.newViewportIds,
+        maxPreservedViewportSize,
+      )
+      : nextViewport.newViewportIds;
+    const newIsOnTop = newViewportIds[0] === listIds[0];
+    const { areSomeLocal, areAllLocal } = nextViewport;
 
     if (areSomeLocal && !(viewportIds && areSortedArraysEqual(viewportIds, newViewportIds))) {
       currentStateRef.current = { viewportIds: newViewportIds, isOnTop: newIsOnTop };
       forceUpdate();
     }
 
-    if (!areAllLocal && loadMoreBackwards) {
-      loadMoreBackwards({ offsetId });
+    if (!areAllLocal) {
+      const loadMore = direction === LoadMoreDirection.Forwards ? loadMoreForwards : loadMoreBackwards;
+      loadMore?.({ offsetId });
     }
   });
 
   return isDisabled ? [listIds] : [currentStateRef.current?.viewportIds, getMore, resetScroll];
 };
 
-function getViewportSlice<ListId extends string | number>(
+export function getViewportSlice<ListId extends string | number>(
   sourceIds: ListId[],
   direction: LoadMoreDirection,
   listSlice: number,
@@ -147,7 +176,7 @@ function getViewportSlice<ListId extends string | number>(
   const index = (offsetId !== undefined) ? sourceIds.indexOf(offsetId) : 0;
   const isForwards = direction === LoadMoreDirection.Forwards;
   const indexForDirection = isForwards ? index : (index + 1) || length;
-  const from = Math.max(0, indexForDirection - listSlice);
+  const from = indexForDirection - listSlice;
   const to = indexForDirection + listSlice - 1;
   const newViewportIds = sourceIds.slice(Math.max(0, from), to + 1);
 
@@ -172,7 +201,52 @@ function getViewportSlice<ListId extends string | number>(
   };
 }
 
-function getViewportSliceAfterListChange<ListId extends string | number>(
+export function getPreservedViewportSlice<ListId extends string | number>(
+  sourceIds: ListId[],
+  currentViewportIds: ListId[] | undefined,
+  nextViewportIds: ListId[],
+  maxViewportSize?: number,
+) {
+  if (maxViewportSize !== undefined && maxViewportSize <= 0) return [];
+  if (!currentViewportIds?.length) {
+    return maxViewportSize === undefined ? nextViewportIds : nextViewportIds.slice(0, maxViewportSize);
+  }
+  if (maxViewportSize !== undefined && !nextViewportIds.length) {
+    return currentViewportIds.slice(0, maxViewportSize);
+  }
+
+  const preservedIds = new Set([...currentViewportIds, ...nextViewportIds]);
+  const firstIndex = sourceIds.findIndex((id) => preservedIds.has(id));
+  let lastIndex = sourceIds.length - 1;
+  while (lastIndex >= firstIndex && !preservedIds.has(sourceIds[lastIndex])) lastIndex--;
+
+  if (maxViewportSize === undefined) {
+    return firstIndex >= 0 ? sourceIds.slice(firstIndex, lastIndex + 1) : nextViewportIds;
+  }
+  if (firstIndex < 0) return nextViewportIds.slice(0, maxViewportSize);
+  if (lastIndex - firstIndex + 1 <= maxViewportSize) {
+    return sourceIds.slice(firstIndex, lastIndex + 1);
+  }
+
+  const nextFirstIndex = sourceIds.indexOf(nextViewportIds[0]);
+  const nextLastIndex = sourceIds.indexOf(nextViewportIds[nextViewportIds.length - 1]);
+  if (nextFirstIndex < 0 || nextLastIndex < nextFirstIndex) {
+    return nextViewportIds.slice(0, maxViewportSize);
+  }
+
+  const nextSize = nextLastIndex - nextFirstIndex + 1;
+  if (nextSize >= maxViewportSize) {
+    return sourceIds.slice(nextFirstIndex, nextFirstIndex + maxViewportSize);
+  }
+  const leadingCapacity = Math.floor((maxViewportSize - nextSize) / 2);
+  const boundedFirstIndex = Math.max(firstIndex, nextFirstIndex - leadingCapacity);
+  const boundedLastIndex = Math.min(lastIndex + 1, boundedFirstIndex + maxViewportSize);
+  const adjustedFirstIndex = Math.max(firstIndex, boundedLastIndex - maxViewportSize);
+
+  return sourceIds.slice(adjustedFirstIndex, boundedLastIndex);
+}
+
+export function getViewportSliceAfterListChange<ListId extends string | number>(
   newListIds: ListId[],
   prevListIds: ListId[] | undefined,
   oldViewportIds: ListId[] | undefined,
@@ -207,7 +281,15 @@ function getViewportSliceAfterListChange<ListId extends string | number>(
     // Otherwise, the ids, that the user is seeing, can disappear (that causes the list to scroll higher instantly).
     // Subtracting 1 prevents getViewportSlice from expanding the viewport slice 1 item with each newListIds change.
     sliceLength = Math.max(sliceLength, (oldViewportIds?.length ?? 0) - 1);
-    return getViewportSlice(newListIds, LoadMoreDirection.Backwards, sliceLength, newListIds[0]);
+    const oldRenderedAnchor = oldViewportIds?.find((id) => {
+      const previousIndex = prevListIds?.indexOf(id);
+      const nextIndex = newListIds.indexOf(id);
+      return nextIndex >= 0 && previousIndex !== nextIndex;
+    }) ?? oldViewportIds?.[0];
+    const offsetId = oldRenderedAnchor !== undefined && newListIds.includes(oldRenderedAnchor)
+      ? oldRenderedAnchor
+      : newListIds[0];
+    return getViewportSlice(newListIds, LoadMoreDirection.Backwards, sliceLength, offsetId);
   }
 
   let offsetId = oldViewportIds?.[Math.round(oldViewportIds.length / 2)];

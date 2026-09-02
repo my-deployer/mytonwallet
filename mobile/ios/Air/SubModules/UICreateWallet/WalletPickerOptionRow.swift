@@ -10,6 +10,7 @@ struct WalletPickerOptionRow: View {
     var title: String
     var subtitle: String
     var showsDivider: Bool = false
+    var isLoading: Bool = false
     var onTap: () -> ()
 
     var body: some View {
@@ -31,7 +32,18 @@ struct WalletPickerOptionRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Image.airBundle("RightArrowIcon")
+                ZStack(alignment: .trailing) {
+                    if isLoading {
+                        WUIActivityIndicator(size: 24)
+                            .foregroundStyle(Color.air.secondaryLabel)
+                            .transition(.opacity)
+                    } else {
+                        Image.airBundle("RightArrowIcon")
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 24, height: 24, alignment: .trailing)
+                .animation(.smooth(duration: 0.2), value: isLoading)
             }
             .frame(minHeight: 52)
             .backportGeometryGroup()

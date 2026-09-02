@@ -30,6 +30,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WEvaporateLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WLabel
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
+import org.mytonwallet.app_air.uicomponents.widgets.htextview.evaporate.EvaporateText
 import org.mytonwallet.app_air.uicomponents.widgets.sensitiveDataContainer.WSensitiveDataContainer
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
@@ -55,12 +56,16 @@ import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
 @SuppressLint("ViewConstructor")
-class TokenCell(context: Context, val mode: TokensVC.Mode) :
+class TokenCell(context: Context, val mode: TokensVC.Mode, private val compact: Boolean = false) :
     WCell(context),
     WThemedView {
 
+    private val iconSize = if (compact) 24.dp else ApplicationContextHolder.adaptiveIconSize.dp
+    private val iconLayoutSize = iconSize + 2.dp
+    private val contentStart = if (compact) 56f else ApplicationContextHolder.adaptiveContentStart
+
     private val iconView: IconView by lazy {
-        val iv = IconView(context, ApplicationContextHolder.adaptiveIconSize.dp)
+        val iv = IconView(context, iconSize, if (compact) 8.dp else 16.dp)
         iv
     }
 
@@ -95,6 +100,7 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
     private val topRightLabel: WSensitiveDataContainer<WEvaporateLabel> by lazy {
         val lbl = WEvaporateLabel(context)
         lbl.setStyle(adaptiveFontSize())
+        lbl.setResizeAnchor(EvaporateText.RESIZE_ANCHOR_END)
         WSensitiveDataContainer(
             lbl,
             WSensitiveDataContainer.MaskConfig(0, 2, Gravity.END or Gravity.CENTER_VERTICAL)
@@ -105,6 +111,7 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
         val lbl = WEvaporateLabel(context)
         lbl.setStyle(13f)
         lbl.layoutDirection = LAYOUT_DIRECTION_LTR
+        lbl.setResizeAnchor(EvaporateText.RESIZE_ANCHOR_END)
         WSensitiveDataContainer(
             lbl,
             WSensitiveDataContainer.MaskConfig(0, 2, Gravity.END or Gravity.CENTER_VERTICAL)
@@ -122,8 +129,8 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
         addView(
             iconView,
             LayoutParams(
-                (ApplicationContextHolder.adaptiveIconSize + 2).dp,
-                (ApplicationContextHolder.adaptiveIconSize + 2).dp
+                iconLayoutSize,
+                iconLayoutSize
             )
         )
         addView(pinIcon, LayoutParams(14.dp, 20.dp))
@@ -134,12 +141,17 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
         addView(bottomRightLabel)
         setConstraints {
             // Icon View
-            toTop(iconView, ApplicationContextHolder.adaptiveIconTopMargin)
-            toStart(iconView, 12f)
+            if (compact) {
+                toStart(iconView, 18f)
+                toTop(iconView, 18f)
+            } else {
+                toTop(iconView, ApplicationContextHolder.adaptiveIconTopMargin)
+                toStart(iconView, 12f)
+            }
             // Top Row
             toTop(topLeftLabel, 9f)
-            toStart(pinIcon, ApplicationContextHolder.adaptiveContentStart)
-            toStart(topLeftLabel, ApplicationContextHolder.adaptiveContentStart + 18)
+            toStart(pinIcon, contentStart)
+            toStart(topLeftLabel, contentStart + 18)
             centerYToCenterY(pinIcon, topLeftLabel)
             startToEnd(tagHelper.tagLabel, topLeftLabel, 3f)
             centerYToCenterY(tagHelper.tagLabel, topLeftLabel)
@@ -151,7 +163,10 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
             setHorizontalBias(tagHelper.tagLabel.id, 0f)
             // Bottom Row
             toBottom(bottomLeftLabel, 10f)
-            toStart(bottomLeftLabel, ApplicationContextHolder.adaptiveContentStart)
+            toStart(
+                bottomLeftLabel,
+                if (compact) contentStart else ApplicationContextHolder.adaptiveContentStart
+            )
             endToStart(bottomLeftLabel, bottomRightLabel, 4f)
             setHorizontalBias(bottomLeftLabel.id, 0f)
             toBottom(bottomRightLabel, 10f)
@@ -270,7 +285,7 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
             pinIcon.isGone = !isPinned
             val pinMargin = if (isPinned) 18 else 0
             setConstraints {
-                toStart(topLeftLabel, ApplicationContextHolder.adaptiveContentStart + pinMargin)
+                toStart(topLeftLabel, contentStart + pinMargin)
             }
         }
 
@@ -322,7 +337,7 @@ class TokenCell(context: Context, val mode: TokensVC.Mode) :
             setConstraints {
                 toStart(
                     topLeftLabel,
-                    ApplicationContextHolder.adaptiveContentStart + margin
+                    contentStart + margin
                 )
             }
         }

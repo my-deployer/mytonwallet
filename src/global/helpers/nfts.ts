@@ -1,6 +1,6 @@
 import type { ApiChain, ApiNft } from '../../api/types';
 
-import { IS_MY_WALLET_BRAND, MW_CARDS_COLLECTION, TELEGRAM_GIFTS_SUPER_COLLECTION } from '../../config';
+import { MW_CARDS_COLLECTION, TELEGRAM_GIFTS_SUPER_COLLECTION } from '../../config';
 
 export interface VisibleNftCollection {
   chain: ApiChain;
@@ -22,8 +22,6 @@ export function pinMwCardsFirst(
   orderedAddresses: string[],
   byAddress: Record<string, ApiNft>,
 ): string[] {
-  if (!IS_MY_WALLET_BRAND) return orderedAddresses;
-
   const cards: string[] = [];
   const rest: string[] = [];
   for (const address of orderedAddresses) {
@@ -43,8 +41,22 @@ export function getIsNftVisible(
   whitelistedSet: ReadonlySet<string>,
   areUnverifiedNftsHidden?: boolean,
 ) {
-  if (blacklistedSet.has(nft.address)) return false;
-  if (whitelistedSet.has(nft.address)) return true;
+  return getIsNftVisibleByFlags(
+    nft,
+    blacklistedSet.has(nft.address),
+    whitelistedSet.has(nft.address),
+    areUnverifiedNftsHidden,
+  );
+}
+
+export function getIsNftVisibleByFlags(
+  nft: ApiNft,
+  isBlacklisted?: boolean,
+  isWhitelisted?: boolean,
+  areUnverifiedNftsHidden?: boolean,
+) {
+  if (isBlacklisted) return false;
+  if (isWhitelisted) return true;
 
   return !nft.isHidden && !(areUnverifiedNftsHidden && nft.isUnverified);
 }

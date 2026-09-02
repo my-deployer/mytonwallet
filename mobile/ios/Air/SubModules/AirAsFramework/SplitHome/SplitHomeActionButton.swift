@@ -19,7 +19,7 @@ enum SplitHomeActionItem: CaseIterable, Hashable, Sendable {
         case .scan: lang("Scan")
         case .sell: lang("Sell")
         case .send: lang("Send")
-        case .swap: lang("Swap")
+        case .swap: lang("Trade")
         }
     }
     
@@ -33,6 +33,35 @@ enum SplitHomeActionItem: CaseIterable, Hashable, Sendable {
         case .send: .airBundle("SendIconLarge")
         case .swap: .airBundle("SwapIconLarge")
         }
+    }
+
+    @MainActor
+    static func availableItems(for account: MAccount) -> [Self] {
+        if account.isView {
+            var items: [Self] = account.supportsReceive ? [.deposit] : []
+            items.append(.scan)
+            return items
+        }
+
+        var items: [Self] = [.deposit]
+        if !ConfigStore.shared.shouldRestrictSwapsAndOnRamp,
+           OnRampCurrencyPolicy.defaultChain(for: account) != nil {
+            items.append(.buy)
+        }
+        if account.supportsSend {
+            items.append(.send)
+            if !ConfigStore.shared.shouldRestrictSell {
+                items.append(.sell)
+            }
+        }
+        if account.supportsSwap {
+            items.append(.swap)
+        }
+        if account.supportsEarn {
+            items.append(.earn)
+        }
+        items.append(.scan)
+        return items
     }
     
     @MainActor func perform(accountContext: AccountContext) {

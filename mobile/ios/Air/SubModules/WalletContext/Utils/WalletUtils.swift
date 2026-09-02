@@ -316,8 +316,8 @@ private func formatShortenedDouble(_ v: Double,  kThreshold: Double, mThreshold:
     }
         
     if v < kThreshold { return formatValue(v) }
-    if v < mThreshold { return lang("$amount_K", arg1: formatValue(v / kThreshold)) }
-    return lang("$amount_M", arg1: formatValue(v / mThreshold))
+    if v < mThreshold { return L10n.amountK(amount: formatValue(v / kThreshold)) }
+    return L10n.amountM(amount: formatValue(v / mThreshold))
 }
 
 /// Expects value 0...1 (0.42 -> 42%)

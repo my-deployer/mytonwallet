@@ -9,10 +9,179 @@ import android.text.style.StyleSpan
 import android.text.style.TypefaceSpan
 import android.util.Patterns
 import org.mytonwallet.app_air.uicomponents.helpers.spans.WClickableSpan
+import org.mytonwallet.app_air.walletbasecontext.APP_SCHEME
 
 object MarkdownParser {
 
-    private val urlPattern: Regex = Patterns.WEB_URL.toRegex()
+    enum class TableAlignment {
+        START,
+        CENTER,
+        END
+    }
+
+    enum class TableVerticalAlignment {
+        TOP,
+        MIDDLE,
+        BOTTOM
+    }
+
+    data class TableCell(
+        val text: String,
+        val header: Boolean = false,
+        val alignment: TableAlignment = TableAlignment.START,
+        val verticalAlignment: TableVerticalAlignment = TableVerticalAlignment.TOP,
+        val columnSpan: Int = 1,
+        val rowSpan: Int = 1
+    )
+
+    data class PlacedTableCell(val cell: TableCell, val row: Int, val column: Int)
+
+    data class TableGrid(val cells: List<PlacedTableCell>, val rowCount: Int, val columnCount: Int)
+
+    sealed interface Block {
+        data class Text(val value: String) : Block
+
+        data class Table(
+            val rows: List<List<TableCell>>,
+            val title: String? = null,
+            val bordered: Boolean = true,
+            val striped: Boolean = false
+        ) : Block
+    }
+
+    private val urlPattern: Regex by lazy { Patterns.WEB_URL.toRegex() }
+    private val htmlTableOpenPattern = Regex("(?i)<\\s*table(?:\\s|>|$)")
+    private val htmlTableClosePattern = Regex("(?i)</\\s*table\\s*>")
+    private val htmlTableTokenPattern = Regex(
+        "(?is)<\\s*(/?)\\s*(table|caption|thead|tbody|tfoot|tr|td|th|br)\\b([^>]*)>"
+    )
+    private val htmlAttributePattern = Regex(
+        "(?i)([a-z_:][a-z0-9_.:-]*)(?:\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s>]+)))?"
+    )
+    private val htmlBreakPattern = Regex("(?i)<\\s*br\\s*/?\\s*>")
+    private val htmlLinkPattern = Regex("(?is)<\\s*a\\b([^>]*)>(.*?)</\\s*a\\s*>")
+    private val htmlBoldPattern = Regex(
+        "(?is)<\\s*(?:b|strong)\\b[^>]*>(.*?)</\\s*(?:b|strong)\\s*>"
+    )
+    private val htmlItalicPattern = Regex(
+        "(?is)<\\s*(?:i|em)\\b[^>]*>(.*?)</\\s*(?:i|em)\\s*>"
+    )
+    private val htmlCodePattern = Regex("(?is)<\\s*code\\b[^>]*>(.*?)</\\s*code\\s*>")
+    private val htmlTagPattern = Regex("(?is)<[^>]+>")
+    private val numericHtmlEntityPattern = Regex("&#(?:x([0-9a-fA-F]+)|([0-9]+));")
+    private val tableDelimiterPattern = Regex("^:?-{3,}:?$")
+
+    fun parseBlocks(text: String): List<Block> {
+        val blocks = mutableListOf<Block>()
+        var textStart = 0
+        var searchIndex = 0
+        var inCodeBlock = false
+
+        while (searchIndex < text.length) {
+            val fenceIndex = text.indexOf("```", searchIndex).takeIf { it >= 0 }
+            val tableMatch = htmlTableOpenPattern.find(text, searchIndex)
+            if (fenceIndex != null && (tableMatch == null || fenceIndex < tableMatch.range.first)) {
+                inCodeBlock = !inCodeBlock
+                searchIndex = fenceIndex + 3
+                continue
+            }
+            if (tableMatch == null) break
+            if (inCodeBlock) {
+                searchIndex = tableMatch.range.last + 1
+                continue
+            }
+
+            val openingEnd = text.indexOf('>', tableMatch.range.first)
+            if (openingEnd < 0) break
+            val closingMatch = htmlTableClosePattern.find(text, openingEnd + 1)
+            if (closingMatch == null) break
+            val tableEnd = closingMatch.range.last + 1
+            val table = parseHtmlTable(text.substring(tableMatch.range.first, tableEnd))
+            if (table == null) {
+                searchIndex = tableEnd
+                continue
+            }
+
+            addMarkdownBlocks(text.substring(textStart, tableMatch.range.first), blocks)
+            blocks.add(table)
+            textStart = tableEnd
+            searchIndex = tableEnd
+        }
+
+        addMarkdownBlocks(text.substring(textStart), blocks)
+        return blocks.ifEmpty { listOf(Block.Text(text)) }
+    }
+
+    fun resolveTableGrid(table: Block.Table): TableGrid {
+        val cells = mutableListOf<PlacedTableCell>()
+        val occupiedUntilRow = mutableMapOf<Int, Int>()
+        var columnCount = 0
+        var rowCount = table.rows.size
+
+        table.rows.forEachIndexed { rowIndex, row ->
+            var column = 0
+            row.forEach { cell ->
+                val columnSpan = cell.columnSpan.coerceAtLeast(1)
+                val rowSpan = cell.rowSpan.coerceAtLeast(1)
+                while ((column until column + columnSpan).any {
+                        occupiedUntilRow.getOrDefault(it, 0) > rowIndex
+                    }
+                ) {
+                    column++
+                }
+
+                cells.add(PlacedTableCell(cell, rowIndex, column))
+                for (occupiedColumn in column until column + columnSpan) {
+                    occupiedUntilRow[occupiedColumn] = rowIndex + rowSpan
+                }
+                column += columnSpan
+                columnCount = maxOf(columnCount, column)
+                rowCount = maxOf(rowCount, rowIndex + rowSpan)
+            }
+        }
+
+        return TableGrid(cells, rowCount, columnCount)
+    }
+
+    private fun addMarkdownBlocks(text: String, blocks: MutableList<Block>) {
+        if (text.isEmpty()) return
+        val lines = text.split('\n')
+        val textLines = mutableListOf<String>()
+        var inCodeBlock = false
+        var lineIndex = 0
+
+        fun flushText() {
+            val value = textLines.joinToString("\n").trim('\n', '\r')
+            if (value.isNotEmpty()) blocks.add(Block.Text(value))
+            textLines.clear()
+        }
+
+        while (lineIndex < lines.size) {
+            val line = lines[lineIndex].trimEnd('\r')
+            if (line.trimStart().startsWith("```")) {
+                inCodeBlock = !inCodeBlock
+                textLines.add(line)
+                lineIndex++
+                continue
+            }
+
+            val table = if (!inCodeBlock && lineIndex + 1 < lines.size) {
+                parseTable(lines, lineIndex)
+            } else {
+                null
+            }
+            if (table == null) {
+                textLines.add(line)
+                lineIndex++
+                continue
+            }
+
+            flushText()
+            blocks.add(table.block)
+            lineIndex = table.nextLineIndex
+        }
+        flushText()
+    }
 
     fun parse(
         text: String,
@@ -20,27 +189,28 @@ object MarkdownParser {
         linkColor: Int?,
         onUrlClick: ((String) -> Unit)? = null
     ): SpannableStringBuilder {
+        val displayText = stripHtmlTableMarkupForDisplay(text)
         val result = SpannableStringBuilder()
         var i = 0
-        val len = text.length
+        val len = displayText.length
 
         while (i < len) {
             when {
                 // Code block: ```...```
-                text.startsWith("```", i) -> {
+                displayText.startsWith("```", i) -> {
                     val contentStart = run {
                         val afterTicks = i + 3
-                        val lineEnd = text.indexOf('\n', afterTicks)
+                        val lineEnd = displayText.indexOf('\n', afterTicks)
                         if (lineEnd >= 0) lineEnd + 1 else afterTicks
                     }
-                    val end = text.indexOf("```", contentStart)
+                    val end = displayText.indexOf("```", contentStart)
                     if (end >= 0) {
-                        val code = text.substring(contentStart, end).trimEnd('\n')
+                        val code = displayText.substring(contentStart, end).trimEnd('\n')
                         val spanStart = result.length
                         result.append(code)
                         applyCodeSpan(result, spanStart, result.length, codeColor)
                         i = end + 3
-                        if (i < len && text[i] == '\n') i++
+                        if (i < len && displayText[i] == '\n') i++
                     } else {
                         result.append("```")
                         i += 3
@@ -48,11 +218,11 @@ object MarkdownParser {
                 }
 
                 // Inline code: `...`
-                text[i] == '`' -> {
-                    val end = text.indexOf('`', i + 1)
-                    if (end >= 0 && !text.substring(i + 1, end).contains('\n')) {
+                displayText[i] == '`' -> {
+                    val end = displayText.indexOf('`', i + 1)
+                    if (end >= 0 && !displayText.substring(i + 1, end).contains('\n')) {
                         val spanStart = result.length
-                        result.append(text.substring(i + 1, end))
+                        result.append(displayText.substring(i + 1, end))
                         applyCodeSpan(result, spanStart, result.length, codeColor)
                         i = end + 1
                     } else {
@@ -62,11 +232,11 @@ object MarkdownParser {
                 }
 
                 // Bold: **...**
-                text.startsWith("**", i) -> {
-                    val end = text.indexOf("**", i + 2)
+                displayText.startsWith("**", i) -> {
+                    val end = displayText.indexOf("**", i + 2)
                     if (end >= 0) {
                         val spanStart = result.length
-                        result.append(parseInline(text.substring(i + 2, end), codeColor))
+                        result.append(parseInline(displayText.substring(i + 2, end), codeColor))
                         result.setSpan(
                             StyleSpan(Typeface.BOLD),
                             spanStart,
@@ -81,11 +251,11 @@ object MarkdownParser {
                 }
 
                 // Italic: *...*
-                text[i] == '*' && i + 1 < len && text[i + 1] != ' ' -> {
-                    val end = text.indexOf('*', i + 1)
-                    if (end >= 0 && !text.substring(i + 1, end).contains('\n')) {
+                displayText[i] == '*' && i + 1 < len && displayText[i + 1] != ' ' -> {
+                    val end = displayText.indexOf('*', i + 1)
+                    if (end >= 0 && !displayText.substring(i + 1, end).contains('\n')) {
                         val spanStart = result.length
-                        result.append(parseInline(text.substring(i + 1, end), codeColor))
+                        result.append(parseInline(displayText.substring(i + 1, end), codeColor))
                         result.setSpan(
                             StyleSpan(Typeface.ITALIC),
                             spanStart,
@@ -100,7 +270,7 @@ object MarkdownParser {
                 }
 
                 else -> {
-                    result.append(text[i])
+                    result.append(displayText[i])
                     i++
                 }
             }
@@ -187,5 +357,349 @@ object MarkdownParser {
             end,
             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
         )
+    }
+
+    private fun stripHtmlTableMarkupForDisplay(source: String): String {
+        if (!htmlTableOpenPattern.containsMatchIn(source)) return source
+
+        val result = StringBuilder(source.length)
+        var index = 0
+        var inCodeBlock = false
+        var inTable = false
+        while (index < source.length) {
+            if (!inTable && source.startsWith("```", index)) {
+                inCodeBlock = !inCodeBlock
+                result.append("```")
+                index += 3
+                continue
+            }
+            if (!inCodeBlock && source[index] == '<') {
+                if (!inTable && htmlTableOpenPattern.matchAt(source, index) != null) inTable = true
+                if (inTable) {
+                    val tag = appendHtmlTableDisplayTag(source, index, result) ?: break
+                    inTable = !tag.closesTable
+                    index = tag.nextIndex
+                    continue
+                }
+            }
+            result.append(source[index])
+            index++
+        }
+        return result.toString()
+    }
+
+    private data class HtmlTableDisplayTag(val nextIndex: Int, val closesTable: Boolean)
+
+    private fun appendHtmlTableDisplayTag(
+        source: String,
+        index: Int,
+        result: StringBuilder
+    ): HtmlTableDisplayTag? {
+        val tagEnd = source.indexOf('>', index)
+        if (tagEnd < 0) return null
+        val tag = source.substring(index + 1, tagEnd).trim().lowercase()
+        val closing = tag.startsWith('/')
+        val name = tag
+            .removePrefix("/")
+            .substringBefore(' ')
+            .removeSuffix("/")
+        when {
+            name == "br" -> result.append('\n')
+            closing && name == "caption" -> result.append('\n')
+            closing && (name == "td" || name == "th") -> result.append("  ")
+            closing && name == "tr" -> result.append('\n')
+        }
+        return HtmlTableDisplayTag(
+            nextIndex = tagEnd + 1,
+            closesTable = closing && name == "table"
+        )
+    }
+
+    private data class ParsedTable(val block: Block.Table, val nextLineIndex: Int)
+
+    private fun parseTable(lines: List<String>, headerIndex: Int): ParsedTable? {
+        val headerLine = lines[headerIndex].trimEnd('\r')
+        if (!hasUnescapedPipe(headerLine)) return null
+
+        val header = splitTableRow(headerLine)
+        if (header.size < 2) return null
+
+        val delimiter = splitTableRow(lines[headerIndex + 1].trimEnd('\r'))
+        if (delimiter.size != header.size) return null
+        val alignments = delimiter.map { parseAlignment(it) ?: return null }
+
+        val rows = mutableListOf<List<TableCell>>()
+        rows.add(
+            header.mapIndexed { index, value ->
+                TableCell(
+                    text = value,
+                    header = true,
+                    alignment = alignments[index]
+                )
+            }
+        )
+        var index = headerIndex + 2
+        while (index < lines.size) {
+            val rowLine = lines[index].trimEnd('\r')
+            if (rowLine.isBlank() || !hasUnescapedPipe(rowLine)) break
+            val cells = splitTableRow(rowLine)
+            rows.add(
+                List(header.size) { column ->
+                    TableCell(
+                        text = cells.getOrElse(column) { "" },
+                        alignment = alignments[column]
+                    )
+                }
+            )
+            index++
+        }
+
+        return ParsedTable(
+            Block.Table(
+                rows = rows
+            ),
+            nextLineIndex = index
+        )
+    }
+
+    private fun parseAlignment(value: String): TableAlignment? {
+        val marker = value.trim()
+        if (!marker.matches(tableDelimiterPattern)) return null
+        return when {
+            marker.startsWith(':') && marker.endsWith(':') -> TableAlignment.CENTER
+            marker.endsWith(':') -> TableAlignment.END
+            else -> TableAlignment.START
+        }
+    }
+
+    private fun hasUnescapedPipe(line: String): Boolean {
+        var escaped = false
+        for (char in line) {
+            when {
+                escaped -> escaped = false
+                char == '\\' -> escaped = true
+                char == '|' -> return true
+            }
+        }
+        return false
+    }
+
+    private fun splitTableRow(line: String): List<String> {
+        val trimmed = line.trim()
+        val content = trimmed
+            .removePrefix("|")
+            .removeSuffix("|")
+        val cells = mutableListOf<String>()
+        val cell = StringBuilder()
+        var escaped = false
+        for (char in content) {
+            when {
+                escaped -> {
+                    if (char != '|') cell.append('\\')
+                    cell.append(char)
+                    escaped = false
+                }
+
+                char == '\\' -> escaped = true
+
+                char == '|' -> {
+                    cells.add(cell.toString().trim())
+                    cell.clear()
+                }
+
+                else -> cell.append(char)
+            }
+        }
+        if (escaped) cell.append('\\')
+        cells.add(cell.toString().trim())
+        return cells
+    }
+
+    private data class HtmlCellDraft(
+        val header: Boolean,
+        val alignment: TableAlignment,
+        val verticalAlignment: TableVerticalAlignment,
+        val columnSpan: Int,
+        val rowSpan: Int,
+        val content: StringBuilder = StringBuilder()
+    )
+
+    private fun parseHtmlTable(source: String): Block.Table? {
+        val tokens = htmlTableTokenPattern.findAll(source).toList()
+        if (tokens.isEmpty()) return null
+
+        val tableAttributes = parseHtmlAttributes(tokens.first().groupValues[3])
+        val rows = mutableListOf<List<TableCell>>()
+        var currentRow: MutableList<TableCell>? = null
+        var currentCell: HtmlCellDraft? = null
+        var caption: StringBuilder? = null
+        var title: String? = null
+        var previousEnd = 0
+
+        fun appendContent(value: String) {
+            when {
+                currentCell != null -> currentCell?.content?.append(value)
+                caption != null -> caption?.append(value)
+            }
+        }
+
+        fun finishCell() {
+            val cell = currentCell ?: return
+            currentRow?.add(
+                TableCell(
+                    text = sanitizeInlineHtml(cell.content.toString()),
+                    header = cell.header,
+                    alignment = cell.alignment,
+                    verticalAlignment = cell.verticalAlignment,
+                    columnSpan = cell.columnSpan,
+                    rowSpan = cell.rowSpan
+                )
+            )
+            currentCell = null
+        }
+
+        fun finishRow() {
+            finishCell()
+            currentRow?.takeIf { it.isNotEmpty() }?.let(rows::add)
+            currentRow = null
+        }
+
+        tokens.forEach { token ->
+            appendContent(source.substring(previousEnd, token.range.first))
+            previousEnd = token.range.last + 1
+            val closing = token.groupValues[1].isNotEmpty()
+            val tag = token.groupValues[2].lowercase()
+            val attributes = parseHtmlAttributes(token.groupValues[3])
+
+            when (tag) {
+                "caption" -> if (closing) {
+                    title = caption?.let { sanitizeInlineHtml(it.toString()) }
+                        ?.takeIf { it.isNotEmpty() }
+                    caption = null
+                } else {
+                    caption = StringBuilder()
+                }
+
+                "tr" -> if (closing) {
+                    finishRow()
+                } else {
+                    finishRow()
+                    currentRow = mutableListOf()
+                }
+
+                "td", "th" -> if (closing) {
+                    finishCell()
+                } else if (currentRow != null) {
+                    finishCell()
+                    currentCell = HtmlCellDraft(
+                        header = tag == "th" || attributes.containsKey("header"),
+                        alignment = parseHtmlAlignment(attributes),
+                        verticalAlignment = parseHtmlVerticalAlignment(attributes["valign"]),
+                        columnSpan = parseHtmlSpan(attributes["colspan"]),
+                        rowSpan = parseHtmlSpan(attributes["rowspan"])
+                    )
+                }
+
+                "br" -> if (!closing) appendContent("\n")
+            }
+        }
+        appendContent(source.substring(previousEnd))
+        finishRow()
+
+        if (rows.isEmpty()) return null
+        val borderValue = tableAttributes["border"]
+        return Block.Table(
+            rows = rows,
+            title = title,
+            bordered = borderValue != null &&
+                borderValue != "0" && !borderValue.equals("false", ignoreCase = true),
+            striped = tableAttributes["class"]
+                ?.split(Regex("\\s+"))
+                ?.any { it.equals("striped", ignoreCase = true) } == true
+        )
+    }
+
+    private fun parseHtmlAttributes(source: String): Map<String, String> = buildMap {
+        htmlAttributePattern.findAll(source).forEach { match ->
+            val value = match.groupValues.drop(2).firstOrNull { it.isNotEmpty() }.orEmpty()
+            put(match.groupValues[1].lowercase(), decodeHtmlEntities(value))
+        }
+    }
+
+    private fun parseHtmlAlignment(attributes: Map<String, String>): TableAlignment {
+        val alignment = attributes["align"] ?: attributes["style"]
+            ?.lowercase()
+            ?.substringAfter("text-align", "")
+            ?.substringAfter(':', "")
+            ?.substringBefore(';')
+        return when (alignment?.trim()?.lowercase()) {
+            "center" -> TableAlignment.CENTER
+            "right", "end" -> TableAlignment.END
+            else -> TableAlignment.START
+        }
+    }
+
+    private fun parseHtmlVerticalAlignment(value: String?): TableVerticalAlignment = when (
+        value?.trim()?.lowercase()
+    ) {
+        "middle", "center" -> TableVerticalAlignment.MIDDLE
+        "bottom" -> TableVerticalAlignment.BOTTOM
+        else -> TableVerticalAlignment.TOP
+    }
+
+    private fun parseHtmlSpan(value: String?): Int = value
+        ?.toIntOrNull()
+        ?.coerceIn(1, 32)
+        ?: 1
+
+    private fun sanitizeInlineHtml(source: String): String {
+        var result = htmlLinkPattern.replace(source) { match ->
+            val label = match.groupValues[2]
+            val href = sanitizeHtmlHref(
+                parseHtmlAttributes(match.groupValues[1])["href"].orEmpty()
+            )
+            when {
+                href.isEmpty() -> label
+                label.trim() == href -> href
+                else -> "$label ($href)"
+            }
+        }
+        result = htmlBoldPattern.replace(result) { "**${it.groupValues[1]}**" }
+        result = htmlItalicPattern.replace(result) { "*${it.groupValues[1]}*" }
+        result = htmlCodePattern.replace(result) { "`${it.groupValues[1]}`" }
+        result = htmlBreakPattern.replace(result, "\n")
+        return decodeHtmlEntities(htmlTagPattern.replace(result, "")).trim()
+    }
+
+    private fun sanitizeHtmlHref(value: String): String {
+        val href = value.trim()
+        val schemeSeparator = href.indexOf("://")
+        if (schemeSeparator <= 0) return ""
+
+        val scheme = href.substring(0, schemeSeparator)
+        val isApprovedScheme = scheme.equals("http", ignoreCase = true) ||
+            scheme.equals("https", ignoreCase = true) ||
+            scheme.equals("mytonwallet", ignoreCase = true) ||
+            scheme.equals("mtw", ignoreCase = true) ||
+            runCatching { scheme.equals(APP_SCHEME, ignoreCase = true) }.getOrDefault(false)
+        return href.takeIf { isApprovedScheme }.orEmpty()
+    }
+
+    private fun decodeHtmlEntities(source: String): String {
+        val named = source
+            .replace("&nbsp;", " ", ignoreCase = true)
+            .replace("&lt;", "<", ignoreCase = true)
+            .replace("&gt;", ">", ignoreCase = true)
+            .replace("&quot;", "\"", ignoreCase = true)
+            .replace("&#39;", "'", ignoreCase = true)
+            .replace("&amp;", "&", ignoreCase = true)
+        return numericHtmlEntityPattern.replace(named) { match ->
+            val codePoint = match.groupValues[1].takeIf { it.isNotEmpty() }
+                ?.toIntOrNull(16)
+                ?: match.groupValues[2].toIntOrNull()
+            codePoint?.takeIf(Character::isValidCodePoint)
+                ?.let { String(Character.toChars(it)) }
+                ?: match.value
+        }
     }
 }

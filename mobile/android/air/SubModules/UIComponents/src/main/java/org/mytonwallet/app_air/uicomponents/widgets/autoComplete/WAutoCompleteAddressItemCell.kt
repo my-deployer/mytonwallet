@@ -22,6 +22,7 @@ data class AutoCompleteAddressItem(
     val network: MBlockchainNetwork,
     val account: MAccount? = null,
     val savedAddress: MSavedAddress? = null,
+    val balanceAccountId: String? = null,
     val filteredChainName: String? = null,
     val value: String? = null,
     val keyword: String = "",

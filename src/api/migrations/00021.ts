@@ -1,6 +1,6 @@
 import type { ApiAccountAny } from '../types';
 
-import { TON_BIP39_PATH } from '../chains/ton/constants';
+import { TON_BIP39_PATH } from '../chains/ton/derivationConstants';
 import { storage } from '../storages';
 
 export async function start() {

@@ -30,7 +30,6 @@ let NATIVE_CALL_ERROR = """
         error: error
     })
 """
-
 #if DEBUG
 let logStringIfRequired = "console.log(`${methodName}`);"
 //let logStringIfRequired = "console.log(`${methodName} ${argsString}`);"
@@ -633,6 +632,23 @@ extension JSWebViewBridge: WKScriptMessageHandler { // todo: move to a separate 
 //                }
                 #endif
                 switch updateType {
+                case ApiAgentV2UpdateType.client.rawValue:
+                    do {
+                        let envelope = try JSONSerialization.decode(ApiAgentV2ClientUpdateEnvelope.self, from: data)
+                        guard envelope.type == .client else { return }
+                        WalletCoreData.notify(event: .agentV2(envelope.update))
+                    } catch {
+                        log.error("failed to decode Agent V2 update")
+                    }
+
+                case ApiAgentV2UpdateType.portfolioHistory.rawValue:
+                    do {
+                        let update = try JSONSerialization.decode(ApiAgentV2PortfolioHistoryUpdate.self, from: data)
+                        guard update.type == .portfolioHistory else { return }
+                    } catch {
+                        log.error("failed to decode Agent V2 portfolio history update")
+                    }
+
                 case "updateAccount":
                     do {
                         let update = try JSONSerialization.decode(ApiUpdate.UpdateAccount.self, from: data)
@@ -763,15 +779,16 @@ extension JSWebViewBridge: WKScriptMessageHandler { // todo: move to a separate 
 
                 case "updatingStatus":
                     guard let isUpdating = data["isUpdating"] as? Bool else { return }
+                    let accountId = data["accountId"] as? String ?? AccountStore.currentAccountId
                     switch data["kind"] as? String {
                     case "activities":
-                        AccountStore.updatingActivities = isUpdating
+                        AccountStore.setUpdatingActivities(accountId: accountId, isUpdating: isUpdating)
                     case "balance":
-                        AccountStore.updatingBalance = isUpdating
+                        AccountStore.setUpdatingBalance(accountId: accountId, isUpdating: isUpdating)
                     default:
                         return
                     }
-                    log.info("updatingStatus \(data["kind"] ?? "?", .public)=\(isUpdating)", fileOnly: true)
+                    log.info("updatingStatus \(data["kind"] ?? "?", .public)=\(isUpdating) account=\(accountId, .public)", fileOnly: true)
                     WalletCoreData.notify(event: .updatingStatusChanged)
                     break
                 case "updateConfig":
@@ -1025,10 +1042,8 @@ extension JSWebViewBridge: WKNavigationDelegate, WKUIDelegate {
     public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         log.error("WebView terminated, reloading...")
         recreateWebView {
-            if let accountId = AccountStore.account?.id {
-                Task {
-                    try? await Api.activateAccount(accountId: accountId, newestActivityTimestamps: nil)
-                }
+            Task {
+                try? await AccountStore.reactivateCurrentAccount()
             }
         }
     }

@@ -696,6 +696,12 @@ fun View.animateHeight(newValue: Int) {
 }
 
 fun View.animateHeight(fromValue: Int, toValue: Int) {
+    if (!WGlobalStorage.getAreAnimationsActive()) {
+        layoutParams = layoutParams.apply {
+            height = toValue
+        }
+        return
+    }
     ValueAnimator.ofInt(fromValue, toValue).apply {
         addUpdateListener { valueAnimator ->
             layoutParams = layoutParams.apply {

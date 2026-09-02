@@ -24,6 +24,7 @@ interface ITabsVC {
     fun pauseBlurring()
     fun resumeBlurring()
     fun setSearchText(text: String)
+    fun clearSearchFocus()
     fun switchToFirstTab(): Boolean
 
     fun hideTabBar()
@@ -31,7 +32,19 @@ interface ITabsVC {
 
     val isOnHomeScreen: Boolean
     fun switchToExplore(targetUri: Uri? = null)
-    fun switchToAgent(prompt: String? = null): Boolean
+    fun switchToAgent(prompt: String? = null, pinnedMessageId: String? = null): Boolean
     fun switchToSettings(pushVC: WViewController? = null)
     fun navStackUpdated(nav: WNavigationController) {}
+
+    /**
+     * Stack that hosts the global search screen above the tab chrome, created on demand. Null when
+     * the host has no such layer and search should be pushed into the active stack instead.
+     */
+    val searchOverlayNavigationController: WNavigationController? get() = null
+
+    /** Fades the search overlay in, taking the top tabs and avatar out with it. */
+    fun revealSearchOverlay() {}
+
+    /** Fades the search overlay out and brings the top tabs and avatar back. */
+    fun hideSearchOverlay() {}
 }

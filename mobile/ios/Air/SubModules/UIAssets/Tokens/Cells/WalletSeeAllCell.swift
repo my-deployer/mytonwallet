@@ -9,7 +9,7 @@ import UIKit
 import UIComponents
 import WalletContext
 
-final class WalletSeeAllCell: WHighlightCollectionViewCell {
+public final class WalletSeeAllCell: WHighlightCollectionViewCell {
     nonisolated public static let defaultHeight = CGFloat(48)
     private static let leadingIconConfig = UIImage.SymbolConfiguration(
         font: WTypography.uiFont(.title3, content: .technical)
@@ -22,7 +22,7 @@ final class WalletSeeAllCell: WHighlightCollectionViewCell {
     private static let menuButtonSideLength = CGFloat(36)
     private static let menuButtonTrailingInset = CGFloat(8)
     
-    override init(frame: CGRect) {
+    public override init(frame: CGRect) {
         super.init(frame: frame)
         setupViews()
     }
@@ -86,7 +86,7 @@ final class WalletSeeAllCell: WHighlightCollectionViewCell {
         updateTheme()
     }
 
-    func configure(tokensCount: Int, menu: UIMenu?) {
+    public func configure(tokensCount: Int, menu: UIMenu?) {
         configure(
             title: lang("Show All Assets"),
             count: tokensCount,
@@ -95,7 +95,7 @@ final class WalletSeeAllCell: WHighlightCollectionViewCell {
         )
     }
 
-    func configureCollectibles(title: String, collectiblesCount: Int) {
+    public func configureCollectibles(title: String, collectiblesCount: Int) {
         configure(
             title: title,
             count: collectiblesCount,
@@ -104,14 +104,26 @@ final class WalletSeeAllCell: WHighlightCollectionViewCell {
         )
     }
 
-    private func configure(title: String, count: Int, leadingIconSystemName: String, menu: UIMenu?) {
+    public func configureActivities(menu: UIMenu?) {
+        configure(
+            title: lang("Show All Actions"),
+            count: nil,
+            leadingIconSystemName: "checklist.unchecked",
+            menu: menu
+        )
+    }
+
+    private func configure(title: String, count: Int?, leadingIconSystemName: String, menu: UIMenu?) {
         seeAllLabel.text = title
         leadingIconView.image = UIImage(systemName: leadingIconSystemName, withConfiguration: Self.leadingIconConfig)
-        badge.configure(
-            text: localizedIntegerString(count),
-            foregroundColor: .tintColor,
-            backgroundColor: .tintColor.withAlphaComponent(0.12)
-        )
+        if let count {
+            badge.configure(
+                text: localizedIntegerString(count),
+                foregroundColor: .tintColor,
+                backgroundColor: .tintColor.withAlphaComponent(0.12)
+            )
+        }
+        badge.isHidden = count == nil
 
         let isMenuVisible = menu != nil
         menuButton.menu = menu

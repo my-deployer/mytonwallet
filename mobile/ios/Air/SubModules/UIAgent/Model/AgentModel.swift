@@ -3,9 +3,9 @@ import WalletContext
 import WalletCore
 
 class AgentModel: BaseAgentModel {
-    
+
     private var currentAccountID: String? = AccountStore.accountId
-    
+
     func checkAccountChanged(animated: Bool) {
         let newAccountID = AccountStore.accountId
         guard newAccountID != currentAccountID else { return }
@@ -19,12 +19,12 @@ class AgentModel: BaseAgentModel {
 
         appendOrCoalesceAccountChangedMessage(for: account, animated: animated)
     }
-    
+
     private func appendOrCoalesceAccountChangedMessage(for account: MAccount, animated: Bool) {
         var baseItems = baseTimelineItems
         let message = AgentMessage(
             role: .system,
-            text: lang("Switched to %@", arg1: account.displayName),
+            text: L10n.switchedToAccount(account: account.displayName),
             isStreaming: false,
             systemStyle: .accountChange
         )
@@ -43,11 +43,11 @@ class AgentModel: BaseAgentModel {
         guard isActive else { return }
         checkAccountChanged(animated: animated)
     }
-    
+
     override func persistStableTimelineIfNeeded(messages: [AgentMessage]) {
         AgentStore.shared.saveHistory(messages: messages)
     }
-    
+
     override func loadPersistedTimeline() -> [AgentTimelineItem] {
         AgentStore.shared.persistedTimelineItems()
     }
@@ -71,7 +71,7 @@ class AgentModel: BaseAgentModel {
         )
         return (dateText, timeText)
     }
-    
+
     static func makeBackend(kind: AgentBackendKind) -> AgentBackend {
         switch kind {
         case .testing:

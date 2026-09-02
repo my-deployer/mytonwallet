@@ -39,6 +39,21 @@ open class WClearSegmentedControlItemView(context: Context) :
     WCell(context, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT)),
     WThemedView {
 
+    internal var minimumWidthProvider: (() -> Int)? = null
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+        val minimumWidth = minimumWidthProvider?.invoke() ?: return
+        if (MeasureSpec.getMode(widthMeasureSpec) != MeasureSpec.EXACTLY &&
+            measuredWidth < minimumWidth
+        ) {
+            super.onMeasure(
+                MeasureSpec.makeMeasureSpec(minimumWidth, MeasureSpec.EXACTLY),
+                heightMeasureSpec
+            )
+        }
+    }
+
     internal val textView: WLabel
     internal val trailingImageView: AppCompatImageView
     internal val badgeView: FrameLayout

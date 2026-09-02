@@ -22,22 +22,26 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 
 @SuppressLint("ViewConstructor")
-class SearchItemCell(context: Context, private val onTap: (keyword: String) -> Unit) :
-    WCell(context, LayoutParams(MATCH_PARENT, 50.dp)),
+class SearchItemCell(
+    context: Context,
+    iconRes: Int = org.mytonwallet.app_air.icons.R.drawable.ic_search_24,
+    private val iconColor: WColor = WColor.SecondaryText,
+    private val onTap: (keyword: String) -> Unit
+) : WCell(context, LayoutParams(MATCH_PARENT, 50.dp)),
     WThemedView {
 
-    private val searchDrawable: Drawable? =
+    private val iconDrawable: Drawable? =
         AppCompatResources.getDrawable(
             context,
-            org.mytonwallet.app_air.icons.R.drawable.ic_search_24
-        )?.apply {
-            setTint(WColor.SecondaryText.color)
+            iconRes
+        )?.mutate()?.apply {
+            setTint(iconColor.color)
         }
 
-    private val searchImageView: AppCompatImageView by lazy {
+    private val iconImageView: AppCompatImageView by lazy {
         AppCompatImageView(context).apply {
             id = generateViewId()
-            setImageDrawable(searchDrawable)
+            setImageDrawable(iconDrawable)
         }
     }
 
@@ -52,11 +56,11 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
 
     override fun setupViews() {
         super.setupViews()
-        addView(searchImageView, LayoutParams(24.dp, 24.dp))
+        addView(iconImageView, LayoutParams(24.dp, 24.dp))
         addView(titleLabel, LayoutParams(0, WRAP_CONTENT))
         setConstraints {
-            toStart(searchImageView, 16f)
-            toCenterY(searchImageView)
+            toStart(iconImageView, 16f)
+            toCenterY(iconImageView)
             setHorizontalBias(titleLabel.id, 0f)
             toStart(titleLabel, 56f)
             toEnd(titleLabel, 16f)
@@ -72,17 +76,19 @@ class SearchItemCell(context: Context, private val onTap: (keyword: String) -> U
 
     var keyword = ""
     var isLastItem = false
-    fun configure(keyword: String, isLastItem: Boolean) {
+    private var hasOpaqueBackground = true
+    fun configure(keyword: String, isLastItem: Boolean, hasOpaqueBackground: Boolean = true) {
         this.keyword = keyword
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         titleLabel.text = keyword
         updateTheme()
     }
 
     override fun updateTheme() {
-        searchDrawable?.setTint(WColor.SecondaryText.color)
+        iconDrawable?.setTint(iconColor.color)
         setBackgroundColor(
-            WColor.Background.color,
+            if (hasOpaqueBackground) WColor.Background.color else WColor.Transparent.color,
             0f,
             if (isLastItem) ViewConstants.BLOCK_RADIUS.dp else 0f
         )

@@ -12,6 +12,7 @@ public final class WSegmentedControl: UIView {
 
     public let model: SegmentedControlModel
     private let scrollContentMargin: CGFloat
+    private let isGlassInteractive: Bool
 
     private let backgroundContainer = UIView()
     private var backgroundView: UIView?
@@ -23,7 +24,6 @@ public final class WSegmentedControl: UIView {
     private let capsuleBackgroundView = UIView()
     private let capsuleContentView = UIView()
     private let secondaryContainer = UIView()
-    private let highlightedSecondaryContainer = UIView()
     private let primaryContainer = UIView()
     private let interactionContainer = UIView()
 
@@ -31,7 +31,6 @@ public final class WSegmentedControl: UIView {
         let id: String
         let secondaryView: UIView
         let secondaryLabel: UILabel
-        let highlightedSecondaryLabel: UILabel
         let primaryLabel: UILabel
         let arrow: UIImageView?
         let interaction: SegmentedControlInteractionView
@@ -53,9 +52,14 @@ public final class WSegmentedControl: UIView {
     private var isInReplacementCrossfade: Bool { replacementCrossfadeCount > 0 }
     private var shouldSuppressTransientAnimations: Bool { isInReplacementCrossfade }
 
-    public init(model: SegmentedControlModel, scrollContentMargin: CGFloat = 0) {
+    public init(
+        model: SegmentedControlModel,
+        scrollContentMargin: CGFloat = 0,
+        isGlassInteractive: Bool = false
+    ) {
         self.model = model
         self.scrollContentMargin = scrollContentMargin
+        self.isGlassInteractive = isGlassInteractive
         super.init(frame: .zero)
         setupViews()
         rebuildItems()
@@ -65,6 +69,22 @@ public final class WSegmentedControl: UIView {
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    public override func didMoveToWindow() {
+        super.didMoveToWindow()
+        applyColors()
+    }
+
+    public override func tintColorDidChange() {
+        super.tintColorDidChange()
+        applyColors()
+    }
+
+    public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard traitCollection.hasDifferentColorAppearance(comparedTo: previousTraitCollection) else { return }
+        applyColors()
+    }
 
     private func setupViews() {
         clipsToBounds = false
@@ -103,9 +123,6 @@ public final class WSegmentedControl: UIView {
         capsuleContentView.isUserInteractionEnabled = false
         capsuleContentView.clipsToBounds = true
         capsuleView.addSubview(capsuleContentView)
-
-        highlightedSecondaryContainer.isUserInteractionEnabled = false
-        capsuleContentView.addSubview(highlightedSecondaryContainer)
 
         primaryContainer.isUserInteractionEnabled = false
         capsuleContentView.addSubview(primaryContainer)
@@ -217,7 +234,6 @@ public final class WSegmentedControl: UIView {
     private func rebuildItems() {
         for views in itemViews {
             views.secondaryView.removeFromSuperview()
-            views.highlightedSecondaryLabel.removeFromSuperview()
             views.primaryLabel.removeFromSuperview()
             views.arrow?.removeFromSuperview()
             views.interaction.removeFromSuperview()
@@ -240,10 +256,6 @@ public final class WSegmentedControl: UIView {
             secondaryLabel.isAccessibilityElement = false
             secondaryView.addSubview(secondaryLabel)
 
-            let highlightedSecondaryLabel = makeLabel(title: item.title, color: model.secondaryColor, font: font)
-            highlightedSecondaryLabel.isAccessibilityElement = false
-            highlightedSecondaryContainer.addSubview(highlightedSecondaryLabel)
-
             let primaryLabel = makeLabel(title: item.title, color: model.primaryColor, font: font)
             primaryLabel.isAccessibilityElement = false
             primaryContainer.addSubview(primaryLabel)
@@ -265,7 +277,6 @@ public final class WSegmentedControl: UIView {
                 id: item.id,
                 secondaryView: secondaryView,
                 secondaryLabel: secondaryLabel,
-                highlightedSecondaryLabel: highlightedSecondaryLabel,
                 primaryLabel: primaryLabel,
                 arrow: arrow,
                 interaction: interaction
@@ -278,11 +289,11 @@ public final class WSegmentedControl: UIView {
 
     private func applyColors() {
         capsuleBackgroundView.backgroundColor = model.capsuleColor
+        let primaryColor = model.primaryColor.resolvedColor(with: traitCollection)
         for views in itemViews {
             views.secondaryLabel.textColor = model.secondaryColor
-            views.highlightedSecondaryLabel.textColor = model.secondaryColor
-            views.primaryLabel.textColor = model.primaryColor
-            views.arrow?.tintColor = model.primaryColor
+            views.primaryLabel.textColor = primaryColor
+            views.arrow?.tintColor = primaryColor
         }
     }
 
@@ -307,6 +318,7 @@ public final class WSegmentedControl: UIView {
                 title: item.title,
                 contextMenuProvider: item.contextMenuProvider,
                 segmentedControl: self,
+                allowsSimultaneousGlassInteraction: isGlassInteractive,
                 onSelect: { [weak self] in
                     self?.model.onSelect(item)
                 }
@@ -401,8 +413,6 @@ public final class WSegmentedControl: UIView {
             views.secondaryView.bounds = slotBounds
             views.secondaryView.center = slotCenter
             views.secondaryLabel.frame = slotBounds
-            views.highlightedSecondaryLabel.bounds = slotBounds
-            views.highlightedSecondaryLabel.center = slotCenter
             views.primaryLabel.bounds = slotBounds
             views.primaryLabel.center = slotCenter
 
@@ -466,7 +476,6 @@ public final class WSegmentedControl: UIView {
                 width: contentView.bounds.width,
                 height: contentView.bounds.height
             )
-            highlightedSecondaryContainer.frame = primaryContainer.frame
         }
 
         if animated {
@@ -512,7 +521,7 @@ public final class WSegmentedControl: UIView {
 
         let selectionMidX = contentView.frame.minX + frame.midX
         let maxOffset = max(0, scrollView.contentSize.width - viewportWidth)
-        let target = (selectionMidX - viewportWidth / 2).clamped(to: 0 ... maxOffset)
+        let target = clamp(selectionMidX - viewportWidth / 2, to: 0 ... maxOffset)
         guard abs(scrollView.contentOffset.x - target) > 0.5 else { return }
 
         if animated {
@@ -580,13 +589,26 @@ public final class WSegmentedControl: UIView {
         case .regular:
             return
         case .colorHeader:
-            let view = WCapsuleGlassBackgroundView(style: .colorHeader, cornerRadius: cornerRadius)
+            let view = WCapsuleGlassBackgroundView(
+                style: .colorHeader,
+                cornerRadius: cornerRadius,
+                isInteractive: isGlassInteractive
+            )
             backgroundContainer.addSubview(view)
             backgroundView = view
         case .header, .rootHeader, .compactRootHeader:
-            let view = WCapsuleGlassBackgroundView(style: .header, cornerRadius: cornerRadius)
+            let view = WCapsuleGlassBackgroundView(
+                style: .header,
+                cornerRadius: cornerRadius,
+                isInteractive: isGlassInteractive
+            )
             backgroundContainer.addSubview(view)
             backgroundView = view
+        }
+        if isGlassInteractive,
+           let backgroundView = backgroundView as? WCapsuleGlassBackgroundView,
+           backgroundView.hostContentIfSupported(scrollView) {
+            backgroundContainer.isUserInteractionEnabled = true
         }
         setNeedsLayout()
     }
@@ -613,13 +635,15 @@ private final class WCapsuleGlassBackgroundView: UIView {
 
     private let style: Style
     private var cornerRadius: CGFloat
+    private let isInteractive: Bool
 
     private var glassView: UIView?
     private var overlayView: UIView?
 
-    init(style: Style, cornerRadius: CGFloat) {
+    init(style: Style, cornerRadius: CGFloat, isInteractive: Bool) {
         self.style = style
         self.cornerRadius = cornerRadius
+        self.isInteractive = isInteractive
         super.init(frame: .zero)
         isUserInteractionEnabled = false
         setup()
@@ -634,11 +658,24 @@ private final class WCapsuleGlassBackgroundView: UIView {
         setNeedsLayout()
     }
 
+    @discardableResult
+    func hostContentIfSupported(_ contentView: UIView) -> Bool {
+        guard #available(iOS 26, iOSApplicationExtension 26, *),
+              isInteractive,
+              let glassView = glassView as? UIVisualEffectView else {
+            return false
+        }
+        isUserInteractionEnabled = true
+        glassView.contentView.addSubview(contentView)
+        return true
+    }
+
     private func setup() {
         switch style {
         case .colorHeader:
             if #available(iOS 26, *) {
                 let effect = UIGlassEffect()
+                effect.isInteractive = isInteractive
                 let view = UIVisualEffectView(effect: effect)
                 addSubview(view)
                 glassView = view
@@ -665,6 +702,7 @@ private final class WCapsuleGlassBackgroundView: UIView {
         case .header:
             if #available(iOS 26, *) {
                 let effect = UIGlassEffect(style: .regular)
+                effect.isInteractive = isInteractive
                 let view = UIVisualEffectView(effect: effect)
                 addSubview(view)
                 glassView = view
@@ -784,7 +822,7 @@ private final class _NavBarContainer: UIView {
         let navMidInContainer = navBar.convert(CGPoint(x: navBar.bounds.inset(by: navBar.safeAreaInsets).midX, y: 0), to: self).x
         let offset = navMidInContainer - bounds.midX
         let halfSlack = max(0, bounds.width - width) / 2
-        centerXConstraint.constant = offset.clamped(to: -halfSlack...halfSlack)
+        centerXConstraint.constant = clamp(offset, to: -halfSlack...halfSlack)
         centerYConstraint.constant = -model.constants.topInset / 2
         widthConstraint.constant = CGFloat(width)
     }

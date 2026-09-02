@@ -438,7 +438,7 @@ enum PortfolioGraphKitAdapter {
             return contractAddress
         }
 
-        return lang("Asset %1$@", arg1: "\(dataset.assetId)")
+        return L10n.assetAsset(asset: "\(dataset.assetId)")
     }
 
     private static func timestamp(from point: [Double?]) -> TimeInterval? {

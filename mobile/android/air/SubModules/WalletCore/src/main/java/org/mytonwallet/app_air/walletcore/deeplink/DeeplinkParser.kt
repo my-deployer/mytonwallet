@@ -40,8 +40,8 @@ sealed class Deeplink {
 
     data class Send(
         override val accountAddress: String?,
-        val chain: String,
-        val address: String,
+        val chain: String?,
+        val address: String?,
         val amount: String?,
         val comment: String?,
         val binary: String?,
@@ -546,7 +546,20 @@ class DeeplinkParser {
 
         private fun handleSend(uri: Uri): Deeplink? {
             // Format: mtw://send/{chain}:{address}?amount=...&token=...&text=...
-            val target = uri.pathSegments.firstOrNull() ?: return null
+            // Without a target, opens an empty send screen.
+            val target = uri.pathSegments.firstOrNull()
+                ?: return Deeplink.Send(
+                    accountAddress = null,
+                    chain = null,
+                    address = null,
+                    amount = null,
+                    comment = null,
+                    binary = null,
+                    tokenSlug = null,
+                    init = null,
+                    expiry = null,
+                    hasUnsupportedParams = false
+                )
             val colonIndex = target.indexOf(':')
             if (colonIndex == -1) return null
 

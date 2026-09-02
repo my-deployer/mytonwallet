@@ -92,11 +92,12 @@ public final class AccountConfig: Sendable {
     }
 
     private func applyResolvedConfig() {
-        cardsInfo = serverCardsInfo
         isMfaEnabled = serverIsMfaEnabled || isMfaEnabledOverrideActive
 #if DEBUG
-        activePromotion = DebugPromotionPreset.isEnabled ? DebugPromotionPreset.airPromotion : serverActivePromotion
+        cardsInfo = DebugPromotionPreset.cardsInfoOverride ?? serverCardsInfo
+        activePromotion = DebugPromotionPreset.activePromotion ?? serverActivePromotion
 #else
+        cardsInfo = serverCardsInfo
         activePromotion = serverActivePromotion
 #endif
     }

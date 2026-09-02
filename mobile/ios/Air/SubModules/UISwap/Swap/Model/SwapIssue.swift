@@ -25,11 +25,11 @@ extension SwapIssue {
         case .tooSmallAmount:
             lang("$swap_too_small_amount")
         case .notEnoughToken(let token):
-            lang("Not Enough %symbol%", arg1: token.symbol)
+            L10n.notEnoughSymbol(symbol: token.symbol)
         case .minimumAmount(let amount, let token):
-            lang("Minimum amount", arg1: formattedTokenAmount(amount, token: token))
+            L10n.minimumAmount(value: formattedTokenAmount(amount, token: token))
         case .maximumAmount(let amount, let token):
-            lang("Maximum amount", arg1: formattedTokenAmount(amount, token: token))
+            L10n.maximumAmount(value: formattedTokenAmount(amount, token: token))
         case .awaitingPreviousFee:
             lang("Awaiting Previous Fee")
         case .unexpectedEstimateError:

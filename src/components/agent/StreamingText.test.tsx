@@ -218,6 +218,27 @@ describe('StreamingText', () => {
     expect(getTextElement().tagName).toBe('DIV');
   });
 
+  it('keeps an incomplete final Markdown tail mutable after the reveal completes', async () => {
+    await renderText({
+      text: 'Incomplete final paragraph',
+      isStreaming: false,
+      shouldAnimate: false,
+      shouldCommitMarkdownTail: false,
+    });
+
+    expect(root.querySelector('[data-agent-markdown-offset="0"]')).toBeNull();
+
+    await renderText({
+      text: 'Incomplete final paragraph',
+      isStreaming: false,
+      shouldAnimate: false,
+      shouldCommitMarkdownTail: true,
+    });
+
+    expect(root.querySelector('[data-agent-markdown-offset="0"]')?.textContent)
+      .toBe('Incomplete final paragraph');
+  });
+
   it('smooths the container height when a new visual line appears', async () => {
     let naturalHeight = 20;
     const originalGetBoundingClientRect = HTMLElement.prototype.getBoundingClientRect;
@@ -699,6 +720,8 @@ describe('StreamingText', () => {
           text="Strict streaming edge lifecycle"
           isStreaming
           shouldAnimate
+          shouldCommitMarkdownTail
+          areLinksEnabled
           revealSessionKey="strict-edge"
           shouldRevealFromStart
         />,
@@ -725,8 +748,14 @@ describe('StreamingText', () => {
     }
   });
 
-  async function renderText(props: React.ComponentProps<typeof StreamingText>) {
-    TeactDOM.render(<StreamingText {...props} />, root);
+  async function renderText(props: Omit<
+    React.ComponentProps<typeof StreamingText>,
+    'areLinksEnabled' | 'shouldCommitMarkdownTail'
+  > & Partial<Pick<
+    React.ComponentProps<typeof StreamingText>,
+    'areLinksEnabled' | 'shouldCommitMarkdownTail'
+  >>) {
+    TeactDOM.render(<StreamingText areLinksEnabled shouldCommitMarkdownTail {...props} />, root);
     await pause(20);
   }
 

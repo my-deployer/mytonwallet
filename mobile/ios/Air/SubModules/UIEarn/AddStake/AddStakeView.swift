@@ -40,9 +40,6 @@ struct AddStakeView: View {
                     model.updateAmountFromBaseCurrency(baseCurrencyAmount)
                 }
             }
-            .task(id: model.amount) {
-                await model.updateFee()
-            }
         }
     }
 }

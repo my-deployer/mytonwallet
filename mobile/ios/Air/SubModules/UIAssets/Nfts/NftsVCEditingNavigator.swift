@@ -88,19 +88,11 @@ public class NftsEditingNavigator {
         
         let hasSelection = state.selectedItemCount > 0
         
-        if state.canSendSelection {
-            selectionToolbar.sendButton.isEnabled = hasSelection
-            selectionToolbar.sendButton.isHidden = false
-        } else {
-            selectionToolbar.sendButton.isHidden = true
-        }
+        selectionToolbar.sendButton.isEnabled = hasSelection && state.canSendSelection
+        selectionToolbar.sendButton.isHidden = hasSelection && !state.canSendSelection
 
-        if state.canBurnSelection {
-            selectionToolbar.burnButton.isEnabled = hasSelection
-            selectionToolbar.burnButton.isHidden = false
-        } else {
-            selectionToolbar.burnButton.isHidden = true
-        }
+        selectionToolbar.burnButton.isEnabled = hasSelection && state.canBurnSelection
+        selectionToolbar.burnButton.isHidden = hasSelection && !state.canBurnSelection
 
         selectionToolbar.hideButton.isEnabled = hasSelection
     }

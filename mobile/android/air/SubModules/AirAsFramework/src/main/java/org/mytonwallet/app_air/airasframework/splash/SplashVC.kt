@@ -104,6 +104,7 @@ import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod.DApp.TonConnectHandleDeepLink
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiUpdate
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
+import org.mytonwallet.app_air.walletcore.stores.DappsStore
 import org.mytonwallet.app_air.walletcore.stores.NftStore
 import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
@@ -478,7 +479,7 @@ class SplashVC(context: Context) :
         navigationController.setRoot(passcodeConfirmVC)
         window!!.present(
             navigationController,
-            presentAnimation = WWindow.PresentAnimation.SCALE_IN,
+            presentAnimation = WWindow.PresentAnimation.ScaleIn,
             onCompletion = {
                 // Lock-screen is on, remove unnecessary window background
                 window?.window?.decorView?.background = null
@@ -895,7 +896,7 @@ class SplashVC(context: Context) :
                     return
                 }
 
-                val blockchain = MBlockchain.valueOfOrNull(deeplink.chain)
+                val blockchain = deeplink.chain?.let { MBlockchain.valueOfOrNull(it) }
                 val nativeSlug = blockchain?.nativeSlug
 
                 val tokenSlug = deeplink.tokenSlug
@@ -1285,13 +1286,35 @@ class SplashVC(context: Context) :
             is Deeplink.Settings -> {
                 val subVC = when (deeplink.page) {
                     "appearance" -> AppearanceVC(context)
+
                     "notifications" -> NotificationSettingsVC(context)
+
                     "assets" -> AssetsAndActivitiesVC(context)
-                    "dapps" -> ConnectedAppsVC(context)
+
+                    "dapps" ->
+                        if (DappsStore.dApps[AccountStore.activeAccountId]?.isNotEmpty() == true) {
+                            ConnectedAppsVC(context)
+                        } else {
+                            null
+                        }
+
                     "language" -> LanguageVC(context)
+
                     "about" -> AppInfoVC(context)
+
                     "disclaimer" -> UserResponsibilityVC(context)
-                    "wallet-version" -> WalletVersionsVC(context)
+
+                    "wallet-version" -> {
+                        val versions = AccountStore.walletVersionsData?.versions
+                        val expectsVersions =
+                            versions == null && AccountStore.activeAccount?.tonAddress != null
+                        if (versions?.isNotEmpty() == true || expectsVersions) {
+                            WalletVersionsVC(context)
+                        } else {
+                            null
+                        }
+                    }
+
                     else -> null
                 }
                 tabsVC?.switchToSettings(subVC)

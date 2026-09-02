@@ -23,10 +23,9 @@ enum SubmissionFeedback {
         case .notCommitted:
             nil
         case .partiallyCommitted(let remainingWork):
-            lang(
-                "$action_partially_completed_description",
-                arg1: localizedIntegerString(remainingWork.completedUnitCount),
-                arg2: localizedIntegerString(remainingWork.totalUnitCount)
+            L10n.actionPartiallyCompletedDescription(
+                completed: remainingWork.completedUnitCount,
+                total: remainingWork.totalUnitCount
             )
         case .indeterminate:
             lang("$action_status_unknown_description")

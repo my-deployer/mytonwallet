@@ -24,6 +24,7 @@ import org.mytonwallet.app_air.uiagent.viewControllers.agent.AgentMessage
 import org.mytonwallet.app_air.uiagent.viewControllers.agent.AgentMessageRole
 import org.mytonwallet.app_air.uiagent.viewControllers.agent.MarkdownParser
 import org.mytonwallet.app_air.uiagent.viewControllers.agent.views.AgentOutgoingBubbleDrawable
+import org.mytonwallet.app_air.uiagent.viewControllers.agent.views.AgentRichMessageView
 import org.mytonwallet.app_air.uiagent.viewControllers.agent.views.StreamingRevealLabel
 import org.mytonwallet.app_air.uiagent.viewControllers.agent.views.TypingIndicatorView
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
@@ -51,6 +52,8 @@ import org.mytonwallet.app_air.walletcore.WalletEvent
 
 private const val MYTONWALLET_SCHEME_PREFIX = "mytonwallet://"
 private const val MTW_SCHEME_PREFIX = "mtw://"
+private const val MESSAGE_HORIZONTAL_PADDING_DP = 34
+private const val RICH_MESSAGE_HORIZONTAL_GUTTER_DP = 40
 
 @SuppressLint("ViewConstructor")
 class AgentMessageCell(context: Context) :
@@ -75,13 +78,28 @@ class AgentMessageCell(context: Context) :
         useCustomEmoji = true
         movementMethod = ExtraHitLinkMovementMethod(2.dp, 2.dp)
     }
+    private val richMessageView = AgentRichMessageView(context).apply {
+        visibility = GONE
+    }
     private val typingIndicator = TypingIndicatorView(context)
     private val deeplinkContainer = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
     }
+    private val copyLongClickListener = OnLongClickListener {
+        if (isCopyable) {
+            showCopyMenu()
+            true
+        } else {
+            false
+        }
+    }
 
     init {
         bubbleContainer.addView(messageLabel, FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+        bubbleContainer.addView(
+            richMessageView,
+            FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT)
+        )
         bubbleContainer.addView(
             typingIndicator,
             FrameLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
@@ -97,17 +115,15 @@ class AgentMessageCell(context: Context) :
             LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
         )
         addView(contentContainer, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
-        val longClickListener = OnLongClickListener {
-            if (isCopyable) {
-                showCopyMenu()
-                true
+        bubbleContainer.setOnLongClickListener(copyLongClickListener)
+        messageLabel.setOnLongClickListener(copyLongClickListener)
+        messageLabel.onRevealFinished = {
+            if (pendingRichMessageId == currentMessage?.id) {
+                showRichMessage(animate = true)
             } else {
-                false
+                notifyContentSettled()
             }
         }
-        bubbleContainer.setOnLongClickListener(longClickListener)
-        messageLabel.setOnLongClickListener(longClickListener)
-        messageLabel.onRevealFinished = { notifyContentSettled() }
         messageLabel.onSizeTransitionFrame = {
             onSizeTransitionFrame?.invoke(height)
         }
@@ -124,7 +140,8 @@ class AgentMessageCell(context: Context) :
     private var deeplinksAnimating = false
 
     val isContentSettling: Boolean
-        get() = messageLabel.isRevealAnimating || deeplinksAnimating
+        get() = messageLabel.isRevealAnimating || deeplinksAnimating ||
+            pendingRichMessageId != null || richTransitionAnimator?.isRunning == true
 
     private fun notifyContentSettled() {
         if (isContentSettling) return
@@ -144,6 +161,23 @@ class AgentMessageCell(context: Context) :
     private var renderedDeeplinkTint = 0
     private var renderedDeeplinkMaxWidth = 0
     private var deeplinkExpandAnimator: ValueAnimator? = null
+    private var pendingRichMessageId: String? = null
+    private var richTransitionAnimator: ValueAnimator? = null
+    private var richContentWidth = 0
+    private var parsedRichBlocksKey: ParsedRichBlocksKey? = null
+    private var parsedRichBlocks: List<MarkdownParser.Block>? = null
+    private var renderedRichKey: RichRenderKey? = null
+
+    private data class ParsedRichBlocksKey(val messageId: String, val text: String)
+
+    private data class RichRenderKey(
+        val messageId: String,
+        val text: String,
+        val contentWidth: Int,
+        val codeColor: Int,
+        val textColor: Int,
+        val separatorColor: Int
+    )
 
     private val isCopyable: Boolean
         get() {
@@ -157,6 +191,7 @@ class AgentMessageCell(context: Context) :
             onContentSettled = null
             deeplinksAnimating = false
             insertAnimationTargetHeight = 0
+            resetRichMessagePresentation()
         }
         currentMessage = message
         val isOutgoing = message.role == AgentMessageRole.USER
@@ -187,12 +222,26 @@ class AgentMessageCell(context: Context) :
             typingIndicator.visibility = GONE
         }
         val maxBubbleWidth = (recyclerWidth * 0.8f).toInt()
+        val standardMessageMaxWidth =
+            (maxBubbleWidth - MESSAGE_HORIZONTAL_PADDING_DP.dp).coerceAtLeast(1)
+        val richBlocks = if (
+            message.role == AgentMessageRole.ASSISTANT && !message.isStreaming
+        ) {
+            richBlocksFor(message)
+        } else {
+            null
+        }
+        val messageMaxWidth = if (richBlocks != null) {
+            (recyclerWidth - RICH_MESSAGE_HORIZONTAL_GUTTER_DP.dp).coerceAtLeast(1)
+        } else {
+            standardMessageMaxWidth
+        }
 
         if (isOutgoing) {
             bubbleContainer.background = AgentOutgoingBubbleDrawable()
             messageLabel.setTextColor(WColor.TextOnTint.color)
             messageLabel.setPaddingDpLocalized(14, 10, 20, 10)
-            messageLabel.maxWidth = maxBubbleWidth - 34.dp
+            messageLabel.maxWidth = standardMessageMaxWidth
             deeplinkContainer.visibility = GONE
 
             setConstraints {
@@ -223,7 +272,7 @@ class AgentMessageCell(context: Context) :
             bubbleContainer.background = bg
             messageLabel.setTextColor(WColor.PrimaryText.color)
             messageLabel.setPaddingDpLocalized(20, 10, 14, 10)
-            messageLabel.maxWidth = maxBubbleWidth - 34.dp
+            messageLabel.maxWidth = messageMaxWidth
 
             setupDeeplinks(
                 if (showDeeplinks) message.deeplinks else emptyList(),
@@ -236,7 +285,7 @@ class AgentMessageCell(context: Context) :
                 toTop(contentContainer, 4f)
                 toBottom(contentContainer, 4f)
                 toStart(contentContainer, 10f)
-                toEnd(contentContainer, 72f)
+                toEnd(contentContainer, if (richBlocks != null) 30f else 72f)
                 setHorizontalBias(contentContainer.id, 0f)
             }
         }
@@ -269,6 +318,36 @@ class AgentMessageCell(context: Context) :
                 key = message.id,
                 transitionFromContentSize = transitionFrom
             )
+
+            if (richBlocks == null) {
+                showPlainMessage()
+            } else {
+                richContentWidth =
+                    (messageMaxWidth - MESSAGE_HORIZONTAL_PADDING_DP.dp).coerceAtLeast(1)
+                val renderKey = RichRenderKey(
+                    messageId = message.id,
+                    text = message.text,
+                    contentWidth = richContentWidth,
+                    codeColor = codeColor,
+                    textColor = WColor.PrimaryText.color,
+                    separatorColor = WColor.Separator.color
+                )
+                if (renderedRichKey != renderKey) {
+                    richMessageView.configure(
+                        richBlocks,
+                        richContentWidth,
+                        codeColor,
+                        onOpenUrl,
+                        copyLongClickListener
+                    )
+                    renderedRichKey = renderKey
+                }
+                if (messageLabel.isRevealAnimating) {
+                    pendingRichMessageId = message.id
+                } else {
+                    showRichMessage(animate = false)
+                }
+            }
         }
 
         bubbleContainer.minimumHeight = 40.dp
@@ -290,6 +369,129 @@ class AgentMessageCell(context: Context) :
             }
             notifyInsertAnimationFinished()
         }
+    }
+
+    private fun showPlainMessage() {
+        pendingRichMessageId = null
+        cancelRichTransition()
+        richMessageView.visibility = GONE
+        richMessageView.alpha = 1f
+        messageLabel.alpha = 1f
+        if (!typingIndicator.isVisible) messageLabel.visibility = VISIBLE
+        bubbleContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+            width = WRAP_CONTENT
+            height = WRAP_CONTENT
+        }
+        renderedRichKey = null
+    }
+
+    private fun resetRichMessagePresentation() {
+        showPlainMessage()
+        richMessageView.removeAllViews()
+        richContentWidth = 0
+        parsedRichBlocksKey = null
+        parsedRichBlocks = null
+    }
+
+    private fun richBlocksFor(message: AgentMessage): List<MarkdownParser.Block>? {
+        val key = ParsedRichBlocksKey(message.id, message.text)
+        if (parsedRichBlocksKey != key) {
+            parsedRichBlocksKey = key
+            parsedRichBlocks = MarkdownParser.parseBlocks(message.text).takeIf { blocks ->
+                blocks.any { it is MarkdownParser.Block.Table }
+            }
+        }
+        return parsedRichBlocks
+    }
+
+    private fun showRichMessage(animate: Boolean) {
+        pendingRichMessageId = null
+        val messageId = currentMessage?.id
+        if (messageId == null || renderedRichKey?.messageId != messageId) {
+            notifyContentSettled()
+            return
+        }
+        cancelRichTransition()
+
+        val maximumWidth = richContentWidth + richMessageView.paddingLeft +
+            richMessageView.paddingRight
+        richMessageView.measure(
+            MeasureSpec.makeMeasureSpec(maximumWidth, MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+        )
+        val targetWidth = richMessageView.measuredWidth
+        val targetHeight = maxOf(richMessageView.measuredHeight, bubbleContainer.minimumHeight)
+        val shouldAnimate = animate && WGlobalStorage.getAreAnimationsActive() &&
+            bubbleContainer.width > 0 && bubbleContainer.height > 0
+
+        if (!shouldAnimate) {
+            val previousHeight = height
+            richMessageView.visibility = VISIBLE
+            richMessageView.alpha = 1f
+            messageLabel.visibility = GONE
+            messageLabel.alpha = 1f
+            bubbleContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+                width = WRAP_CONTENT
+                height = WRAP_CONTENT
+            }
+            onSizeTransitionFrame?.invoke(previousHeight)
+            notifyContentSettled()
+            return
+        }
+
+        val startWidth = bubbleContainer.width
+        val startHeight = bubbleContainer.height
+        richMessageView.visibility = VISIBLE
+        richMessageView.alpha = 0f
+        messageLabel.visibility = VISIBLE
+        messageLabel.alpha = 1f
+        bubbleContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+            width = startWidth
+            height = startHeight
+        }
+
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = AnimationConstants.VERY_QUICK_ANIMATION
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { valueAnimator ->
+                val previousHeight = this@AgentMessageCell.height
+                val progress = valueAnimator.animatedValue as Float
+                richMessageView.alpha = progress
+                messageLabel.alpha = 1f - progress
+                bubbleContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+                    width = lerp(startWidth.toFloat(), targetWidth.toFloat(), progress).toInt()
+                    height = lerp(startHeight.toFloat(), targetHeight.toFloat(), progress).toInt()
+                }
+                onSizeTransitionFrame?.invoke(previousHeight)
+            }
+        }
+        richTransitionAnimator = animator
+        animator.doOnEnd {
+            if (richTransitionAnimator !== animator) return@doOnEnd
+            richTransitionAnimator = null
+            richMessageView.alpha = 1f
+            messageLabel.visibility = GONE
+            messageLabel.alpha = 1f
+            bubbleContainer.updateLayoutParams<LinearLayout.LayoutParams> {
+                width = WRAP_CONTENT
+                height = WRAP_CONTENT
+            }
+            notifyContentSettled()
+        }
+        animator.start()
+    }
+
+    private fun cancelRichTransition() {
+        val animator = richTransitionAnimator ?: return
+        richTransitionAnimator = null
+        animator.cancel()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        cancelRichTransition()
+        richMessageView.alpha = 1f
+        messageLabel.alpha = 1f
     }
 
     private fun notifyInsertAnimationStarted(targetHeight: Int) {

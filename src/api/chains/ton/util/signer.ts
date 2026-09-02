@@ -21,7 +21,6 @@ import { hexToBytes } from '../../../common/utils';
 import { signDataWithPrivateKey, signTonProofWithPrivateKey } from '../../../dappProtocols/adapters/tonConnect/signing';
 import { fetchPrivateKey } from '../auth';
 import { getTonWallet } from '../wallet';
-import { decryptMessageComment, encryptMessageComment } from './encryption';
 
 type ErrorResult = { error: ApiAnyDisplayError };
 
@@ -163,7 +162,7 @@ abstract class PrivateKeySigner implements Signer {
     const privateKey = await this.getPrivateKey();
     if ('error' in privateKey) return privateKey;
 
-    const encrypted = await encryptMessageComment(
+    const encrypted = await requireEncryption().encryptMessageComment(
       comment,
       this.getPublicKey(),
       recipientPublicKey,
@@ -177,7 +176,7 @@ abstract class PrivateKeySigner implements Signer {
     const privateKey = await this.getPrivateKey();
     if ('error' in privateKey) return privateKey;
 
-    return decryptMessageComment(encrypted, this.getPublicKey(), privateKey, senderAddress);
+    return requireEncryption().decryptMessageComment(encrypted, this.getPublicKey(), privateKey, senderAddress);
   }
 
   getPublicKey() {
@@ -188,6 +187,22 @@ abstract class PrivateKeySigner implements Signer {
     }
     return hexToBytes(publicKeyHex);
   }
+}
+
+/**
+ * Loaded lazily so a `NO_EXTRA_FEATURES` build drops the module together with its aes-js and
+ * noble-ed25519 dependencies, which exist only for this feature.
+ */
+function requireEncryption() {
+  // `process.env` is read inline, not through the `config` re-exports: Webpack substitutes it before
+  // dead-code elimination, so the `require` below sits in a statically false branch and the module — with
+  // its aes-js and noble-ed25519 dependencies — is dropped from the bundle entirely.
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('./encryption') as typeof import('./encryption');
+  }
+
+  throw new Error('Encrypted comments are not supported in this build');
 }
 
 class MnemonicSigner extends PrivateKeySigner {

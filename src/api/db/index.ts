@@ -1,54 +1,16 @@
-import type { Table } from 'dexie';
-import Dexie from 'dexie';
+import type { ApiTokenWithPrice } from '../types';
+import type { Repository } from './types';
 
-import type { ApiNft, ApiTokenWithPrice } from '../types';
+import { createNoopRepository } from './noopRepository';
 
-import { DbRepository } from './repository';
+export type { ApiDbNft, ApiDbSseConnection } from './types';
 
-export type ApiDbNft = ApiNft & {
-  accountId: string;
-  collectionAddress: string;
-};
-
-export type ApiDbSseConnection = {
-  clientId: string;
-};
-
-const DB_NAME = 'tables';
-
-export class ApiDb extends Dexie {
-  nfts!: Table<ApiDbNft>;
-
-  tokens!: Table<ApiTokenWithPrice>;
-
-  constructor() {
-    super(DB_NAME);
-    this.version(1).stores({
-      nfts: '[accountId+address], accountId, address, collectionAddress',
-    });
-    this.version(2).stores({
-      sseConnections: '&clientId',
-    });
-    this.version(3).stores({
-      tokens: 'tokenAddress, chain, &slug',
-    });
-    this.version(4).upgrade((tx) => {
-      return tx.table('tokens').clear();
-    });
-    this.version(5).stores({
-      // eslint-disable-next-line no-null/no-null
-      nfts: null,
-      // eslint-disable-next-line no-null/no-null
-      sseConnections: null,
-    });
-    this.version(6).upgrade((tx) => {
-      return tx.table<ApiTokenWithPrice & { price?: number }>('tokens').toCollection().modify((token) => {
-        delete token.price;
-      });
-    });
-  }
-}
-
-export const apiDb = new ApiDb();
-
-export const tokenRepository = new DbRepository(apiDb.tokens);
+/**
+ * Air keeps its state in native storage and never reads this cache back, so the Dexie implementation is
+ * reached through a guarded `require`: with `IS_AIR_APP` folded to a literal, dead-code elimination drops
+ * the module and the `dexie` dependency from the bundle.
+ */
+export const tokenRepository: Repository<ApiTokenWithPrice> = process.env.IS_AIR_APP === '1'
+  ? createNoopRepository<ApiTokenWithPrice>()
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  : require('./dexie').tokenRepository;

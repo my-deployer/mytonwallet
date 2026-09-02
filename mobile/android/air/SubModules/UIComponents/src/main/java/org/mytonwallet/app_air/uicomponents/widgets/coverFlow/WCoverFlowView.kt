@@ -24,6 +24,9 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.withSave
 import androidx.core.net.toUri
+import androidx.dynamicanimation.animation.FloatPropertyCompat
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 import com.facebook.common.executors.CallerThreadExecutor
 import com.facebook.common.references.CloseableReference
 import com.facebook.datasource.DataSource
@@ -35,7 +38,6 @@ import com.facebook.imagepipeline.request.ImageRequestBuilder
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
-import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.helpers.HapticType
 import org.mytonwallet.app_air.uicomponents.helpers.Haptics
@@ -94,6 +96,22 @@ class WCoverFlowView @JvmOverloads constructor(
 
     // Animation and interaction
     private val scroller = Scroller(context)
+    private var settleAnim: SpringAnimation? = null
+
+    private val scrollOffsetProperty =
+        object : FloatPropertyCompat<WCoverFlowView>("scrollOffset") {
+            override fun getValue(view: WCoverFlowView): Float = view.scrollOffset
+
+            override fun setValue(view: WCoverFlowView, value: Float) {
+                val maxOffset =
+                    if (covers.isEmpty()) 0f else getAbsolutePositionForIndex(covers.size - 1)
+                view.scrollOffset = value.coerceIn(0f, maxOffset)
+                if (view.scrollState == ScrollState.SETTLING) {
+                    view.checkAndNotifyIndexChange()
+                }
+                view.invalidate()
+            }
+        }
     private val gestureDetector = GestureDetector(context, CoverFlowGestureListener())
     private var isScrolling = false
     private var lastTouchX = 0f
@@ -146,6 +164,11 @@ class WCoverFlowView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         cancelPendingLoads()
+        cancelSettleAnimation()
+        if (scrollState == ScrollState.SETTLING) {
+            scrollOffset = targetOffset
+            setScrollState(ScrollState.IDLE)
+        }
     }
 
     private fun createPlaceholderDrawable() {
@@ -210,6 +233,7 @@ class WCoverFlowView @JvmOverloads constructor(
     }
 
     fun setCovers(newCovers: List<CoverItem>) {
+        cancelSettleAnimation()
         covers.clear()
         covers.addAll(newCovers)
         coverDrawables.clear()
@@ -581,6 +605,7 @@ class WCoverFlowView @JvmOverloads constructor(
                     if (!scroller.isFinished) {
                         scroller.abortAnimation()
                     }
+                    cancelSettleAnimation()
                     lastTouchX = event.x
                     isScrolling = true
                     setScrollState(ScrollState.DRAGGING)
@@ -606,7 +631,7 @@ class WCoverFlowView @JvmOverloads constructor(
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     isScrolling = false
                     setScrollState(ScrollState.SETTLING)
-                    if (scroller.isFinished) {
+                    if (settleAnim == null) {
                         snapToNearest()
                     }
                     return true
@@ -633,39 +658,34 @@ class WCoverFlowView @JvmOverloads constructor(
         animateToTarget()
     }
 
-    private fun animateToTarget() {
-        val startOffset = scrollOffset
-        val distance = (targetOffset - startOffset).toInt()
-
-        if (abs(distance) > 1) {
-            scroller.startScroll(
-                startOffset.toInt(),
-                0,
-                distance,
-                0,
-                AnimationConstants.VERY_QUICK_ANIMATION.toInt()
-            )
-            invalidate()
-        } else {
-            // Animation finished, set to idle
-            setScrollState(ScrollState.IDLE)
-        }
+    private fun cancelSettleAnimation() {
+        settleAnim?.cancel()
+        settleAnim = null
     }
 
-    override fun computeScroll() {
-        if (scroller.computeScrollOffset()) {
-            scrollOffset = scroller.currX.toFloat()
+    private fun animateToTarget(startVelocity: Float = 0f) {
+        cancelSettleAnimation()
+        val distance = targetOffset - scrollOffset
 
-            // Check for index changes during settling animation
-            if (scrollState == ScrollState.SETTLING) {
-                checkAndNotifyIndexChange()
+        if (abs(distance) > 1f || startVelocity != 0f) {
+            settleAnim = SpringAnimation(this, scrollOffsetProperty, targetOffset).apply {
+                spring.dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+                spring.stiffness = 500f
+                if (startVelocity != 0f) setStartVelocity(startVelocity)
+                addEndListener { _, canceled, _, _ ->
+                    settleAnim = null
+                    if (canceled) return@addEndListener
+                    scrollOffset = targetOffset
+                    checkAndNotifyIndexChange()
+                    setScrollState(ScrollState.IDLE)
+                    invalidate()
+                }
+                start()
             }
-
-            postInvalidateOnAnimation()
-        } else if (scrollState == ScrollState.SETTLING) {
-            // Scroller finished, set to idle
+        } else {
+            scrollOffset = targetOffset
             setScrollState(ScrollState.IDLE)
-            snapToNearest()
+            invalidate()
         }
     }
 
@@ -734,16 +754,13 @@ class WCoverFlowView @JvmOverloads constructor(
             )
 
             val finalX = scroller.finalX.toFloat()
+            scroller.abortAnimation()
             val targetIndex =
                 getFractionalIndexFromOffset(finalX).roundToInt().coerceIn(0, covers.size - 1)
             targetOffset = getAbsolutePositionForIndex(targetIndex)
 
-            val distance = (targetOffset - scrollOffset).toInt()
-            val velocityAbs = abs(velocity).coerceAtLeast(1)
-            val duration = (5000f * abs(distance) / velocityAbs).coerceIn(150f, 2000f)
-            scroller.startScroll(scrollOffset.toInt(), 0, distance, 0, duration.toInt())
             setScrollState(ScrollState.SETTLING)
-            postInvalidateOnAnimation()
+            animateToTarget(velocity.toFloat())
 
             return true
         }

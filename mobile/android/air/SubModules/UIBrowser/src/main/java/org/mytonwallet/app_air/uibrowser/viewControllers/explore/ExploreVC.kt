@@ -18,11 +18,11 @@ import kotlin.math.max
 import org.mytonwallet.app_air.uibrowser.viewControllers.explore.cells.ExploreCategoryCell
 import org.mytonwallet.app_air.uibrowser.viewControllers.explore.cells.ExploreCategoryTitleCell
 import org.mytonwallet.app_air.uibrowser.viewControllers.explore.cells.ExploreConnectedCell
-import org.mytonwallet.app_air.uibrowser.viewControllers.explore.cells.ExploreTitleCell
 import org.mytonwallet.app_air.uibrowser.viewControllers.explore.cells.ExploreTrendingCell
 import org.mytonwallet.app_air.uibrowser.viewControllers.exploreCategory.ExploreCategoryVC
 import org.mytonwallet.app_air.uibrowser.viewControllers.search.SearchVC
 import org.mytonwallet.app_air.uicomponents.R
+import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
@@ -41,12 +41,14 @@ import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.ceilToInt
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
 import org.mytonwallet.app_air.walletcore.models.MExploreCategory
 import org.mytonwallet.app_air.walletcore.models.MExploreSite
 import org.mytonwallet.app_air.walletcore.moshi.ApiDapp
+import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
 import org.mytonwallet.app_air.walletcore.stores.ExploreHistoryStore
 
 @SuppressLint("ViewConstructor")
@@ -57,35 +59,31 @@ class ExploreVC(context: Context) :
     @Suppress("PropertyName")
     override val TAG = "Explore"
 
-    override var ignoreSideGuttering: Boolean = false
-
     companion object {
-        val EXPLORE_HEADER_CELL = WCell.Type(1)
-        val EXPLORE_TITLE_CELL = WCell.Type(2)
-        val EXPLORE_CONNECTED_ROW_CELL = WCell.Type(3)
-        val EXPLORE_TRENDING_CELL = WCell.Type(4)
-        val EXPLORE_CATEGORY_CELL = WCell.Type(5)
+        val EXPLORE_TITLE_CELL = WCell.Type(1)
+        val EXPLORE_CONNECTED_ROW_CELL = WCell.Type(2)
+        val EXPLORE_TRENDING_CELL = WCell.Type(3)
+        val EXPLORE_CATEGORY_CELL = WCell.Type(4)
 
-        const val SECTION_HEADER = 0
-        const val SECTION_CONNECTED = 1
-        const val SECTION_TRENDING = 2
-        const val SECTION_ALL = 3
+        const val SECTION_CONNECTED = 0
+        const val SECTION_TRENDING = 1
+        const val SECTION_ALL = 2
     }
 
-    override val shouldDisplayTopBar = false
+    override val shouldDisplayTopBar = true
     override val shouldHideKeyboardOnDisappear = false
 
     private var pendingTarget: Uri? = null
 
-    private val exploreVM by lazy {
+    private val exploreVMLazy = lazy {
         ExploreVM(this)
     }
+    private val exploreVM by exploreVMLazy
 
     private val rvAdapter =
         WRecyclerViewAdapter(
             WeakReference(this),
             arrayOf(
-                EXPLORE_HEADER_CELL,
                 EXPLORE_TITLE_CELL,
                 EXPLORE_CONNECTED_ROW_CELL,
                 EXPLORE_TRENDING_CELL,
@@ -137,20 +135,16 @@ class ExploreVC(context: Context) :
         rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 super.onScrollStateChanged(recyclerView, newState)
-                if (recyclerView.computeVerticalScrollOffset() == 0) updateBlurViews(recyclerView)
+                if (recyclerView.computeVerticalScrollOffset() == 0 ||
+                    !recyclerView.canScrollVertically(1)
+                ) {
+                    updateBlurViews(recyclerView)
+                }
             }
 
             override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                 super.onScrolled(recyclerView, dx, dy)
-                val animated = dy != 0
-                if (animated) updateBlurViews(recyclerView)
-                if (recyclerView.computeVerticalScrollOffset() > 40.dp) {
-                    setNavTitle(LocaleController.getString("Explore"), animated)
-                    setTopBlur(true, animated)
-                } else {
-                    setNavTitle("", animated)
-                    setTopBlur(false, animated)
-                }
+                if (dy != 0) updateBlurViews(recyclerView)
             }
         })
         rv.clipToPadding = false
@@ -159,7 +153,7 @@ class ExploreVC(context: Context) :
 
     init {
         WalletCore.doOnBridgeReady {
-            exploreVM.delegateIsReady()
+            if (!isDestroyed) exploreVM.delegateIsReady()
         }
     }
 
@@ -167,8 +161,8 @@ class ExploreVC(context: Context) :
         super.setupViews()
 
         setupNavBar(true)
-        setTopBlur(visible = false, animated = false)
         navigationBar?.setTitleGravity(Gravity.START)
+        updateTopOverlay(animated = false)
 
         view.addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         view.setConstraints {
@@ -180,6 +174,18 @@ class ExploreVC(context: Context) :
         updateTheme()
     }
 
+    private fun updateTopOverlay(animated: Boolean) {
+        setNavTitle(
+            if (isRootTopGradientEnabled) "" else LocaleController.getString("Explore"),
+            animated
+        )
+    }
+
+    override fun onRootTopGradientModeChanged(enabled: Boolean) {
+        updateTopOverlay(animated = false)
+        if (isViewConfigured) insetsUpdated()
+    }
+
     override fun updateTheme() {
         super.updateTheme()
         view.setBackgroundColor(WColor.SecondaryBackground.color)
@@ -188,12 +194,18 @@ class ExploreVC(context: Context) :
 
     override fun insetsUpdated() {
         super.insetsUpdated()
-        val topPadding = (navigationController?.getSystemBars()?.top ?: 0)
+        val topPadding = (navigationController?.getSystemBars()?.top ?: 0) +
+            if (isRootTopGradientEnabled) 0 else WNavigationBar.DEFAULT_HEIGHT.dp
+        val bottomPadding = if (isRootTopGradientEnabled) {
+            navigationController?.getSystemBars()?.bottom ?: 0
+        } else {
+            navigationController?.bottomInset ?: 0
+        }
         recyclerView.setPaddingLocalized(
             additionalTabletPadding + systemBarStartInset,
             topPadding,
             systemBarEndInset,
-            navigationController?.bottomInset ?: 0
+            bottomPadding
         )
         bottomReversedCornerView?.setHorizontalPadding(
             ViewConstants.HORIZONTAL_PADDINGS.dp.toFloat()
@@ -251,7 +263,7 @@ class ExploreVC(context: Context) :
     private val trendingCellWidth: Int
         get() {
             val cols = calculateNoOfColumns()
-            return (contentWidth - 4.dp) / cols
+            return (contentWidth - 2 * ViewConstants.HORIZONTAL_PADDINGS.dp - 4.dp) / cols
         }
 
     override fun onBackPressed(): Boolean {
@@ -262,7 +274,7 @@ class ExploreVC(context: Context) :
         return super.onBackPressed()
     }
 
-    override fun recyclerViewNumberOfSections(rv: RecyclerView): Int = 4
+    override fun recyclerViewNumberOfSections(rv: RecyclerView): Int = 3
 
     val catsCount: Int
         get() {
@@ -275,18 +287,9 @@ class ExploreVC(context: Context) :
                 ).ceilToInt() * colCount
         }
 
-    val showLargeConnectedApps: Boolean
-        get() {
-            return (exploreVM.connectedSites?.size ?: 0) > 3
-        }
-
     override fun recyclerViewNumberOfItems(rv: RecyclerView, section: Int): Int {
         if (exploreVM.showingExploreCategories == null) return 0
         when (section) {
-            SECTION_HEADER -> {
-                return 1
-            }
-
             SECTION_CONNECTED -> {
                 return if (exploreVM.connectedSites.isNullOrEmpty()) {
                     0
@@ -310,8 +313,6 @@ class ExploreVC(context: Context) :
     }
 
     override fun recyclerViewCellType(rv: RecyclerView, indexPath: IndexPath): WCell.Type = when {
-        indexPath.section == 0 -> EXPLORE_HEADER_CELL
-
         indexPath.row == 0 -> EXPLORE_TITLE_CELL
 
         indexPath.section == SECTION_CONNECTED -> {
@@ -325,10 +326,6 @@ class ExploreVC(context: Context) :
 
     override fun recyclerViewCellView(rv: RecyclerView, cellType: WCell.Type): WCell =
         when (cellType) {
-            EXPLORE_HEADER_CELL -> {
-                ExploreTitleCell(context)
-            }
-
             EXPLORE_TITLE_CELL -> {
                 ExploreCategoryTitleCell(context)
             }
@@ -366,14 +363,6 @@ class ExploreVC(context: Context) :
         indexPath: IndexPath
     ) {
         when (cellHolder.cell) {
-            is ExploreTitleCell -> {
-                (cellHolder.cell as ExploreTitleCell).configure(
-                    LocaleController.getString("Explore"),
-                    38.dp,
-                    48.dp
-                )
-            }
-
             is ExploreTrendingCell -> {
                 (cellHolder.cell as ExploreTrendingCell).configure(exploreVM.showingTrendingSites)
             }
@@ -391,17 +380,9 @@ class ExploreVC(context: Context) :
                         SECTION_TRENDING -> "Happening Now"
                         else -> "Popular Apps"
                     }
-                (cellHolder.cell as ExploreCategoryTitleCell).apply {
-                    configure(
-                        LocaleController.getString(title),
-                        if (indexPath.section == SECTION_TRENDING) 18.dp else 10.dp,
-                        when (indexPath.section) {
-                            SECTION_CONNECTED -> if (showLargeConnectedApps) 7.dp else 11.dp
-                            SECTION_TRENDING -> 5.dp
-                            else -> 11.dp
-                        }
-                    )
-                }
+                (cellHolder.cell as ExploreCategoryTitleCell).configure(
+                    LocaleController.getString(title)
+                )
             }
 
             is ExploreCategoryCell -> {
@@ -410,8 +391,8 @@ class ExploreVC(context: Context) :
                     exploreVM.showingExploreCategories!!.getOrNull(indexPath.row - 1),
                     isLeading = indexPath.row % colCount == 1,
                     isTrailing = indexPath.row % colCount == 0,
-                    isTopLeading = indexPath.row == 1,
-                    isTopTrailing = indexPath.row == colCount,
+                    isFirstRow = indexPath.row <= colCount,
+                    isLastRow = indexPath.row > catsCount - colCount,
                     isBottomLeading = indexPath.row == ((catsCount - 1) / colCount) * colCount + 1,
                     isBottomTrailing = indexPath.row == catsCount && catsCount % colCount == 0
                 )
@@ -445,19 +426,19 @@ class ExploreVC(context: Context) :
     }
 
     override fun sitesUpdated() {
-        val newIgnoreSideGuttering = exploreVM.showingTrendingSites.size > 1
-        if (ignoreSideGuttering != newIgnoreSideGuttering) {
-            ignoreSideGuttering = newIgnoreSideGuttering
-            val padding =
-                if (newIgnoreSideGuttering) 0f else ViewConstants.HORIZONTAL_PADDINGS.dp.toFloat()
-            topReversedCornerView?.setHorizontalPadding(padding)
-        }
         rvAdapter.reloadData()
         pendingTarget?.let { findSiteAndOpenTargetUri(it) }
     }
 
     override fun accountChanged() {
+        exploreVM.cancelSearch()
+        dismissSearchScreen()
         navigationController?.popToRoot(false)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (exploreVMLazy.isInitialized()) exploreVM.onDestroy()
     }
 
     private fun onWidthChanged(newWidth: Int) {
@@ -487,31 +468,106 @@ class ExploreVC(context: Context) :
     // SUGGESTIONS //////////
     var searchVC: SearchVC? = null
     var isShowingSearch = false
-    fun search(query: String?, isFocused: Boolean) {
+    private var searchNavigationController: WNavigationController? = null
+    private var isGlobalSearchSession = false
+    private var enhancedSearchEnabled = false
+    val shouldKeepSearchActiveOnKeyboardDismiss: Boolean
+        get() = enhancedSearchEnabled && isShowingSearch && searchVC?.isDisappeared != true
+
+    fun search(
+        query: String?,
+        isFocused: Boolean,
+        targetNavigationController: WNavigationController? = navigationController,
+        isGlobalSearch: Boolean = false
+    ) {
         val keyword = query ?: ""
-        val searchResult = exploreVM.search(keyword)
-        val shouldShowSearchScreen =
-            !query.isNullOrEmpty() ||
-                (
-                    isFocused &&
-                        query.isNullOrEmpty() &&
-                        !ExploreHistoryStore.exploreHistory?.searchHistory.isNullOrEmpty()
-                    )
+        val hasActiveSearchScreen = isShowingSearch && searchVC?.isDisappeared != true
+        val useEnhancedSearch = if (hasActiveSearchScreen) {
+            enhancedSearchEnabled
+        } else {
+            WGlobalStorage.areTopTabsEnabled()
+        }
+        val shouldShowSearchScreen = !query.isNullOrEmpty() ||
+            (
+                isFocused &&
+                    (
+                        useEnhancedSearch ||
+                            !ExploreHistoryStore.exploreHistory?.searchHistory.isNullOrEmpty()
+                        )
+                )
         if (!shouldShowSearchScreen) {
-            searchVC?.keepKeyboardOpenOnDismiss = true
-            navigationController?.popToRoot(false)
-            isShowingSearch = false
+            dismissSearchScreen()
             return
         }
+        if (
+            hasActiveSearchScreen &&
+            searchNavigationController !== targetNavigationController
+        ) {
+            dismissSearchScreen()
+        }
         if (!isShowingSearch || searchVC?.isDisappeared == true) {
+            val targetNavigationController = targetNavigationController ?: return
             isShowingSearch = true
-            searchVC = SearchVC(context)
-            navigationController?.push(searchVC!!, false)
+            enhancedSearchEnabled = useEnhancedSearch
+            searchVC = SearchVC(
+                context,
+                enhancedSearchEnabled,
+                usesGlobalSearchOverlay = isGlobalSearch,
+                // Covers dismissals that bypass dismissSearchScreen (swipe back, nav pop),
+                // which would otherwise leave the search request refreshing on every poll.
+                onDestroyed = { exploreVM.cancelSearch() }
+            )
+            searchNavigationController = targetNavigationController
+            isGlobalSearchSession = isGlobalSearch
+            if (targetNavigationController.viewControllers.isEmpty()) {
+                // The overlay stack starts empty, and push() is a no-op without a root. setRoot()
+                // skips the appearance callbacks that push() drives, so run them here: results are
+                // dropped while the screen still reports itself as disappeared.
+                targetNavigationController.setRoot(searchVC!!)
+                searchVC!!.viewWillAppear()
+                searchVC!!.viewDidAppear()
+            } else {
+                targetNavigationController.push(searchVC!!, false)
+            }
+            if (isGlobalSearch) {
+                targetNavigationController.tabBarController?.revealSearchOverlay()
+            }
         }
-        searchVC?.updateSearchResult(searchResult)
-        exploreVM.searchWalletInfo(searchResult) { updated ->
-            if (exploreVM.currentSearchKeyword == keyword) searchVC?.updateSearchResult(updated)
+        searchVC?.updateSearchQuery(keyword)
+        exploreVM.search(keyword, enhancedSearchEnabled) { searchResult ->
+            if (isShowingSearch && searchVC?.isDisappeared != true) {
+                searchVC?.updateSearchResult(searchResult)
+                exploreVM.searchWalletInfo(searchResult) { updated ->
+                    if (exploreVM.currentSearchKeyword == keyword) {
+                        searchVC?.updateSearchResult(updated)
+                    }
+                }
+            }
         }
+    }
+
+    private fun dismissSearchScreen(globalSearch: Boolean = isGlobalSearchSession) {
+        exploreVM.cancelSearch()
+        val searchVC = searchVC
+        val searchNavigationController = searchNavigationController
+        searchVC?.keepKeyboardOpenOnDismiss = true
+        this.searchVC = null
+        this.searchNavigationController = null
+        this.isGlobalSearchSession = false
+        if (!globalSearch) {
+            navigationController?.popToRoot(false)
+        } else if (searchVC != null && searchNavigationController != null) {
+            searchNavigationController.tabBarController?.hideSearchOverlay()
+        }
+        if (isShowingSearch) {
+            isShowingSearch = false
+        }
+    }
+
+    fun openBestSearchMatch(onResolved: (Boolean) -> Unit): Boolean {
+        val searchVC = searchVC ?: return false
+        searchVC.openBestMatch(onResolved)
+        return true
     }
 
     private fun onDAppTap(it: ApiDapp?) {

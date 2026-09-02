@@ -7,6 +7,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Shader
@@ -33,11 +34,16 @@ class SkeletonView(
     private var gradientPaint: Paint = Paint()
     private var gradientColors: IntArray = intArrayOf()
     private var animator: ValueAnimator? = null
+    private var gradientShader: LinearGradient? = null
+    private val shaderMatrix = Matrix()
+    private val gradientPositions = floatArrayOf(0.0f, 0.1f, 0.2f)
 
     var isAnimating: Boolean = false
 
     private val myLocation: Vec2i = vec2i()
     private val location: Vec2i = vec2i()
+    private val maskPath = Path()
+    private val maskRadii = FloatArray(8)
 
     init {
         id = generateViewId()
@@ -71,26 +77,30 @@ class SkeletonView(
 
             val itemRadius = maskCornerRadius?.get(index)
             if (index == 0 || itemRadius != null) {
-                val path = Path().apply {
-                    addRoundRect(
+                if (itemRadius != null) {
+                    canvas.drawRoundRect(
                         left,
                         top,
                         right,
                         bottom,
-                        floatArrayOf(
-                            itemRadius ?: topCornerRadius,
-                            itemRadius ?: topCornerRadius,
-                            itemRadius ?: topCornerRadius,
-                            itemRadius ?: topCornerRadius,
-                            itemRadius ?: 0f,
-                            itemRadius ?: 0f,
-                            itemRadius ?: 0f,
-                            itemRadius ?: 0f
-                        ),
+                        itemRadius,
+                        itemRadius,
+                        gradientPaint
+                    )
+                } else {
+                    for (i in 0..3) maskRadii[i] = topCornerRadius
+                    for (i in 4..7) maskRadii[i] = 0f
+                    maskPath.rewind()
+                    maskPath.addRoundRect(
+                        left,
+                        top,
+                        right,
+                        bottom,
+                        maskRadii,
                         Path.Direction.CW
                     )
+                    canvas.drawPath(maskPath, gradientPaint)
                 }
-                canvas.drawPath(path, gradientPaint)
             } else {
                 canvas.drawRect(left, top, right, bottom, gradientPaint)
             }
@@ -103,6 +113,32 @@ class SkeletonView(
 
         visibility = VISIBLE
         isAnimating = true
+        startAnimator()
+    }
+
+    private fun startAnimator() {
+        gradientShader = if (isVertical) {
+            LinearGradient(
+                0f,
+                0f,
+                0f,
+                height.toFloat(),
+                gradientColors,
+                gradientPositions,
+                Shader.TileMode.CLAMP
+            )
+        } else {
+            LinearGradient(
+                0f,
+                0f,
+                width.toFloat(),
+                height.toFloat(),
+                gradientColors,
+                gradientPositions,
+                Shader.TileMode.CLAMP
+            )
+        }
+        gradientPaint.shader = gradientShader
 
         val animValue = if (isVertical) height else width.coerceAtLeast(height)
         animator =
@@ -112,26 +148,11 @@ class SkeletonView(
                 addUpdateListener { animation ->
                     val animatedValue = animation.animatedValue as Float
                     if (isVertical) {
-                        gradientPaint.shader = LinearGradient(
-                            0f,
-                            animatedValue,
-                            0f,
-                            animatedValue + height.toFloat(),
-                            gradientColors,
-                            floatArrayOf(0.0f, 0.1f, 0.2f),
-                            Shader.TileMode.CLAMP
-                        )
+                        shaderMatrix.setTranslate(0f, animatedValue)
                     } else {
-                        gradientPaint.shader = LinearGradient(
-                            animatedValue,
-                            animatedValue,
-                            animatedValue + width.toFloat(),
-                            animatedValue + height.toFloat(),
-                            gradientColors,
-                            floatArrayOf(0.0f, 0.1f, 0.2f),
-                            Shader.TileMode.CLAMP
-                        )
+                        shaderMatrix.setTranslate(animatedValue, animatedValue)
                     }
+                    gradientShader?.setLocalMatrix(shaderMatrix)
                     invalidate()
                 }
                 start()
@@ -143,8 +164,30 @@ class SkeletonView(
 
         isAnimating = false
         visibility = GONE
+        cancelAnimator()
+    }
+
+    private fun cancelAnimator() {
         animator?.cancel()
         animator = null
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (isAnimating && animator == null) startAnimator()
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (animator != null) {
+            cancelAnimator()
+            startAnimator()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        cancelAnimator()
     }
 
     fun applyMask(views: List<View>, radius: HashMap<Int, Float>? = null) {
@@ -157,6 +200,10 @@ class SkeletonView(
             intArrayOf(0x00000000, WColor.Background.color, 0x00000000)
         } else {
             intArrayOf(0x00FFFFFF, 0x44FFFFFF, 0x00FFFFFF)
+        }
+        if (animator != null) {
+            cancelAnimator()
+            startAnimator()
         }
     }
 

@@ -25,13 +25,14 @@ import org.mytonwallet.app_air.walletcore.helpers.ActivityLoader
 import org.mytonwallet.app_air.walletcore.helpers.IActivityLoader
 import org.mytonwallet.app_air.walletcore.models.MToken
 import org.mytonwallet.app_air.walletcore.moshi.MApiTokenDetails
-import org.mytonwallet.app_air.walletcore.moshi.api.ApiMethod
+import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
 class TokenVM(
     val context: Context,
     private val accountId: String,
     val token: MToken,
+    private val supportsTokenChain: Boolean,
     val delegate: WeakReference<Delegate>
 ) : WalletCore.EventObserver,
     IActivityLoader.Delegate {
@@ -77,7 +78,9 @@ class TokenVM(
 
     var historyData: Array<Array<Double>>? = null
     var activityLoader: IActivityLoader? = null
-    var tokenInfoState: TokenInfoState = TokenInfoState.Loading
+    val showingTransactions: List<MApiTransaction>?
+        get() = if (supportsTokenChain) activityLoader?.showingTransactions else emptyList()
+    var tokenInfoState: TokenInfoState = initialTokenInfoState()
         private set
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -94,25 +97,39 @@ class TokenVM(
 
     fun refreshTransactions() {
         activityLoader?.clean()
-        activityLoader = ActivityLoader(
-            context,
-            accountId,
-            token.slug,
-            WeakReference(this)
-        )
-        activityLoader?.askForActivities()
+        activityLoader = null
+        if (supportsTokenChain) {
+            activityLoader = ActivityLoader(
+                context,
+                accountId,
+                token.slug,
+                WeakReference(this)
+            )
+            activityLoader?.askForActivities()
+        } else {
+            delegate.get()?.dataUpdated(isUpdateEvent = false)
+        }
         loadPriceHistoryChart(selectedPeriod)
         loadTokenInfo()
     }
 
+    private fun initialTokenInfoState(): TokenInfoState {
+        if (TokenInfoDebugConfig.source != TokenInfoDebugSource.REAL_API) {
+            return TokenInfoState.Loading
+        }
+        return TokenStore.cachedTokenDetails(token.slug)?.let {
+            TokenInfoState.resolved(it.tokenInfo)
+        } ?: TokenInfoState.Loading
+    }
+
     private fun loadTokenInfo() {
         tokenInfoJob?.cancel()
-        setTokenInfoState(TokenInfoState.Loading)
         when (val debugSource = TokenInfoDebugConfig.source) {
             TokenInfoDebugSource.COMPLETE_DATA,
             TokenInfoDebugSource.LOCALIZED_DESCRIPTION,
             TokenInfoDebugSource.LONG_DESCRIPTION_PARTIAL_DATA,
             TokenInfoDebugSource.MISSING_DESCRIPTION -> {
+                setTokenInfoState(TokenInfoState.Loading)
                 val info = debugSource.mockTokenInfo
                 val state = TokenInfoState.resolved(info)
                 tokenInfoJob = scope.launch {
@@ -127,15 +144,18 @@ class TokenVM(
             TokenInfoDebugSource.REAL_API -> Unit
         }
         tokenInfoJob = scope.launch {
+            val cachedDetails = TokenStore.awaitCachedTokenDetails(accountId, token.slug)
+            cachedDetails?.let {
+                withContext(Dispatchers.Main) {
+                    setTokenInfoState(TokenInfoState.resolved(it.tokenInfo))
+                }
+            }
             while (isActive) {
                 val state = try {
-                    val details = WalletCore.call(
-                        ApiMethod.Tokens.FetchTokenDetails(
-                            listOf(token.tokenAddress ?: token.slug)
-                        )
-                    ).firstOrNull { it.slug == token.slug }
-                    val info = details?.tokenInfo
-                    TokenInfoState.resolved(info)
+                    val refreshedDetails = TokenStore.refreshTokenDetails(accountId, token)
+                    refreshedDetails?.let {
+                        TokenInfoState.resolved(it.tokenInfo)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (_: Throwable) {

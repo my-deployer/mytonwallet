@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "catalogId": "agent-wallet-filter-fields-v1",
+  "fields": [
+    {
+      "key": "transaction.status",
+      "datasetKind": "transactions",
+      "operator": "in",
+      "valueKind": "transaction_status"
+    },
+    {
+      "key": "transaction.direction",
+      "datasetKind": "transactions",
+      "operator": "in",
+      "valueKind": "transaction_direction"
+    },
+    {
+      "key": "transaction.timestamp",
+      "datasetKind": "transactions",
+      "operator": "timestamp_range",
+      "valueKind": "timestamp"
+    },
+    {
+      "key": "transaction.chain",
+      "datasetKind": "transactions",
+      "operator": "in",
+      "valueKind": "chain"
+    },
+    {
+      "key": "transaction.asset",
+      "datasetKind": "transactions",
+      "operator": "asset_matches_any",
+      "valueKind": "asset_selector"
+    }
+  ]
+}

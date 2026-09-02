@@ -5,6 +5,15 @@ import Perception
 enum SwapSide: Sendable {
     case selling
     case buying
+
+    var swapMode: ApiSwapMode {
+        switch self {
+        case .selling:
+            .exactIn
+        case .buying:
+            .exactOut
+        }
+    }
 }
 
 enum SwapInputChangeSource: Sendable {

@@ -54,7 +54,7 @@ class SignDataVC: WViewController, UISheetPresentationControllerDelegate {
     }
     
     private func setupViews() {
-        navigationItem.title = lang("Confirm Actions", arg1: 1)
+        navigationItem.title = L10n.confirmActions(count: 1)
         addCloseNavigationItemIfNeeded()
         // Route the close "X" through cancellation so the dapp is notified (otherwise it waits forever).
         if navigationItem.rightBarButtonItem != nil {

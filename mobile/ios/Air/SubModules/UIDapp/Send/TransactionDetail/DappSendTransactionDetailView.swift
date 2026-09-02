@@ -155,7 +155,7 @@ private extension ApiDappTransfer {
         case .comment(let payload):
             return payload.comment
         case .tokensBurn(let payload):
-            return lang("$dapp_transfer_tokens_burn", arg1: formattedAmount(
+            return L10n.dappTransferTokensBurn(amount: formattedAmount(
                 payload.amount,
                 token: TokenStore.getToken(slug: payload.slug) ?? .unknown(slug: payload.slug, chain: .ton),
                 maxDecimals: 2
@@ -163,13 +163,13 @@ private extension ApiDappTransfer {
         case .dnsChangeRecord(let payload):
             let category = payload.record.type != "unknown" ? payload.record.type : (payload.record.key ?? "")
             if payload.record.type == "wallet", let value = payload.record.value {
-                return lang("$dapp_dns_set_wallet_payload", arg1: payload.domain, arg2: value)
+                return L10n.dappDnsSetWalletPayload(domain: payload.domain, address: value)
             } else if payload.record.type == "wallet" {
-                return lang("$dapp_dns_delete_wallet_payload", arg1: payload.domain)
+                return L10n.dappDnsDeleteWalletPayload(domain: payload.domain)
             } else if let value = payload.record.value {
-                return lang("$dapp_dns_change_record_payload", arg1: category, arg2: payload.domain, arg3: value)
+                return L10n.dappDnsChangeRecordPayload(category: category, domain: payload.domain, value: value)
             } else {
-                return lang("$dapp_dns_delete_record_payload", arg1: category, arg2: payload.domain)
+                return L10n.dappDnsDeleteRecordPayload(category: category, domain: payload.domain)
             }
         case .tokenBridgePaySwap(let payload):
             _ = payload
@@ -177,17 +177,17 @@ private extension ApiDappTransfer {
         case .liquidStakingDeposit:
             return lang("$dapp_liquid_staking_deposit_payload")
         case .liquidStakingVote(let payload):
-            return lang("$dapp_liquid_staking_vote_payload", arg1: String(payload.vote), arg2: payload.votingAddress)
+            return L10n.dappLiquidStakingVotePayload(vote: String(payload.vote), votingAddress: payload.votingAddress)
         case .singleNominatorChangeValidator(let payload):
-            return lang("$dapp_single_nominator_change_validator_payload", arg1: payload.address)
+            return L10n.dappSingleNominatorChangeValidatorPayload(address: payload.address)
         case .singleNominatorWithdraw(let payload):
-            return lang("$dapp_single_nominator_withdraw_payload", arg1: formattedAmount(
+            return L10n.dappSingleNominatorWithdrawPayload(amount: formattedAmount(
                 payload.amount,
                 token: TokenStore.getNativeToken(chain: .ton),
                 maxDecimals: ApiChain.ton.nativeToken.decimals
             ))
         case .vestingAddWhitelist(let payload):
-            return lang("$dapp_vesting_add_whitelist_payload", arg1: payload.address)
+            return L10n.dappVestingAddWhitelistPayload(address: payload.address)
         case .unknown:
             return rawPayload
         case .nftTransfer, .tokensTransfer, .tokensTransferNonStandard, nil:

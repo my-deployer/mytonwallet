@@ -70,7 +70,7 @@ public struct FeeView: View {
     private var loadingContent: some View {
         HStack(alignment: .center, spacing: 4) {
             if includeLabel {
-                Text(lang("$fee_value_with_colon", arg1: ""))
+                Text(L10n.feeValueWithColon(fee: ""))
             }
             WUIActivityIndicator(size: 14)
                 .foregroundStyle(Color.air.secondaryLabel)
@@ -148,7 +148,7 @@ public struct FeeView: View {
                 )
         }
         if includeLabel {
-            let label = Text(lang("$fee_value_with_colon", arg1: ""))
+            let label = Text(L10n.feeValueWithColon(fee: ""))
                 .textStyle(textStyle, scaling: textScaling)
             return Text("\(label)\(value)")
         } else {

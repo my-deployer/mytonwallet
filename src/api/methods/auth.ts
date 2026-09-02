@@ -31,6 +31,8 @@ import { logDebug, logDebugError } from '../../util/logs';
 import { createTaskQueue } from '../../util/schedulers';
 import { getChainBySlug } from '../../util/tokens';
 import chains from '../chains';
+// The TON backend auth token is signed from the already-decrypted mnemonic during import; it is a backend
+// concern rather than a chain capability, so it stays a direct import until it gets its own SDK group.
 import * as ton from '../chains/ton';
 import {
   fetchStoredAccount,
@@ -101,9 +103,27 @@ export function initAuth(_onUpdate: OnApiUpdate) {
   onUpdate = _onUpdate;
 }
 
+/**
+ * TON's 24-word scheme is the only native (non-BIP39) mnemonic the app supports, and the wallets derived
+ * from it are stored as TON wallets.
+ */
+function findNativeMnemonic() {
+  return chains.ton?.nativeMnemonic;
+}
+
+function resolveNativeMnemonic() {
+  const nativeMnemonic = findNativeMnemonic();
+  if (!nativeMnemonic) {
+    throw new Error('Native mnemonic is not supported in this build');
+  }
+
+  return nativeMnemonic;
+}
+
 export function generateMnemonic(isBip39: boolean) {
   if (isBip39) return generateBip39Mnemonic();
-  return ton.generateMnemonic();
+
+  return resolveNativeMnemonic().generateMnemonic();
 }
 
 export async function validateMnemonic(mnemonic: string[]) {
@@ -113,7 +133,8 @@ export async function validateMnemonic(mnemonic: string[]) {
     return true;
   }
 
-  return await ton.validateMnemonic(mnemonic);
+  const nativeMnemonic = findNativeMnemonic();
+  return nativeMnemonic ? nativeMnemonic.validateMnemonic(mnemonic) : false;
 }
 
 export async function importMnemonic(
@@ -122,7 +143,8 @@ export async function importMnemonic(
   shouldSkipDiscovery?: boolean,
 ) {
   const isBip39Mnemonic = validateBip39Mnemonic(mnemonic);
-  const isTonMnemonic = await ton.validateMnemonic(mnemonic);
+  const nativeMnemonic = findNativeMnemonic();
+  const isTonMnemonic = nativeMnemonic ? await nativeMnemonic.validateMnemonic(mnemonic) : false;
 
   if (!isBip39Mnemonic && !isTonMnemonic) {
     throw new Error('Invalid mnemonic');
@@ -141,7 +163,7 @@ export async function importMnemonic(
         // On-chain history is the only tiebreaker between the two derivations, and they yield different addresses.
         // An unreachable node must therefore abort the import (the caller turns it into a retriable error) rather
         // than read as "no history" and quietly hand the user a BIP39 address instead of their funded one.
-        tonWallet = await ton.getWalletFromMnemonic(network, mnemonic, false);
+        tonWallet = await nativeMnemonic!.getWalletFromMnemonic(network, mnemonic, false);
         if (tonWallet.lastTxId) {
           shouldForceTonMnemonic = true;
         }
@@ -150,7 +172,7 @@ export async function importMnemonic(
       if (isBip39Mnemonic && !shouldForceTonMnemonic) {
         accounts = await buildBip39Accounts(network, mnemonic, shouldSkipDiscovery);
       } else {
-        tonWallet ||= await ton.getWalletFromMnemonic(network, mnemonic);
+        tonWallet ||= await nativeMnemonic!.getWalletFromMnemonic(network, mnemonic);
         accounts = [{
           type: 'ton',
           byChain: {
@@ -413,11 +435,19 @@ export async function removeNetworkAccounts(network: ApiNetwork) {
 export async function resetAccounts() {
   removeAllPollingAccounts();
 
+  let agentV2Reset: Promise<void> | undefined;
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { resetAgentV2 } = require('./agentV2Lifecycle') as typeof import('./agentV2Lifecycle');
+    agentV2Reset = resetAgentV2();
+  }
+
   await Promise.all([
     deactivateAllAccounts(),
     storage.removeItem('accounts'),
     getEnvironment().isDappSupported && removeAllDapps(),
     tokenRepository.clear(),
+    agentV2Reset,
   ]);
 }
 
@@ -617,10 +647,16 @@ export async function importNewWalletVersion(
 }> {
   const { network } = parseAccountId(accountId);
   const account = await fetchStoredChainAccount(accountId, 'ton');
+  // Wallet versions are a TON concept, and the derived wallet is stored back as the account's TON wallet
+  const getOtherVersionWallet = chains.ton?.getOtherVersionWallet;
+  if (!getOtherVersionWallet) {
+    throw new Error('Wallet versions are not supported in this build');
+  }
+
   const newAccount: ApiAccountWithChain<'ton'> = {
     ...account,
     byChain: {
-      ton: ton.getOtherVersionWallet(network, account.byChain.ton, version, isTestnetSubwalletId),
+      ton: getOtherVersionWallet(network, account.byChain.ton, version, isTestnetSubwalletId),
     },
   };
 

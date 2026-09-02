@@ -6,20 +6,38 @@
 //
 
 
-public struct ApiSwapEstimateResponse: Equatable, Codable, Sendable {
-    
-    public var route: String?
+public enum ApiSwapEstimateResponse: Equatable, Decodable, Sendable {
+    case dex(ApiSwapDexEstimateResponse)
+    case cex(ApiSwapCexEstimateResponse)
+
+    private enum CodingKeys: String, CodingKey {
+        case route
+    }
+
+    private enum Route: String, Decodable {
+        case dex
+        case cex
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Route.self, forKey: .route) {
+        case .dex:
+            self = .dex(try ApiSwapDexEstimateResponse(from: decoder))
+        case .cex:
+            self = .cex(try ApiSwapCexEstimateResponse(from: decoder))
+        }
+    }
+}
+
+public struct ApiSwapDexEstimateResponse: Equatable, Decodable, Sendable {
     public var from: String
     public var to: String
     public var slippage: Double?
-    public var fromAmount: MDouble?
-    public var toAmount: MDouble?
+    public var fromAmount: MDouble
+    public var toAmount: MDouble
     public var fromAddress: String?
     public var shouldTryDiesel: Bool?
-    public var swapVersion: Int?
-    public var toncoinBalance: MDouble?
-    public var walletVersion: String?
-    public var isFromAmountMax: Bool?
     public var toMinAmount: MDouble
     public var impact: Double
     public var dexLabel: ApiSwapDexLabel?
@@ -31,13 +49,12 @@ public struct ApiSwapEstimateResponse: Equatable, Codable, Sendable {
     public var networkFee: MDouble
     public var realNetworkFee: MDouble
     public var swapFee: MDouble
-    public var swapFeePercent: Double?
-    public var ourFee: MDouble?
-    public var ourFeePercent: Double?
+    public var swapFeePercent: Double
+    public var ourFee: MDouble
+    public var ourFeePercent: Double
     public var dieselFee: MDouble?
     
     public static func ==(lhs: Self, rhs: Self) -> Bool {
-        lhs.route == rhs.route &&
         lhs.from == rhs.from &&
         lhs.to == rhs.to &&
         lhs.slippage == rhs.slippage &&
@@ -45,10 +62,6 @@ public struct ApiSwapEstimateResponse: Equatable, Codable, Sendable {
         lhs.toAmount == rhs.toAmount &&
         lhs.fromAddress == rhs.fromAddress &&
         lhs.shouldTryDiesel == rhs.shouldTryDiesel &&
-        lhs.swapVersion == rhs.swapVersion &&
-        lhs.toncoinBalance == rhs.toncoinBalance &&
-        lhs.walletVersion == rhs.walletVersion &&
-        lhs.isFromAmountMax == rhs.isFromAmountMax &&
         lhs.toMinAmount == rhs.toMinAmount &&
         lhs.impact == rhs.impact &&
         lhs.dexLabel == rhs.dexLabel &&

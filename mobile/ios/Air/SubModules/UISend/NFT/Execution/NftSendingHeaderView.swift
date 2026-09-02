@@ -58,12 +58,9 @@ struct NftSendingHeaderView: ConfirmationContent {
         let subject: String
         if confirmed.nfts.count == 1 {
             subject = confirmed.nfts[0].name?.nilIfEmpty
-                ?? lang("%amount% NFTs", arg1: 1)
+                ?? L10n.amountNfts(amount: 1)
         } else {
-            subject = lang(
-                "%amount% NFTs",
-                arg1: confirmed.nfts.count
-            )
+            subject = L10n.amountNfts(amount: confirmed.nfts.count)
         }
 
         if confirmed.mode == .burn {

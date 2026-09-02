@@ -415,12 +415,8 @@ struct EvmConnectInjectionScript {
                                 return this.accountsLower();
                             }
                             case 'eth_accounts': {
-                                try {
-                                    const response = await this.connectWallet(true);
-                                    this.applySessionResult(response);
-                                } catch {
-                                    this.sessionChains = [];
-                                }
+                                const response = await this.connectWallet(true);
+                                this.applySessionResult(response);
                                 return this.accountsLower();
                             }
                             case 'eth_coinbase': {

@@ -34,10 +34,40 @@ public struct ContextMenuConfiguration {
 public struct ContextMenuPage {
     public var id: String
     public var items: [ContextMenuItem]
+    public var layout: ContextMenuPageLayout
 
-    public init(id: String = UUID().uuidString, items: [ContextMenuItem]) {
+    public init(
+        id: String = UUID().uuidString,
+        items: [ContextMenuItem],
+        layout: ContextMenuPageLayout = .list
+    ) {
         self.id = id
         self.items = items
+        self.layout = layout
+    }
+}
+
+public enum ContextMenuPageLayout: Sendable {
+    case list
+    case grid(ContextMenuGridLayout)
+}
+
+public struct ContextMenuGridLayout: Sendable {
+    public var columns: Int
+    public var contentInsets: UIEdgeInsets
+    public var highlightInsets: UIEdgeInsets
+    public var highlightCornerRadius: CGFloat
+
+    public init(
+        columns: Int,
+        contentInsets: UIEdgeInsets = .zero,
+        highlightInsets: UIEdgeInsets = .zero,
+        highlightCornerRadius: CGFloat = 20.0
+    ) {
+        self.columns = max(1, columns)
+        self.contentInsets = contentInsets
+        self.highlightInsets = highlightInsets
+        self.highlightCornerRadius = highlightCornerRadius
     }
 }
 
@@ -171,6 +201,7 @@ private extension UIView {
 public enum ContextMenuVerticalPlacementBehavior: Sendable {
     case screenBalanced
     case sourceAttached
+    case screenBottom
 }
 
 public struct ContextMenuStyle: Sendable {

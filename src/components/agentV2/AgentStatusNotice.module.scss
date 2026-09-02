@@ -1,0 +1,72 @@
+.composerStatus,
+.composerStatusNeutral,
+.runFailure,
+.quotaStatus {
+  unicode-bidi: plaintext;
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+
+  border: 0.0625rem solid var(--color-separator);
+  border-radius: 0.75rem;
+
+  color: var(--color-black);
+
+  background: var(--color-background-second);
+}
+
+.composerStatus,
+.composerStatusNeutral {
+  padding: 0.75rem;
+}
+
+.composerStatus {
+  border-color: var(--color-yellow);
+}
+
+.runFailure {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.quotaStatus {
+  width: 100%;
+  padding: 0.625rem 0.75rem;
+  color: var(--color-gray-1);
+}
+
+.quotaStatus strong {
+  color: var(--color-text);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.copy span {
+  color: var(--color-gray-1);
+}
+
+.retry {
+  cursor: var(--custom-cursor, pointer);
+
+  flex: 0 0 auto;
+
+  padding: 0.375rem 0.625rem;
+  border: 0;
+  border-radius: 0.5rem;
+
+  font-weight: 600;
+  color: var(--color-accent);
+
+  background: var(--color-accent-10o);
+}
+
+.retry:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

@@ -1,6 +1,7 @@
 import UIKit
 import UIHome
 import UIAgent
+import UIAssets
 import UIBrowser
 import UIPortfolio
 import UISettings
@@ -21,7 +22,7 @@ struct AppTabRegistration {
 @MainActor
 final class AppTabManager {
     static let shared = AppTabManager()
-    static let defaultTabIds: [AppTabId] = [.wallet, .agent, .explore, .settings]
+    static let defaultTabIds: [AppTabId] = [.wallet, .market, .agent, .explore, .settings]
 
     private var registrations: [AppTabId: AppTabRegistration] = [:]
     private var registrationOrder: [AppTabId] = []
@@ -137,6 +138,17 @@ final class AppTabManager {
                 }
             },
             sidebarEdgeCoverColor: .air.groupedBackground
+        ))
+        let marketIcon = UIImage.airBundle("MarketTabIcon")
+        register(AppTabRegistration(
+            id: .market,
+            titleProvider: { lang("Market") },
+            compactIcon: marketIcon,
+            sidebarIcon: marketIcon,
+            makeNavigationController: { _ in
+                AppTabLazyNavigationController { MarketVC() }
+            },
+            sidebarEdgeCoverColor: .air.background
         ))
         register(AppTabRegistration(
             id: .agent,

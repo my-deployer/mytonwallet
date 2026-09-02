@@ -133,6 +133,17 @@ class AppearanceVC(context: Context) :
         v
     }*/
 
+    private val topTabsRow = SwitchCell(
+        context,
+        title = LocaleController.getString("Enable Top Tabs"),
+        isChecked = WGlobalStorage.areTopTabsEnabled(),
+        isFirst = true,
+        onChange = { isChecked ->
+            WGlobalStorage.setAreTopTabsEnabled(isChecked)
+            WalletContextManager.delegate?.get()?.restartApp()
+        }
+    )
+
     private val customizeTabsRow: KeyValueRowView by lazy {
         KeyValueRowView(
             context,
@@ -156,7 +167,7 @@ class AppearanceVC(context: Context) :
         context,
         title = LocaleController.getString("Gradient Navigation Bar"),
         isChecked = WGlobalStorage.isGradientNavigationBarActive(),
-        isFirst = true,
+        isFirst = !EnvironmentStore.isTopTabsSettingAvailable,
         onChange = { isChecked ->
             Logger.d(Logger.LogTag.SETTINGS, "gradientNavigationBarRow: isChecked=$isChecked")
             WGlobalStorage.setIsGradientNavigationBarActive(isChecked)
@@ -338,6 +349,9 @@ class AppearanceVC(context: Context) :
         if (DEBUG_MODE || EnvironmentStore.isBeta) {
             v.addView(customizeTabsRow, ConstraintLayout.LayoutParams(0, 50.dp))
         }
+        if (EnvironmentStore.isTopTabsSettingAvailable) {
+            v.addView(topTabsRow, ConstraintLayout.LayoutParams(0, 50.dp))
+        }
         v.addView(gradientNavigationBarRow, ConstraintLayout.LayoutParams(0, 50.dp))
         v.addView(roundedCornersRow, ConstraintLayout.LayoutParams(0, 50.dp))
         v.addView(roundedToolbarsRow, ConstraintLayout.LayoutParams(0, 50.dp))
@@ -361,12 +375,33 @@ class AppearanceVC(context: Context) :
                 topToBottom(customizeTabsRow, appPaletteView, ViewConstants.GAP.toFloat())
                 toCenterX(customizeTabsRow)
             }
-            // Group 1: Gradient Navigation Bar, Rounded Corners, Rounded Toolbars, Side Gutters
-            topToBottom(
-                gradientNavigationBarRow,
-                if (DEBUG_MODE || EnvironmentStore.isBeta) customizeTabsRow else appPaletteView,
-                ViewConstants.GAP.toFloat()
-            )
+            if (EnvironmentStore.isTopTabsSettingAvailable) {
+                topToBottom(
+                    topTabsRow,
+                    if (DEBUG_MODE || EnvironmentStore.isBeta) {
+                        customizeTabsRow
+                    } else {
+                        appPaletteView
+                    },
+                    ViewConstants.GAP.toFloat()
+                )
+                toCenterX(topTabsRow)
+            }
+            // Group 1: Top Tabs, Gradient Navigation Bar, Rounded Corners, Rounded Toolbars,
+            // Side Gutters
+            if (EnvironmentStore.isTopTabsSettingAvailable) {
+                topToBottom(gradientNavigationBarRow, topTabsRow)
+            } else {
+                topToBottom(
+                    gradientNavigationBarRow,
+                    if (DEBUG_MODE || EnvironmentStore.isBeta) {
+                        customizeTabsRow
+                    } else {
+                        appPaletteView
+                    },
+                    ViewConstants.GAP.toFloat()
+                )
+            }
             toCenterX(gradientNavigationBarRow)
             topToBottom(roundedCornersRow, gradientNavigationBarRow)
             toCenterX(roundedCornersRow)

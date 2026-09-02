@@ -5,6 +5,11 @@ protocol ContextMenuNavigationViewDelegate: AnyObject {
     func navigationView(_ navigationView: ContextMenuNavigationView, didActivate action: ContextMenuActivation)
 }
 
+enum ContextMenuNavigationSurface {
+    case customPanel
+    case systemPresentation
+}
+
 @MainActor
 final class ContextMenuNavigationView: UIView, ContextMenuPageViewDelegate, UIGestureRecognizerDelegate {
     private struct PageHost {
@@ -15,7 +20,9 @@ final class ContextMenuNavigationView: UIView, ContextMenuPageViewDelegate, UIGe
     private let style: ContextMenuStyle
     private let customRowContext: ContextMenuCustomRowContext
     private let sourceUserInterfaceLayoutDirection: UIUserInterfaceLayoutDirection
-    private let panelView: ContextMenuPanelView
+    private let surface: ContextMenuNavigationSurface
+    private let panelView: ContextMenuPanelView?
+    private let contentHostView = UIView()
     private let pageClipView = UIView()
     private let navigationPanRecognizer: ContextMenuInteractivePanGestureRecognizer
 
@@ -38,12 +45,19 @@ final class ContextMenuNavigationView: UIView, ContextMenuPageViewDelegate, UIGe
         style: ContextMenuStyle,
         sourceUserInterfaceStyle: UIUserInterfaceStyle,
         sourceUserInterfaceLayoutDirection: UIUserInterfaceLayoutDirection,
-        customRowContext: ContextMenuCustomRowContext
+        customRowContext: ContextMenuCustomRowContext,
+        surface: ContextMenuNavigationSurface = .customPanel
     ) {
         self.style = style
         self.customRowContext = customRowContext
         self.sourceUserInterfaceLayoutDirection = sourceUserInterfaceLayoutDirection
-        self.panelView = ContextMenuPanelView(style: style)
+        self.surface = surface
+        switch surface {
+        case .customPanel:
+            self.panelView = ContextMenuPanelView(style: style)
+        case .systemPresentation:
+            self.panelView = nil
+        }
         self.navigationPanRecognizer = ContextMenuInteractivePanGestureRecognizer(target: nil, action: nil, allowedDirections: { _ in
             sourceUserInterfaceLayoutDirection.contextMenuIsRightToLeft ? [.left] : [.right]
         })
@@ -53,8 +67,13 @@ final class ContextMenuNavigationView: UIView, ContextMenuPageViewDelegate, UIGe
         self.overrideUserInterfaceStyle = sourceUserInterfaceStyle
         self.semanticContentAttribute = sourceUserInterfaceLayoutDirection.contextMenuSemanticContentAttribute
 
-        self.addSubview(self.panelView)
-        self.panelView.contentView.addSubview(self.pageClipView)
+        if let panelView = self.panelView {
+            self.addSubview(panelView)
+            panelView.contentView.addSubview(self.contentHostView)
+        } else {
+            self.addSubview(self.contentHostView)
+        }
+        self.contentHostView.addSubview(self.pageClipView)
         self.pageClipView.clipsToBounds = true
 
         self.navigationPanRecognizer.addTarget(self, action: #selector(self.handleNavigationPan(_:)))
@@ -90,13 +109,19 @@ final class ContextMenuNavigationView: UIView, ContextMenuPageViewDelegate, UIGe
     }
 
     func applyPanelLayout(panelSize: CGSize) {
-        let containerSize = CGSize(
-            width: panelSize.width + self.style.panelInset * 2.0,
-            height: panelSize.height + self.style.panelInset * 2.0
-        )
-        self.panelView.frame = CGRect(origin: .zero, size: containerSize)
-        self.panelView.applyLayout(panelSize: panelSize, traits: self.traitCollection)
-        self.pageClipView.frame = self.panelView.contentView.bounds
+        switch self.surface {
+        case .customPanel:
+            let containerSize = CGSize(
+                width: panelSize.width + self.style.panelInset * 2.0,
+                height: panelSize.height + self.style.panelInset * 2.0
+            )
+            self.panelView?.frame = CGRect(origin: .zero, size: containerSize)
+            self.panelView?.applyLayout(panelSize: panelSize, traits: self.traitCollection)
+            self.contentHostView.frame = self.panelView?.contentView.bounds ?? .zero
+        case .systemPresentation:
+            self.contentHostView.frame = CGRect(origin: .zero, size: panelSize)
+        }
+        self.pageClipView.frame = self.contentHostView.bounds
 
         guard let currentHost = self.hosts.last else {
             return

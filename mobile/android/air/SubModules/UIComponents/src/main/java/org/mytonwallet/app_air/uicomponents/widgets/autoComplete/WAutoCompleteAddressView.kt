@@ -119,33 +119,34 @@ class WAutoCompleteAddressView(context: Context) :
 
             val network = AccountStore.activeAccount?.network ?: return@launch
             val activeChainName = activeChain?.name
+            val allAccounts = withContext(Dispatchers.IO) {
+                WalletCore.getAllAccounts()
+            }
             val accounts: List<MAccount> = if (autoCompleteConfig?.accountAddresses == true) {
-                withContext(Dispatchers.IO) {
-                    WalletCore.getAllAccounts()
-                        .filter { it.accountId != AccountStore.activeAccountId }
-                        .filter { account ->
-                            activeChainName == null || account.byChain.containsKey(activeChainName)
-                        }
-                        .filter { account ->
-                            if (activeChainName != null) {
+                allAccounts
+                    .filter { it.accountId != AccountStore.activeAccountId }
+                    .filter { account ->
+                        activeChainName == null || account.byChain.containsKey(activeChainName)
+                    }
+                    .filter { account ->
+                        if (activeChainName != null) {
+                            doesAddressItemFitSearch(
+                                address = account.byChain[activeChainName]?.address,
+                                domain = account.byChain[activeChainName]?.domain,
+                                name = account.name,
+                                query = keyword
+                            )
+                        } else {
+                            account.byChain.values.any { chainInfo ->
                                 doesAddressItemFitSearch(
-                                    address = account.byChain[activeChainName]?.address,
-                                    domain = account.byChain[activeChainName]?.domain,
+                                    address = chainInfo.address,
+                                    domain = chainInfo.domain,
                                     name = account.name,
                                     query = keyword
                                 )
-                            } else {
-                                account.byChain.values.any { chainInfo ->
-                                    doesAddressItemFitSearch(
-                                        address = chainInfo.address,
-                                        domain = chainInfo.domain,
-                                        name = account.name,
-                                        query = keyword
-                                    )
-                                }
                             }
-                        }.sortedBy { it.name }
-                }
+                        }
+                    }.sortedBy { it.name }
             } else {
                 emptyList()
             }
@@ -174,7 +175,7 @@ class WAutoCompleteAddressView(context: Context) :
             }
 
             val newSections = createSections(
-                buildSavedAddressItems(keyword, network, savedAddresses),
+                buildSavedAddressItems(keyword, network, savedAddresses, allAccounts),
                 buildAccountItems(keyword, network, filteredAccounts)
             )
 
@@ -272,17 +273,21 @@ class WAutoCompleteAddressView(context: Context) :
     private fun buildSavedAddressItems(
         keyword: String,
         network: MBlockchainNetwork,
-        addresses: List<MSavedAddress>
+        addresses: List<MSavedAddress>,
+        accounts: List<MAccount>
     ): List<AutoCompleteAddressItem> {
         val items = mutableListOf<AutoCompleteAddressItem>()
         addresses.forEachIndexed { index, address ->
+            val matchingAccount = findMatchingAccount(address, network, accounts)
             items.add(
                 AutoCompleteAddressItem(
                     listId = address.address,
                     title = address.name,
                     network = network,
                     savedAddress = address,
+                    balanceAccountId = matchingAccount?.accountId,
                     filteredChainName = activeChain?.name,
+                    value = matchingAccount?.let { formatBalance(it.accountId) },
                     keyword = keyword,
                     isFirst = index == 0,
                     isLast = index == addresses.size - 1
@@ -309,14 +314,6 @@ class WAutoCompleteAddressView(context: Context) :
     ): List<AutoCompleteAddressItem> {
         val items = mutableListOf<AutoCompleteAddressItem>()
         accounts.forEachIndexed { index, account ->
-            val balanceAmount = BalanceStore.totalBalanceInBaseCurrency(account.accountId)
-            val balance = balanceAmount?.toString(
-                WalletCore.baseCurrency.decimalsCount,
-                WalletCore.baseCurrency.sign,
-                WalletCore.baseCurrency.decimalsCount,
-                true
-            )
-
             items.add(
                 AutoCompleteAddressItem(
                     listId = account.accountId,
@@ -324,7 +321,7 @@ class WAutoCompleteAddressView(context: Context) :
                     network = network,
                     account = account,
                     filteredChainName = activeChain?.name,
-                    value = balance,
+                    value = formatBalance(account.accountId),
                     keyword = keyword,
                     isFirst = index == 0,
                     isLast = index == accounts.size - 1
@@ -344,6 +341,14 @@ class WAutoCompleteAddressView(context: Context) :
 
         return items
     }
+
+    private fun formatBalance(accountId: String): String? =
+        BalanceStore.totalBalanceInBaseCurrency(accountId)?.toString(
+            WalletCore.baseCurrency.decimalsCount,
+            WalletCore.baseCurrency.sign,
+            WalletCore.baseCurrency.decimalsCount,
+            true
+        )
 
     private var sections: List<AutoCompleteAddressSection> =
         createSections(emptyList(), emptyList())
@@ -470,6 +475,15 @@ class WAutoCompleteAddressView(context: Context) :
             windowBackgroundStyle = windowBackgroundStyle
         )
     }
+}
+
+internal fun findMatchingAccount(
+    savedAddress: MSavedAddress,
+    network: MBlockchainNetwork,
+    accounts: List<MAccount>
+): MAccount? = accounts.firstOrNull { account ->
+    account.network == network &&
+        account.byChain[savedAddress.chain]?.address == savedAddress.address
 }
 
 internal fun doesAddressItemFitSearch(

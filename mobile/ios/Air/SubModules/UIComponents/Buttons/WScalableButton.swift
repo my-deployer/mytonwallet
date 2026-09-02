@@ -17,6 +17,7 @@ public class WScalableButton: UIControl {
     public var onTap: (() -> Void)?
 
     public let style: Style
+    private let imageSize: CGSize?
     
     /// If nil then UIColor.label is used
     public var titleColor: UIColor? {
@@ -130,8 +131,15 @@ public class WScalableButton: UIControl {
         }
     }
 
-    public init(title: String, image: UIImage?, style: Style = .standard, onTap: (() -> Void)? = nil) {
+    public init(
+        title: String,
+        image: UIImage?,
+        imageSize: CGSize? = nil,
+        style: Style = .standard,
+        onTap: (() -> Void)? = nil
+    ) {
         self.style = style
+        self.imageSize = imageSize
         self.onTap = onTap
         super.init(frame: .zero)
         setup()
@@ -166,7 +174,7 @@ public class WScalableButton: UIControl {
         titleLabelBottomConstraint = titleLabel.bottomAnchor.constraint(equalTo: containerContentView.bottomAnchor, constant: -9)
         titleLabelCenterYConstraint = titleLabel.centerYAnchor.constraint(equalTo: containerContentView.centerYAnchor)
         
-        NSLayoutConstraint.activate([
+        var constraints: [NSLayoutConstraint] = [
             containerView.leadingAnchor.constraint(equalTo: leadingAnchor),
             containerView.trailingAnchor.constraint(equalTo: trailingAnchor),
             containerView.topAnchor.constraint(equalTo: topAnchor),
@@ -178,7 +186,14 @@ public class WScalableButton: UIControl {
             titleLabelBottomConstraint,
             titleLabel.leadingAnchor.constraint(equalTo: containerContentView.leadingAnchor, constant: titleLabelHorMargin),
             titleLabel.trailingAnchor.constraint(equalTo: containerContentView.trailingAnchor, constant: -titleLabelHorMargin),
-        ])
+        ]
+        if let imageSize {
+            constraints += [
+                imageView.widthAnchor.constraint(equalToConstant: imageSize.width),
+                imageView.heightAnchor.constraint(equalToConstant: imageSize.height),
+            ]
+        }
+        NSLayoutConstraint.activate(constraints)
 
         addTarget(self, action: #selector(didTap), for: .touchUpInside)
         

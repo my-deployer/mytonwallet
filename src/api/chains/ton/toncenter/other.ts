@@ -25,13 +25,17 @@ const VERSION_MAP: Record<WalletVersion, ApiTonWalletVersion> = {
   'wallet v5 r1': 'W5',
 };
 
-export async function fetchAddressBook(network: ApiNetwork, addresses: string[]): Promise<AddressBook> {
+export async function fetchAddressBook(
+  network: ApiNetwork,
+  addresses: string[],
+  signal?: AbortSignal,
+): Promise<AddressBook> {
   const chunks = split(addresses, ADDRESS_BOOK_CHUNK_SIZE);
 
   const results = await Promise.all(chunks.map((chunk) => {
     return callToncenterV3(network, '/addressBook', {
       address: chunk,
-    });
+    }, signal);
   }));
 
   return results.reduce((acc, value) => {
@@ -48,11 +52,15 @@ export async function fixAddressFormat(network: ApiNetwork, address: string): Pr
  * The output dictionary is indexed by the input addresses.
  * Every input address is guaranteed to be a key of the dictionary.
  */
-export async function getWalletInfos(network: ApiNetwork, addresses: string[]): Promise<Record<string, ApiWalletInfo>> {
+export async function getWalletInfos(
+  network: ApiNetwork,
+  addresses: string[],
+  signal?: AbortSignal,
+): Promise<Record<string, ApiWalletInfo>> {
   const { wallets: states, address_book: addressBook } = await callToncenterV3<{
     address_book: AddressBook;
     wallets: WalletState[];
-  }>(network, '/walletStates', { address: addresses.join(',') });
+  }>(network, '/walletStates', { address: addresses.join(',') }, signal);
 
   const walletInfoByRawAddress = Object.fromEntries(states.map((state) => [
     state.address.toLowerCase(),
@@ -88,11 +96,11 @@ function buildWalletInfo(state: WalletState, addressBook: AddressBook): ApiWalle
   };
 }
 
-export async function getAccountStates(network: ApiNetwork, addresses: string[]) {
+export async function getAccountStates(network: ApiNetwork, addresses: string[], signal?: AbortSignal) {
   const { accounts: states } = await callToncenterV3<{
     addressBook: AddressBook;
     accounts: AccountState[];
-  }>(network, '/accountStates', { address: addresses.join(',') });
+  }>(network, '/accountStates', { address: addresses.join(',') }, signal);
 
   const addressByRaw = Object.fromEntries(addresses.map((address) => [toRawAddress(address), address]));
   for (const state of states) {
@@ -101,11 +109,25 @@ export async function getAccountStates(network: ApiNetwork, addresses: string[])
   return buildCollectionByKey(states, 'address');
 }
 
-export function fetchMetadata(network: ApiNetwork, addresses: string[]): Promise<MetadataMap> {
-  return callToncenterV3<MetadataMap>(network, '/metadata', { address: addresses.join(',') });
+/**
+ * Here the keys are lowercase raw addresses, the form `toRawAddress` returns via `Address.toRawString()`. Toncenter
+ * itself returns them in upper case, in this response and in the metadata bundled into the other ones. The keys are
+ * normalized because the caller looks the metadata up by an address of its own, rather than by a key taken from the
+ * response.
+ */
+export async function fetchMetadata(network: ApiNetwork, addresses: string[]): Promise<MetadataMap> {
+  const metadata = await callToncenterV3<MetadataMap>(network, '/metadata', { address: addresses.join(',') });
+  return Object.fromEntries(
+    Object.entries(metadata).map(([rawAddress, data]) => [rawAddress.toLowerCase(), data]),
+  );
 }
 
-export function callToncenterV3<T = any>(network: ApiNetwork, path: string, data?: AnyLiteral) {
+export function callToncenterV3<T = any>(
+  network: ApiNetwork,
+  path: string,
+  data?: AnyLiteral,
+  signal?: AbortSignal,
+) {
   const url = `${NETWORK_CONFIG[network].toncenterUrl}/api/v3${path}`;
 
   // Keep the WebView HTTP cache from storing or replaying toncenter responses.
@@ -115,6 +137,7 @@ export function callToncenterV3<T = any>(network: ApiNetwork, path: string, data
   return fetchJson(url, { ...data, _: Date.now() }, {
     headers: getToncenterHeaders(network),
     cache: 'no-store',
+    signal,
   }) as Promise<T>;
 }
 

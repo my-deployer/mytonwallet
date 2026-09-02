@@ -123,11 +123,7 @@ final class NftSendReviewViewController: WViewController {
                 "Are you sure you want to burn this NFT? It will be lost forever."
             )
         }
-        return lang(
-            "$multi_burn_nft_warning",
-            arg1: localizedIntegerString(model.configuration.nfts.count),
-            arg2: burnDurationText
-        )
+        return L10n.multiBurnNftWarning(amount: localizedIntegerString(model.configuration.nfts.count), duration: burnDurationText)
     }
 
     private var burnDurationText: String {
@@ -136,7 +132,7 @@ final class NftSendReviewViewController: WViewController {
         ) / nftBatchSize
         let durationSeconds = chunkCount * burnChunkDurationSeconds
         let durationMinutes = (durationSeconds + 59) / 60
-        return lang("$duration_minutes", arg1: durationMinutes)
+        return L10n.durationMinutes(count: durationMinutes)
     }
 
     @objc private func confirmPressed() {

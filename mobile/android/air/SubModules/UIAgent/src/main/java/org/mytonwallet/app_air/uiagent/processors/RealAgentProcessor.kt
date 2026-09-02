@@ -12,7 +12,9 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mytonwallet.app_air.walletbasecontext.APP_SCHEME
+import org.mytonwallet.app_air.walletbasecontext.R as BaseR
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletcontext.cacheStorage.WCacheStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
@@ -23,7 +25,6 @@ class RealAgentProcessor : AgentProcessor {
     companion object {
         private const val BASE_URL = "https://agent.mytonwallet.org/api"
         private const val ENDPOINT = "$BASE_URL/message"
-        private const val HINTS_ENDPOINT = "$BASE_URL/hints"
         private const val PLATFORM = "android"
         private const val CLIENT = "native"
         private const val MYTONWALLET_SCHEME = "mytonwallet"
@@ -150,6 +151,12 @@ class RealAgentProcessor : AgentProcessor {
         savedAddresses: List<AgentUserAddress>
     ): String {
         val context = JSONObject().apply {
+            put(
+                "appName",
+                ApplicationContextHolder.applicationContext.getString(
+                    BaseR.string.app_locale_name_key
+                )
+            )
             put("platform", PLATFORM)
             put("client", CLIENT)
             put("lang", LocaleController.activeLanguage.langCode)
@@ -202,48 +209,7 @@ class RealAgentProcessor : AgentProcessor {
     }
 
     override suspend fun loadHints(langCode: String?): List<AgentHint> =
-        withContext(Dispatchers.IO) {
-            var connection: HttpURLConnection? = null
-            try {
-                val urlStr = buildString {
-                    append(HINTS_ENDPOINT)
-                    if (!langCode.isNullOrEmpty()) append("?langCode=$langCode")
-                }
-                connection = (URL(urlStr).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 15_000
-                    readTimeout = 15_000
-                    setRequestProperty("Accept", "application/json")
-                }
-
-                if (connection.responseCode !in 200..299) return@withContext emptyList()
-
-                val body = connection.inputStream.bufferedReader().readText()
-                val json = JSONObject(body)
-                val items = json.optJSONArray("items") ?: return@withContext emptyList()
-                (0 until items.length()).mapNotNull { i ->
-                    val obj = items.getJSONObject(i)
-                    val title = obj.optString("title", "").trim()
-                    val subtitle = obj.optString("subtitle", "").trim()
-                    val prompt = obj.optString("prompt", "").trim()
-                    if (title.isEmpty() || subtitle.isEmpty() || prompt.isEmpty()) {
-                        null
-                    } else {
-                        AgentHint(
-                            id = obj.optString("id", i.toString()),
-                            title = title,
-                            subtitle = subtitle,
-                            prompt = prompt
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "loadHints failed", e)
-                emptyList()
-            } finally {
-                connection?.disconnect()
-            }
-        }
+        AgentHintsRepository.load(langCode)
 
     override fun resetClientId() {
         val newId = UUID.randomUUID().toString()

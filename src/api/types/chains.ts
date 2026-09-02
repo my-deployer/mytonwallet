@@ -2,6 +2,10 @@
  * This file is meant to describe the interface of the chains exported from `src/api/chains`.
  */
 
+import type * as tonAuth from '../chains/ton/auth';
+import type * as tonDomains from '../chains/ton/domains';
+import type * as tonMfa from '../chains/ton/mfa';
+import type * as tonStaking from '../chains/ton/staking';
 import type { ChainDappSupport } from '../dappProtocols/types';
 import type {
   ApiActivity,
@@ -43,6 +47,52 @@ import type {
 import type { OnApiUpdate } from './updates';
 import type { ApiAddressInfo } from './wallet';
 
+/**
+ * Optional per-chain staking support. A chain that supports staking exposes this group; chains that don't
+ * omit it, and the universal staking controller (`methods/staking.ts`) throws for them. Method types mirror
+ * the TON implementation contract (the only chain implementing staking so far).
+ */
+export interface ChainStakingSupport {
+  checkStakeDraft: typeof tonStaking.checkStakeDraft;
+  checkUnstakeDraft: typeof tonStaking.checkUnstakeDraft;
+  submitStake: typeof tonStaking.submitStake;
+  submitUnstake: typeof tonStaking.submitUnstake;
+  submitTokenStakingClaim: typeof tonStaking.submitTokenStakingClaim;
+  submitUnstakeEthenaLocked: typeof tonStaking.submitUnstakeEthenaLocked;
+  getCommonData: typeof tonStaking.getStakingCommonData;
+}
+
+/**
+ * Optional per-chain on-chain naming (DNS) support. Exposed by chains that support a name service; omitted
+ * by the rest. Method types mirror the TON implementation contract.
+ */
+export interface ChainDnsSupport {
+  checkDnsRenewalDraft: typeof tonDomains.checkDnsRenewalDraft;
+  submitDnsRenewal: typeof tonDomains.submitDnsRenewal;
+  checkDnsChangeWalletDraft: typeof tonDomains.checkDnsChangeWalletDraft;
+  submitDnsChangeWallet: typeof tonDomains.submitDnsChangeWallet;
+}
+
+/**
+ * Optional per-chain multi-factor (Telegram MFA) support. Exposed by chains that support the MFA
+ * extension; omitted by the rest. Method types mirror the TON implementation contract.
+ */
+export interface ChainMfaSupport {
+  installMfaExtension: typeof tonMfa.installMfaExtension;
+  createRemoveMfaExtensionPayload: typeof tonMfa.createRemoveMfaExtensionPayload;
+  resolveExtensionAddress: typeof tonMfa.resolveExtensionAddress;
+}
+
+/**
+ * Optional per-chain native (non-BIP39) mnemonic scheme. Exposed by chains with their own legacy mnemonic
+ * format (TON's 24-word scheme); chains using only BIP39 omit it. Method types mirror the TON contract.
+ */
+export interface ChainNativeMnemonicSupport {
+  generateMnemonic: typeof tonAuth.generateMnemonic;
+  validateMnemonic: typeof tonAuth.validateMnemonic;
+  getWalletFromMnemonic: typeof tonAuth.getWalletFromMnemonic;
+}
+
 export interface ChainSdk<T extends ApiChain> {
   //
   // Activity history
@@ -68,11 +118,16 @@ export interface ChainSdk<T extends ApiChain> {
       network: ApiNetwork,
       address: string,
       sendUpdateTokens: NoneToVoidFunction,
+      options?: { signal?: AbortSignal },
     ): Promise<ApiBalanceBySlug>;
   };
 
   /** May return `undefined` if the activity doesn't change and there are no unexpected errors */
-  fetchActivityDetails(accountId: string, activity: ApiActivity): MaybePromise<ApiActivity | undefined>;
+  fetchActivityDetails(
+    accountId: string,
+    activity: ApiActivity,
+    signal?: AbortSignal,
+  ): MaybePromise<ApiActivity | undefined>;
 
   decryptComment(options: ApiDecryptCommentOptions): Promise<string | { error: ApiAnyDisplayError }>;
 
@@ -177,7 +232,10 @@ export interface ChainSdk<T extends ApiChain> {
   // Sending transfers
   //
 
-  checkTransactionDraft(options: ApiCheckTransactionDraftOptions): Promise<ApiCheckTransactionDraftResult>;
+  checkTransactionDraft(
+    options: ApiCheckTransactionDraftOptions,
+    signal?: AbortSignal,
+  ): Promise<ApiCheckTransactionDraftResult>;
 
   /** The goal of the function is acting like `checkTransactionDraft` but return only the diesel information */
   fetchEstimateDiesel(accountId: string, tokenAddress: string): MaybePromise<ApiFetchEstimateDieselResult>;
@@ -227,6 +285,7 @@ export interface ChainSdk<T extends ApiChain> {
     network: ApiNetwork,
     address: string,
     sendUpdateTokens: NoneToVoidFunction,
+    options?: { signal?: AbortSignal },
   ): Promise<ApiBalanceBySlug>;
 
   /**
@@ -263,6 +322,21 @@ export interface ChainSdk<T extends ApiChain> {
    * SDK submodule responsible for unified dApp workflow. Omitted if no dApp connection expected (TRON)
    */
   dapp?: ChainDappSupport<T>;
+
+  /** SDK submodule responsible for staking. Omitted by chains that don't support staking. */
+  staking?: ChainStakingSupport;
+
+  /** SDK submodule responsible for on-chain naming (DNS). Omitted by chains without a name service. */
+  dns?: ChainDnsSupport;
+
+  /** SDK submodule responsible for multi-factor (Telegram MFA) support. Omitted by chains without MFA. */
+  mfa?: ChainMfaSupport;
+
+  /** SDK submodule for a chain's native (non-BIP39) mnemonic scheme. Omitted by BIP39-only chains. */
+  nativeMnemonic?: ChainNativeMnemonicSupport;
+
+  /** Derives the same wallet at a different on-chain version. Only chains with wallet versions (TON) expose it. */
+  getOtherVersionWallet?: typeof tonAuth.getOtherVersionWallet;
 
   //
   // NFT
@@ -334,4 +408,7 @@ export interface ChainSdk<T extends ApiChain> {
    * Only supported for TON v4R2 and W5 wallets; returns an empty array for all other chains/versions.
    */
   fetchWalletPlugins(network: ApiNetwork, address: string): Promise<ApiTonPlugin[]>;
+
+  /** Fetches and parses a single NFT by its address (e.g. for deeplink viewing). Omitted by chains that lack it. */
+  fetchNftByAddress?: (network: ApiNetwork, nftAddress: string) => Promise<ApiNft | undefined>;
 }

@@ -75,7 +75,7 @@ private func makeDeleteAccountWarningText(account: MAccount) -> String {
     
     guard !accountIds.isEmpty else { return }
     
-    let title = accountIds.count > 1 ? lang("Remove Wallets") :  lang("$remove_wallets", arg1: 1)
+    let title = accountIds.count > 1 ? lang("Remove Wallets") :  L10n.removeWallets(count: 1)
     let logoutWarning: String
     do {
         var text = lang(accountIds.count == 1 ? "$logout_selected_wallet_warning" : "$logout_selected_wallets_warning")

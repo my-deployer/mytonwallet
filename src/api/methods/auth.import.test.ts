@@ -1,10 +1,17 @@
 import { ApiServerError } from '../errors';
-import { importMnemonic } from './auth';
+import { resetAgentV2 } from './agentV2Lifecycle';
+import { importMnemonic, resetAccounts } from './auth';
 
 jest.mock('../chains', () => ({
   __esModule: true,
   default: {
-    ton: { getWalletFromBip39Mnemonic: jest.fn() },
+    ton: {
+      getWalletFromBip39Mnemonic: jest.fn(),
+      // The native-mnemonic group proxies the same module the `../chains/ton` mock below provides, so the
+      // assertions can keep driving those jest.fn()s directly.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      nativeMnemonic: require('../chains/ton'),
+    },
   },
 }));
 
@@ -49,11 +56,17 @@ jest.mock('./polling', () => ({
 }));
 
 jest.mock('../common/tokens', () => ({ sendUpdateTokens: jest.fn() }));
-jest.mock('../db', () => ({ tokenRepository: {} }));
+jest.mock('../db', () => ({ tokenRepository: { clear: jest.fn() } }));
 jest.mock('../environment', () => ({ getEnvironment: jest.fn().mockReturnValue({}) }));
 jest.mock('../storages', () => ({
-  storage: { getItem: jest.fn(), setItem: jest.fn(), mutateItem: jest.fn() },
+  storage: {
+    getItem: jest.fn(),
+    setItem: jest.fn(),
+    mutateItem: jest.fn(),
+    removeItem: jest.fn(),
+  },
 }));
+jest.mock('./agentV2Lifecycle', () => ({ resetAgentV2: jest.fn() }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ton = require('../chains/ton') as {
@@ -129,5 +142,21 @@ describe('importMnemonic', () => {
     await importMnemonic(['mainnet'], DUAL_VALID);
 
     expect(setAccountValue).toHaveBeenCalledWith('0-mainnet', 'accounts', expect.objectContaining({ type: 'ton' }));
+  });
+});
+
+describe('resetAccounts', () => {
+  it('clears Agent V2 state even when the runtime is disabled', async () => {
+    const previousNoExtraFeatures = process.env.NO_EXTRA_FEATURES;
+    delete process.env.NO_EXTRA_FEATURES;
+
+    try {
+      await resetAccounts();
+    } finally {
+      if (previousNoExtraFeatures === undefined) delete process.env.NO_EXTRA_FEATURES;
+      else process.env.NO_EXTRA_FEATURES = previousNoExtraFeatures;
+    }
+
+    expect(resetAgentV2).toHaveBeenCalledTimes(1);
   });
 });

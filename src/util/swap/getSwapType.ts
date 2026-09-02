@@ -1,5 +1,6 @@
 import type { ApiChain, ApiSwapAsset, ApiTokenWithPrice } from '../../api/types';
-import { type Account, SwapType, type UserSwapToken } from '../../global/types';
+import type { Account, UserSwapToken } from '../../global/types';
+import { SwapType } from './types';
 
 import { getChainConfig } from '../chain';
 import { getChainBySlug } from '../tokens';

@@ -251,7 +251,7 @@ enum AuthSupportLegacy {
             // these mnemonics.
             throw DisplayError(
                 title: lang("$enclave_migration_damaged_title"),
-                text: lang("$enclave_migration_damaged_message", arg1: "@\(SUPPORT_USERNAME)")
+                text: L10n.enclaveMigrationDamagedMessage(supportLink: "@\(SUPPORT_USERNAME)")
             )
         } catch {
             throw error

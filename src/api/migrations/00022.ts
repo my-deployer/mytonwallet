@@ -1,6 +1,6 @@
 import type { ApiAccountAny } from '../types';
 
-import { SOLANA_DERIVATION_VERSION } from '../chains/solana/derivation';
+import { SOLANA_DERIVATION_VERSION } from '../chains/solana/derivationConstants';
 import { storage } from '../storages';
 
 /**

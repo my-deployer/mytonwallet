@@ -37,20 +37,16 @@ struct HomeCardPromotionVisual: View {
     let accountContext: AccountContext
 
     var body: some View {
-        if !IS_GRAM_WALLET {
-            WithPerceptionTracking {
-                let promotion = cardOverlayPromotion
-                ZStack {
-                    if let promotion {
-                        _HomeCardPromotionVisual(promotion: promotion)
-                            .transition(.opacity)
-                    }
+        WithPerceptionTracking {
+            let promotion = cardOverlayPromotion
+            ZStack {
+                if let promotion {
+                    _HomeCardPromotionVisual(promotion: promotion)
+                        .transition(.opacity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(.smooth(duration: 0.3), value: promotion?.id)
             }
-        } else {
-            EmptyView()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.smooth(duration: 0.3), value: promotion?.id)
         }
     }
 
@@ -110,7 +106,7 @@ struct HomeCardPromotionHitArea: View {
     @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        if !IS_GRAM_WALLET, let promotion, promotion.kind == .cardOverlay {
+        if let promotion, promotion.kind == .cardOverlay {
             let frame = hitAreaFrame(for: promotion)
             let alignment = HomeCardPromotionLayout.physicalTopTrailingAlignment(for: layoutDirection)
             Button {

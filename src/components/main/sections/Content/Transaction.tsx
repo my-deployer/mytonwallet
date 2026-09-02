@@ -49,7 +49,6 @@ import { shortenAddress } from '../../../../util/shortenAddress';
 
 import useContextMenuHandlers from '../../../../hooks/useContextMenuHandlers';
 import { useDeviceScreen } from '../../../../hooks/useDeviceScreen';
-import useFlag from '../../../../hooks/useFlag';
 import useLang from '../../../../hooks/useLang';
 import useLastCallback from '../../../../hooks/useLastCallback';
 
@@ -62,6 +61,8 @@ import ActivityStatusIcon from './ActivityStatusIcon';
 
 import styles from './Activity.module.scss';
 
+import noImageSrcDark from '../../../../assets/nftNoImageDark.svg';
+import noImageSrcLight from '../../../../assets/nftNoImageLight.svg';
 import scamImg from '../../../../assets/scam.svg';
 
 type OwnProps = {
@@ -96,7 +97,6 @@ const OUT_TRANSACTION_TYPES = new Set<ApiTransactionType>([
 ]);
 
 const CONTEXT_MENU_VERTICAL_SHIFT_PX = 4;
-const HIDE_ANIMATION_DURATION_MS = 200;
 
 const NFT_MENU_ITEMS: DropdownItem<'hide'>[] = [
   { name: 'Hide NFT', value: 'hide', fontIcon: 'eye-closed', isDangerous: true },
@@ -123,13 +123,12 @@ function Transaction({
   shouldHideStakingAnnualYield,
   onClick,
 }: OwnProps) {
-  const { openNftAttributesModal, addNftsToBlacklist } = getActions();
+  const { openNftAttributesModal, openReportNftModal } = getActions();
   const lang = useLang();
   const { isPortrait } = useDeviceScreen();
 
   const buttonRef = useRef<HTMLButtonElement>();
   const menuRef = useRef<HTMLDivElement>();
-  const [isHiding, markHiding] = useFlag();
 
   const {
     id,
@@ -206,11 +205,7 @@ function Transaction({
 
   const handleNftMenuItemClick = useLastCallback(() => {
     void vibrate();
-    // Let the row fade out before the global update removes it from the list
-    markHiding();
-    setTimeout(() => {
-      addNftsToBlacklist({ addresses: [nft!.address] });
-    }, HIDE_ANIMATION_DURATION_MS);
+    openReportNftModal({ chain: nft!.chain, address: nft!.address });
   });
 
   const canHideNft = Boolean(nft) && isIncoming && status !== 'failed';
@@ -241,6 +236,8 @@ function Transaction({
   const isBackdropRendered = isPortrait && isContextMenuOpen;
 
   function renderNft() {
+    const { address, thumbnail, name, collectionName } = nft!;
+
     return (
       <div
         className={buildClassName(
@@ -250,14 +247,26 @@ function Transaction({
           'transaction-nft',
         )}
         onClick={doesNftExist ? handleNftClick : undefined}
-        data-nft-address={nft?.address}
+        data-nft-address={address}
         data-tx-id={id}
       >
-        <img src={nft!.thumbnail} alt={nft!.name} className={styles.nftImage} />
-        <div className={styles.nftData}>
-          <div className={styles.nftName}>{nft!.name}</div>
-          <div className={styles.nftCollection}>{nft!.collectionName}</div>
-        </div>
+        {thumbnail ? (
+          <img src={thumbnail} alt={name} className={styles.nftImage} />
+        ) : (
+          <div className={buildClassName(styles.nftImage, styles.nftImageNoData)}>
+            <img
+              src={appTheme === 'dark' ? noImageSrcDark : noImageSrcLight}
+              alt=""
+              className={styles.nftNoImageIcon}
+            />
+          </div>
+        )}
+        {Boolean(name || collectionName) && (
+          <div className={styles.nftData}>
+            {Boolean(name) && <div className={styles.nftName}>{name}</div>}
+            {Boolean(collectionName) && <div className={styles.nftCollection}>{collectionName}</div>}
+          </div>
+        )}
       </div>
     );
   }
@@ -444,7 +453,6 @@ function Transaction({
           isLast && styles.itemLast,
           isActive && styles.active,
           onClick && styles.interactive,
-          isHiding && styles.itemHiding,
           attachmentsTakeSubheader === 'full' ? styles.attachmentsInFullSubheader
             : attachmentsTakeSubheader === 'left' ? styles.attachmentsInLeftSubheader : undefined,
           className,

@@ -104,6 +104,7 @@ import { callHook } from '../../../hooks';
 import {
   addDapp,
   deleteDapp,
+  findLastConnectedAccount,
   getDapp,
   updateDapp,
 } from '../../../methods/dapps';
@@ -114,6 +115,8 @@ import {
   formatConnectError,
   getCurrentAccountOrFail,
   getDappByTopic,
+  getMissingInjectedRequestedChains,
+  mergeStoredSessionChains,
   parseWalletConnectTypedData,
   safeHost,
   urlTrustStatusStatusFromWalletConnectVerify,
@@ -180,6 +183,9 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
   // one dapp converging on the worker once their per-page TTL caches expire). Page-side and
   // worker-side dedup are not redundant — they cover different fan-in points.
   private inFlightReconnects = new Map<string, Promise<DappConnectionResult<typeof this.protocolType>>>();
+
+  // Injected extension / in-app browser: coalesce parallel connect() calls for the same dApp URL.
+  private inFlightConnects = new Map<string, Promise<DappConnectionResult<typeof this.protocolType>>>();
 
   private activePayContext?: WcPayContext;
 
@@ -968,20 +974,179 @@ class WalletConnectAdapter implements DappProtocolAdapter<DappProtocolType.Walle
     message: DappConnectionRequest<typeof this.protocolType>,
     requestId: number,
   ): Promise<DappConnectionResult<typeof this.protocolType>> {
+    const dappUrl = resolveWalletConnectDappUrl({
+      requestUrl: request.url,
+      metadataUrl: message.protocolData.params.proposer.metadata.url,
+      transport: message.transport,
+    });
+
+    logDebug('walletConnect:connect:enter', {
+      host: safeHost(dappUrl),
+      transport: message.transport,
+    });
+
+    if (message.transport === 'extension' || message.transport === 'inAppBrowser') {
+      return this.connectInjectedTransport(request, message, requestId, dappUrl);
+    }
+
+    return this.connectWithApprovalModal(request, message, requestId, dappUrl);
+  }
+
+  private buildInjectedConnectKey(dappUrl: string, uniqueId: string): string {
+    return `${dappUrl}\0${uniqueId}`;
+  }
+
+  private async findInjectedDappAtUrl(
+    dappUrl: string,
+    request: ApiDappRequest,
+  ): Promise<{ accountId: string; uniqueId: string; dapp: StoredDappConnection } | undefined> {
+    const uniqueId = getDappConnectionUniqueId({ ...request, url: dappUrl });
+
+    try {
+      const accountId = await getCurrentAccountOrFail();
+      const dapp = await getDapp(accountId, dappUrl, uniqueId);
+
+      if (dapp?.chains?.length) {
+        return { accountId, uniqueId, dapp };
+      }
+    } catch {
+      // Fall through to the last connected account for this URL.
+    }
+
+    try {
+      const accountId = await getCurrentAccountIdOrFail();
+      const { network } = parseAccountId(accountId);
+      const lastAccountId = await findLastConnectedAccount(network, dappUrl);
+
+      if (!lastAccountId) {
+        return undefined;
+      }
+
+      const dapp = await getDapp(lastAccountId, dappUrl, uniqueId);
+
+      if (dapp?.chains?.length) {
+        return { accountId: lastAccountId, uniqueId, dapp };
+      }
+    } catch {
+      return undefined;
+    }
+
+    return undefined;
+  }
+
+  private async tryInjectedSilentConnect(
+    request: ApiDappRequest,
+    message: DappConnectionRequest<typeof this.protocolType>,
+    requestId: number,
+    dappUrl: string,
+  ): Promise<DappConnectionResult<typeof this.protocolType> | undefined> {
+    const located = await this.findInjectedDappAtUrl(dappUrl, request);
+
+    if (!located) {
+      return undefined;
+    }
+
+    const { accountId, uniqueId, dapp: existingDapp } = located;
+    const missingRequests = getMissingInjectedRequestedChains(
+      existingDapp.chains ?? [],
+      message.requestedChains,
+    );
+
+    let chains = existingDapp.chains ?? [];
+    let dapp = existingDapp;
+
+    if (missingRequests.length > 0) {
+      const { network } = parseAccountId(accountId);
+
+      try {
+        const newChains = await getAccountChains(message, network, accountId, missingRequests);
+        chains = mergeStoredSessionChains(chains, newChains);
+
+        dapp = {
+          ...existingDapp,
+          chains,
+          connectedAt: Date.now(),
+        };
+
+        await addDapp(accountId, dapp, uniqueId);
+
+        this.onUpdate({ type: 'updateDapps' });
+      } catch (err) {
+        logDebugError('walletConnect:connect:silentMerge', err);
+
+        return undefined;
+      }
+    } else {
+      await updateDapp(accountId, dappUrl, uniqueId, { connectedAt: Date.now() });
+    }
+
+    logDebug('walletConnect:connect:silent', {
+      host: safeHost(dappUrl),
+      chains: chains.length,
+      merged: missingRequests.length > 0,
+    });
+
+    return {
+      success: true,
+      session: {
+        id: String(requestId),
+        protocolType: this.protocolType,
+        accountId,
+        dapp,
+        chains,
+        connectedAt: Date.now(),
+        protocolData: undefined as unknown as SessionTypes.Namespaces,
+      },
+    };
+  }
+
+  private async connectInjectedTransport(
+    request: ApiDappRequest,
+    message: DappConnectionRequest<typeof this.protocolType>,
+    requestId: number,
+    dappUrl: string,
+  ): Promise<DappConnectionResult<typeof this.protocolType>> {
+    const uniqueId = getDappConnectionUniqueId({ ...request, url: dappUrl });
+    const connectKey = this.buildInjectedConnectKey(dappUrl, uniqueId);
+    const inFlight = this.inFlightConnects.get(connectKey);
+
+    if (inFlight) {
+      logDebug('walletConnect:connect:awaitInFlight', { host: safeHost(dappUrl) });
+
+      await inFlight.catch(() => {});
+
+      const silent = await this.tryInjectedSilentConnect(request, message, requestId, dappUrl);
+
+      if (silent) {
+        return silent;
+      }
+    } else {
+      const silent = await this.tryInjectedSilentConnect(request, message, requestId, dappUrl);
+
+      if (silent) {
+        return silent;
+      }
+    }
+
+    const promise = this.connectWithApprovalModal(request, message, requestId, dappUrl);
+    this.inFlightConnects.set(connectKey, promise);
+
+    try {
+      return await promise;
+    } finally {
+      this.inFlightConnects.delete(connectKey);
+    }
+  }
+
+  private async connectWithApprovalModal(
+    request: ApiDappRequest,
+    message: DappConnectionRequest<typeof this.protocolType>,
+    requestId: number,
+    dappUrl: string,
+  ): Promise<DappConnectionResult<typeof this.protocolType>> {
     try {
       // Note: For WalletConnect, connections are initiated via handleSessionProposal
       // This method would be called if we want to programmatically initiate a connection
-
-      const dappUrl = resolveWalletConnectDappUrl({
-        requestUrl: request.url,
-        metadataUrl: message.protocolData.params.proposer.metadata.url,
-        transport: message.transport,
-      });
-
-      logDebug('walletConnect:connect:enter', {
-        host: safeHost(dappUrl),
-        transport: message.transport,
-      });
 
       await this.openExtensionPopup(true);
 

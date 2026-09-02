@@ -5,13 +5,13 @@ import android.content.Context
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.updateLayoutParams
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import java.lang.ref.WeakReference
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.widgets.SpringSnapHelper
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
@@ -93,7 +93,7 @@ open class WalletCustomizationCardsView(
         clipChildren = false
         clipToPadding = false
         addOnScrollListener(scrollListener)
-        PagerSnapHelper().attachToRecyclerView(this)
+        SpringSnapHelper().attachTo(this)
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {

@@ -11,10 +11,11 @@ export async function callBackendPost<T>(path: string, data: AnyLiteral, options
   isAllowBadRequest?: boolean;
   method?: string;
   shouldRetry?: boolean;
+  signal?: AbortSignal;
   timeout?: number;
 }): Promise<T> {
   const {
-    authToken, isAllowBadRequest, method, shouldRetry, timeout,
+    authToken, isAllowBadRequest, method, shouldRetry, signal, timeout,
   } = options ?? {};
 
   const url = new URL(`${BRILLIANT_API_BASE_URL}${path}`);
@@ -27,6 +28,7 @@ export async function callBackendPost<T>(path: string, data: AnyLiteral, options
       ...(authToken && { 'X-Auth-Token': authToken }),
     },
     body: JSON.stringify(data),
+    signal,
   };
 
   const response = shouldRetry
@@ -43,7 +45,12 @@ export async function callBackendPost<T>(path: string, data: AnyLiteral, options
   return response.json();
 }
 
-export function callBackendGet<T extends AnyLiteral>(path: string, data?: AnyLiteral, headers?: HeadersInit) {
+export function callBackendGet<T extends AnyLiteral>(
+  path: string,
+  data?: AnyLiteral,
+  headers?: HeadersInit,
+  signal?: AbortSignal,
+) {
   const url = new URL(`${BRILLIANT_API_BASE_URL}${path}`);
 
   return fetchJson<T>(url, data, {
@@ -51,6 +58,7 @@ export function callBackendGet<T extends AnyLiteral>(path: string, data?: AnyLit
       ...headers,
       ...getBackendHeaders(),
     },
+    signal,
   }, {
     bucketKey: bucketKey(url, { includePathPrefix: true }),
   });

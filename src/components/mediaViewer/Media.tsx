@@ -16,6 +16,7 @@ import AnimatedIconWithPreview from '../ui/AnimatedIconWithPreview';
 
 import styles from './MediaViewer.module.scss';
 
+import noImageSrcDark from '../../assets/nftNoImageDark.svg';
 import scamImg from '../../assets/scam.svg';
 
 interface OwnProps {
@@ -69,8 +70,12 @@ function Media({
           className={styles.image}
           noPreviewTransition
         />
-      ) : (
+      ) : src ? (
         <img src={src} alt={alt} className={styles.image} />
+      ) : (
+        <div className={buildClassName(styles.image, styles.imageNoData)}>
+          <img src={noImageSrcDark} alt="" className={styles.noImageIcon} />
+        </div>
       )}
       <div className={buildClassName(styles.contentDescription, 'custom-scroll')} ref={ref}>
         {description && (

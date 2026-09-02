@@ -76,20 +76,20 @@ function RenewDomainWarning({ orderedAddresses, byAddress, dnsExpiration }: Stat
   }
 
   function renderPreview() {
-    const previewNfts = (renderedNftForRenewal ?? []).slice(0, 3);
+    // The stack styles are driven by the count and the index, so the NFTs without a preview are
+    // dropped upfront - a skipped index would leave a hole in the stack
+    const previewNfts = (renderedNftForRenewal ?? []).filter((nft) => nft.thumbnail).slice(0, 3);
     return (
       <div className={styles.domainPreviewWrapper}>
-        {previewNfts.map((nft, index) => {
-          return (
-            <img
-              key={nft.address}
-              src={nft.thumbnail}
-              alt={nft.name}
-              style={`--index: ${index}`}
-              className={buildClassName(styles.domainPreview, styles[`domainPreview_${previewNfts.length}`])}
-            />
-          );
-        })}
+        {previewNfts.map((nft, index) => (
+          <img
+            key={nft.address}
+            src={nft.thumbnail}
+            alt={nft.name}
+            style={`--index: ${index}`}
+            className={buildClassName(styles.domainPreview, styles[`domainPreview_${previewNfts.length}`])}
+          />
+        ))}
       </div>
     );
   }

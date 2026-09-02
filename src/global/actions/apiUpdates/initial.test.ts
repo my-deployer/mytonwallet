@@ -195,4 +195,15 @@ describe('updateConfig api update', () => {
 
     expect(updatedGlobal.restrictions.allowedOnOffRampCurrencies).toBeUndefined();
   });
+
+  it('clears a stale isNftBuyingDisabled persisted by an older build', () => {
+    const global = {
+      restrictions: { isNftBuyingDisabled: true },
+      settings: { byAccountId: {} },
+    } as unknown as GlobalState;
+
+    const updatedGlobal = dispatchUpdateConfig(global, undefined);
+
+    expect(updatedGlobal.restrictions.isNftBuyingDisabled).toBe(false);
+  });
 });

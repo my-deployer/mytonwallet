@@ -1,5 +1,3 @@
-import { IS_TON_BRAND } from '../../../config';
-
 import iconAddDark from '../../../assets/lottie/add_dark.tgs';
 import iconAddLight from '../../../assets/lottie/add_light.tgs';
 import iconAgentDark from '../../../assets/lottie/agent_dark.tgs';
@@ -24,7 +22,6 @@ import iconClockLightOrange from '../../../assets/lottie/clock_light_orange.tgs'
 import iconClockLightPurple from '../../../assets/lottie/clock_light_purple.tgs';
 import iconClockLightPurpleWhite from '../../../assets/lottie/clock_light_purple_white.tgs';
 import iconClockLightRed from '../../../assets/lottie/clock_light_red.tgs';
-import coreWalletLogo from '../../../assets/lottie/core_wallet_logo.tgs';
 import bill from '../../../assets/lottie/duck_bill.tgs';
 import forge from '../../../assets/lottie/duck_forges.tgs';
 import guard from '../../../assets/lottie/duck_guard.tgs';
@@ -83,7 +80,6 @@ import iconClockPreviewLightOrange from '../../../assets/lottiePreview/clock_lig
 import iconClockPreviewLightPurple from '../../../assets/lottiePreview/clock_light_purple.svg';
 import iconClockPreviewLightPurpleWhite from '../../../assets/lottiePreview/clock_light_purple_white.svg';
 import iconClockPreviewLightRed from '../../../assets/lottiePreview/clock_light_red.svg';
-import coreWalletLogoPreview from '../../../assets/lottiePreview/core_wallet_logo.png';
 import billPreview from '../../../assets/lottiePreview/duck_bill.png';
 import forgePreview from '../../../assets/lottiePreview/duck_forges.png';
 import guardPreview from '../../../assets/lottiePreview/duck_guard.png';
@@ -144,10 +140,6 @@ export const ANIMATED_STICKERS_PATHS = {
   runPreview,
   yeeePreview,
   guardPreview,
-  ...(IS_TON_BRAND && {
-    coreWalletLogo,
-    coreWalletLogoPreview,
-  }),
   light: {
     iconAdd: iconAddLight,
     iconAgent: iconAgentLight,

@@ -1,6 +1,6 @@
 import type { ApiNetwork, ApiSwapActivity, ApiTransactionActivity } from '../../types';
 import type { TracesResponse } from './toncenter/traces';
-import type { AddressBook, AnyAction } from './toncenter/types';
+import type { AddressBook, AnyAction, NftCollectionMetadata, NftItemMetadata } from './toncenter/types';
 
 import { TON_TSUSDE } from '../../../config';
 import { makeMockSwapActivity, makeMockTransactionActivity } from '../../../../tests/mocks';
@@ -392,6 +392,352 @@ describe('parseActionsToActivities', () => {
       type: 'unstakeRequest',
     });
     expect(activity).not.toHaveProperty('metadata.name');
+  });
+});
+
+// The Toncenter action schema spells an absent field as `null`
+// eslint-disable-next-line no-null/no-null
+const ABSENT = null;
+
+describe('parseToncenterNft', () => {
+  const WALLET_ADDRESS = 'UQB-anbTtZhmf-KztXAQVWyrlUBC04Ah60ao_ar9rthihczy';
+  const RAW_WALLET_ADDRESS = '0:7E6A76D3B598667FE2B3B57010556CAB954042D38021EB46A8FDAAFDAED86285';
+  const SENDER_ADDRESS = 'EQANEViM3AKQzi6Aj3sEeyqFu8pXqhy9Q9xGoId_0qp3CNVJ';
+  const RAW_SENDER_ADDRESS = '0:0D11588CDC0290CE2E808F7B047B2A85BBCA57AA1CBD43DC46A0877FD2AA7708';
+  const RAW_NFT_ADDRESS = '0:6DA90942D3DC56FE838724EACCA1F0E616774EAD8EF30A377B6D810B22869B3B';
+  const RAW_COLLECTION_ADDRESS = '0:2485DF4016504E8893F093C8D917D275B96DADE7A2D4F2010247817182F9EB91';
+  // `MW_CARDS_COLLECTION` in the raw form
+  const RAW_MW_CARDS_COLLECTION = '0:901362FD85FC31D55F2C82617D91EADA1F1D6B34AF559A047572D56F20D046CA';
+  const AUTHOR_HOSTED_IMAGE = 'https://s.getgems.io/nft/b/c/6675a4fb084c43038af2c273/images/ad63ec80';
+  const PROXIED_MEDIUM = 'https://imgproxy.toncenter.com/JuFXGLYNNFbAeGMdWXPiHMdbmWd85cDD6o3J3FrH-qE/pr:medium/enc';
+  const PROXIED_BIG = 'https://imgproxy.toncenter.com/M9HLUi0lVj6JpH-HtOIw8yn6xmPciHtq_Kij-Tbo26c/pr:big/enc';
+
+  function parseNftFromTransfer(
+    tokenInfo: Partial<NftItemMetadata>,
+    rawCollectionAddress: string | null = RAW_COLLECTION_ADDRESS,
+    collectionInfo?: Partial<NftCollectionMetadata>,
+  ) {
+    const action = {
+      type: 'nft_transfer',
+      action_id: 'nft-action-id',
+      trace_id: 'nft-trace-id',
+      start_lt: '79110006000011',
+      end_lt: '79110006000011',
+      start_utime: 1779626378,
+      end_utime: 1779626378,
+      transactions: ['nft-transaction-hash'],
+      success: true,
+      trace_end_lt: '79110006000011',
+      trace_end_utime: 1779626378,
+      trace_mc_seqno_end: 47440944,
+      trace_external_hash: 'nft-external-hash',
+      details: {
+        nft_collection: rawCollectionAddress,
+        nft_item: RAW_NFT_ADDRESS,
+        nft_item_index: '69146',
+        new_owner: RAW_WALLET_ADDRESS,
+        old_owner: RAW_SENDER_ADDRESS,
+        is_purchase: false,
+        query_id: '0',
+        response_destination: ABSENT,
+        custom_payload: ABSENT,
+        forward_payload: '',
+        forward_amount: ABSENT,
+        price: ABSENT,
+        marketplace: ABSENT,
+        payout_amount: ABSENT,
+      },
+    } satisfies AnyAction;
+
+    const [activity] = parseActionsToActivities([action], {
+      network: 'mainnet',
+      walletAddress: WALLET_ADDRESS,
+      addressBook: {
+        [RAW_WALLET_ADDRESS]: { user_friendly: WALLET_ADDRESS, domain: '' },
+        [RAW_SENDER_ADDRESS]: { user_friendly: SENDER_ADDRESS, domain: '' },
+      },
+      metadata: {
+        [RAW_NFT_ADDRESS]: {
+          is_indexed: true,
+          token_info: [{
+            type: 'nft_items',
+            name: 'Sins Postmark Series #69147',
+            image: AUTHOR_HOSTED_IMAGE,
+            ...tokenInfo,
+          }],
+        },
+        ...(rawCollectionAddress && collectionInfo && {
+          [rawCollectionAddress]: {
+            is_indexed: true,
+            token_info: [{ type: 'nft_collections' as const, ...collectionInfo }],
+          },
+        }),
+      },
+      nftSuperCollectionsByCollectionAddress: {},
+    });
+
+    return (activity as ApiTransactionActivity).nft;
+  }
+
+  it('takes both sizes from the proxied previews', () => {
+    expect(parseNftFromTransfer({
+      extra: { _image_medium: PROXIED_MEDIUM, _image_big: PROXIED_BIG },
+    })).toMatchObject({
+      thumbnail: PROXIED_MEDIUM,
+      image: PROXIED_BIG,
+    });
+  });
+
+  it('falls back to the medium preview when there is no big one', () => {
+    expect(parseNftFromTransfer({ extra: { _image_medium: PROXIED_MEDIUM } })).toMatchObject({
+      thumbnail: PROXIED_MEDIUM,
+      image: PROXIED_MEDIUM,
+    });
+  });
+
+  it('leaves both sizes empty when no preview is proxied', () => {
+    const nft = parseNftFromTransfer({});
+
+    expect(nft?.thumbnail).toBeUndefined();
+    expect(nft?.image).toBeUndefined();
+  });
+
+  it('never substitutes the author-hosted URL', () => {
+    const extras = [undefined, { _image_medium: PROXIED_MEDIUM }, { _image_big: PROXIED_BIG }];
+
+    for (const extra of extras) {
+      const nft = parseNftFromTransfer({ extra });
+
+      expect(nft?.thumbnail).not.toBe(AUTHOR_HOSTED_IMAGE);
+      expect(nft?.image).not.toBe(AUTHOR_HOSTED_IMAGE);
+    }
+  });
+
+  it('marks a scam NFT as hidden', () => {
+    expect(parseNftFromTransfer({
+      is_scam: true,
+      extra: { _image_medium: PROXIED_MEDIUM },
+    })).toMatchObject({
+      isScam: true,
+      isHidden: true,
+    });
+  });
+
+  it('hides an NFT whose collection is flagged as scam', () => {
+    expect(parseNftFromTransfer(
+      { extra: { _image_medium: PROXIED_MEDIUM } },
+      RAW_COLLECTION_ADDRESS,
+      { is_scam: true },
+    )).toMatchObject({
+      isScam: true,
+      isHidden: true,
+    });
+  });
+
+  it('takes the nsfw flag from the collection when the item carries none', () => {
+    expect(parseNftFromTransfer(
+      { extra: { _image_medium: PROXIED_MEDIUM } },
+      RAW_COLLECTION_ADDRESS,
+      { is_nsfw: true },
+    )).toMatchObject({
+      isNsfw: true,
+      isHidden: false,
+    });
+  });
+
+  it('keeps the item moderation flags over the ones of its collection', () => {
+    expect(parseNftFromTransfer(
+      { is_scam: false, is_nsfw: false, extra: { _image_medium: PROXIED_MEDIUM } },
+      RAW_COLLECTION_ADDRESS,
+      { is_scam: true, is_nsfw: true },
+    )).toMatchObject({
+      isScam: false,
+      isNsfw: false,
+      isHidden: false,
+    });
+  });
+
+  it('keeps an nsfw NFT visible, since the indexer already blurred it', () => {
+    expect(parseNftFromTransfer({
+      is_nsfw: true,
+      extra: { _image_medium: PROXIED_MEDIUM },
+    })).toMatchObject({
+      isNsfw: true,
+      isScam: false,
+      isHidden: false,
+      thumbnail: PROXIED_MEDIUM,
+    });
+  });
+
+  it('keeps the lottie animation', () => {
+    const nft = parseNftFromTransfer({
+      extra: { _image_medium: PROXIED_MEDIUM, lottie: 'https://nft.fragment.com/gift/astralshard-4227.lottie.json' },
+    });
+
+    expect(nft?.metadata.lottie).toContain('astralshard-4227');
+  });
+
+  it('keeps the attributes, dropping the non-string values that break the UI', () => {
+    const nft = parseNftFromTransfer({
+      extra: {
+        _image_medium: PROXIED_MEDIUM,
+        attributes: [
+          { trait_type: 'Sin', value: 'Lust' },
+          { trait_type: 'Broken', value: { nested: true } },
+        ],
+      },
+    });
+
+    expect(nft?.metadata.attributes).toEqual([{ trait_type: 'Sin', value: 'Lust' }]);
+  });
+
+  it('survives attributes that are not an array', () => {
+    const nft = parseNftFromTransfer({
+      extra: {
+        _image_medium: PROXIED_MEDIUM,
+        attributes: { Sin: 'Lust' },
+      },
+    });
+
+    expect(nft).toMatchObject({ thumbnail: PROXIED_MEDIUM });
+    expect(nft?.metadata.attributes).toBeUndefined();
+  });
+
+  it('serves MyTonWallet cards from our own CDN, since Toncenter cannot proxy them', () => {
+    const CARD_IMAGE = 'https://static.mytonwallet.org/cards/v4/preview/178-02a4c.jpg';
+    const nft = parseNftFromTransfer(
+      { image: CARD_IMAGE, extra: { _image_medium: PROXIED_MEDIUM } },
+      RAW_MW_CARDS_COLLECTION,
+    );
+
+    expect(nft).toMatchObject({ thumbnail: CARD_IMAGE, image: CARD_IMAGE });
+    // The card id is the NFT index plus one
+    expect(nft?.metadata.mtwCardId).toBe(69147);
+  });
+
+  describe('when the collection is whitelisted', () => {
+    let trustedSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      trustedSpy = jest.spyOn(addressHelpers, 'checkIsTrustedCollection').mockReturnValue(true);
+    });
+
+    afterEach(() => trustedSpy.mockRestore());
+
+    it('falls back to the raw metadata URL when nothing is proxied', () => {
+      expect(parseNftFromTransfer({})).toMatchObject({
+        thumbnail: AUTHOR_HOSTED_IMAGE,
+        image: AUTHOR_HOSTED_IMAGE,
+      });
+    });
+
+    it('still prefers the proxied previews, keeping the moderation applied', () => {
+      expect(parseNftFromTransfer({
+        extra: { _image_medium: PROXIED_MEDIUM, _image_big: PROXIED_BIG },
+      })).toMatchObject({
+        thumbnail: PROXIED_MEDIUM,
+        image: PROXIED_BIG,
+      });
+    });
+
+    it('resolves an ipfs:// raw URL through the gateway', () => {
+      expect(parseNftFromTransfer({ image: 'ipfs://QmHash' })).toMatchObject({
+        thumbnail: 'https://ipfs.io/ipfs/QmHash',
+        image: 'https://ipfs.io/ipfs/QmHash',
+      });
+    });
+  });
+
+  describe('DNS detection', () => {
+    // The `.ton` zone resolver of `TON_DNS_ZONES` in the raw form
+    const RAW_TON_DNS_RESOLVER = '0:B774D95EB20543F186C06B371AB88AD704F7E256130CAF96189368A7D0CB6CCF';
+
+    it('treats an NFT of the resolver collection as a domain, generating the image', () => {
+      const nft = parseNftFromTransfer(
+        { name: 'mywallet.ton', image: undefined },
+        RAW_TON_DNS_RESOLVER,
+      );
+
+      expect(nft).toMatchObject({
+        name: 'mywallet.ton',
+        collectionName: 'TON DNS Domains',
+        image: 'https://dns-image.mytonwallet.org/img?d=mywallet',
+      });
+    });
+
+    it('rejects the domain-looking name of a standalone NFT', () => {
+      const nft = parseNftFromTransfer(
+        { name: 'newscommunit.t.me', extra: { _image_medium: PROXIED_MEDIUM } },
+        ABSENT,
+      );
+
+      expect(nft).toMatchObject({ name: 'newscommunit.t.me', thumbnail: PROXIED_MEDIUM });
+      expect(nft?.collectionAddress).toBeUndefined();
+      expect(nft?.collectionName).toBeUndefined();
+    });
+
+    it('rejects the `.ton` name of a collectionless NFT, generating no domain image', () => {
+      const nft = parseNftFromTransfer(
+        { name: 'mywallet.ton', image: undefined, extra: { _image_medium: PROXIED_MEDIUM } },
+        ABSENT,
+      );
+
+      expect(nft).toMatchObject({ name: 'mywallet.ton', thumbnail: PROXIED_MEDIUM });
+      expect(nft?.collectionAddress).toBeUndefined();
+      expect(nft?.collectionName).toBeUndefined();
+    });
+
+    it('rejects the domain-looking name when the collection is not the zone resolver', () => {
+      const nft = parseNftFromTransfer({ name: 'mywallet.ton', image: undefined });
+
+      expect(nft?.collectionName).toBeUndefined();
+      expect(nft?.image).toBeUndefined();
+    });
+
+    it('keeps trusting the collectionless NFT of a DNS action', () => {
+      const action = {
+        type: 'change_dns',
+        action_id: 'dns-action-id',
+        trace_id: 'dns-trace-id',
+        start_lt: '79110006000011',
+        end_lt: '79110006000011',
+        start_utime: 1779626378,
+        end_utime: 1779626378,
+        transactions: ['dns-transaction-hash'],
+        success: true,
+        trace_end_lt: '79110006000011',
+        trace_end_utime: 1779626378,
+        trace_mc_seqno_end: 47440944,
+        trace_external_hash: 'dns-external-hash',
+        details: {
+          key: 'wallet',
+          value: { sum_type: 'DNSSmcAddress', dns_smc_address: ABSENT, flags: ABSENT },
+          source: RAW_WALLET_ADDRESS,
+          asset: RAW_NFT_ADDRESS,
+        },
+      } satisfies AnyAction;
+
+      const [activity] = parseActionsToActivities([action], {
+        network: 'mainnet',
+        walletAddress: WALLET_ADDRESS,
+        addressBook: {
+          [RAW_WALLET_ADDRESS]: { user_friendly: WALLET_ADDRESS, domain: '' },
+          [RAW_NFT_ADDRESS]: { user_friendly: 'EQBtqQlC09xW_oOHJOrMofDmFndOrY7zCjd7bYELIoabO9JC', domain: '' },
+        },
+        metadata: {
+          [RAW_NFT_ADDRESS]: {
+            is_indexed: true,
+            token_info: [{ type: 'nft_items', name: 'mywallet.ton' }],
+          },
+        },
+        nftSuperCollectionsByCollectionAddress: {},
+      });
+
+      expect((activity as ApiTransactionActivity).nft).toMatchObject({
+        collectionAddress: 'EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz',
+        collectionName: 'TON DNS Domains',
+      });
+    });
   });
 });
 

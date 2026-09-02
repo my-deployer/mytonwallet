@@ -16,13 +16,18 @@ errorEventTarget?.addEventListener('unhandledrejection', handleErrorEvent);
 
 function handleErrorEvent(e: ErrorEvent | PromiseRejectionEvent) {
   // https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded
-  if (e instanceof ErrorEvent && e.message === 'ResizeObserver loop limit exceeded') {
+  if (e instanceof ErrorEvent && isResizeObserverLoopError(e.message)) {
     return;
   }
 
   e.preventDefault();
 
   handleError(e instanceof ErrorEvent ? (e.error || e.message) : e.reason);
+}
+
+export function isResizeObserverLoopError(message: string) {
+  return message === 'ResizeObserver loop limit exceeded'
+    || message === 'ResizeObserver loop completed with undelivered notifications.';
 }
 
 export function handleError(err: Error | string) {

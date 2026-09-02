@@ -12,7 +12,7 @@ import styles from './AgentHints.module.scss';
 interface OwnProps {
   isOpen: boolean;
   hints?: AgentHint[];
-  onHintClick: (prompt: string) => void;
+  onHintClick: (hint: AgentHint) => void;
 }
 
 const CLOSE_ANIMATION_DURATION_MS = 250;
@@ -40,7 +40,7 @@ function AgentHints({ isOpen, hints, onHintClick }: OwnProps) {
             type="button"
             className={styles.hint}
             style={`--hint-index: ${index}`}
-            onClick={() => onHintClick(hint.prompt)}
+            onClick={() => onHintClick(hint)}
           >
             <span className={styles.inner}>
               <span className={styles.title}>{hint.title}</span>

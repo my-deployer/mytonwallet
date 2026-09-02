@@ -34,9 +34,6 @@ struct UnstakeView: View {
                     model.updateAmountFromBaseCurrency(baseCurrencyAmount)
                 }
             }
-            .task(id: model.amount) {
-                await model.updateFee()
-            }
         }
     }
 }
@@ -102,7 +99,7 @@ fileprivate struct UnstakeInfoSection: View {
                                 .font17h22()
                                 .foregroundStyle(Color.air.secondaryLabel)
                             Spacer()
-                            Text(lang("up to %1$@", arg1: amnt.formatted(.none, maxDecimals: 0)))
+                            Text(L10n.upToAmountLowercase(amount: amnt.formatted(.none, maxDecimals: 0)))
                         }
                         .padding(.top, -1)
                     }

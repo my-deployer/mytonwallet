@@ -6,7 +6,7 @@ import { ContentTab } from '../../../../global/types';
 import { selectCurrentAccountId } from '../../../../global/selectors';
 import buildClassName from '../../../../util/buildClassName';
 
-import Agent from '../../../agent/Agent';
+import Agent from '../../../agent/AgentRuntime';
 import Explore from '../../../explore/Explore';
 import Portfolio from '../../../portfolio/Portfolio';
 import Settings from '../../../settings/Settings';

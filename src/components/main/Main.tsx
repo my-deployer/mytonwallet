@@ -4,7 +4,7 @@ import { getActions, withGlobal } from '../../global';
 import type { ApiStakingState } from '../../api/types';
 import type { Theme } from '../../global/types';
 
-import { IS_EXPLORER, IS_FEATURE_LIMITED } from '../../config';
+import { IS_EXPLORER } from '../../config';
 import {
   selectAccountStakingState,
   selectCurrentAccountId,
@@ -128,8 +128,6 @@ function Main({
   const { isPortrait, isLandscape } = useDeviceScreen();
 
   useEffectOnce(() => {
-    if (IS_FEATURE_LIMITED) return;
-
     loadExploreSites({ isLandscape, langCode: lang.code });
   });
 
@@ -206,8 +204,7 @@ function Main({
           <Card onYieldClick={handleEarnClick} />
 
           <LandscapeNavBar />
-          {/* Core is single-account, and its `Add Wallet` would be dead anyway: AccountSelectorModal is not rendered below. */}
-          {!IS_FEATURE_LIMITED && <LandscapeWalletList />}
+          <LandscapeWalletList />
           {IS_EXPLORER && <PromoteWallet />}
         </div>
         <div className={styles.main}>
@@ -247,7 +244,7 @@ function Main({
       <LinkingDomainModal />
       <PromotionModal />
       {!IS_ELECTRON && <UpdateAvailable />}
-      {!IS_FEATURE_LIMITED && <AccountSelectorModal />}
+      <AccountSelectorModal />
     </>
   );
 }

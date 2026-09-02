@@ -23,9 +23,10 @@ export async function emulateTransaction(
   wallet: TonWallet,
   transaction: Cell,
   isInitialized?: boolean,
+  signal?: AbortSignal,
 ) {
   const boc = buildExternalBoc(wallet, transaction, isInitialized);
-  const emulation = await fetchEmulateTrace(network, boc);
+  const emulation = await fetchEmulateTrace(network, boc, signal);
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
   const walletAddress = toBase64Address(wallet.address, false, network);
   return parseEmulation(network, walletAddress, emulation, nftSuperCollectionsByCollectionAddress);
@@ -37,9 +38,10 @@ export async function emulateExternalMessage(
   toAddress: Address,
   body: Cell,
   init?: StateInit,
+  signal?: AbortSignal,
 ) {
   const boc = buildExternalBocTo(toAddress, body, init);
-  const emulation = await fetchEmulateTrace(network, boc);
+  const emulation = await fetchEmulateTrace(network, boc, signal);
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
   return parseEmulation(network, walletAddress, emulation, nftSuperCollectionsByCollectionAddress);
 }

@@ -2,20 +2,22 @@ import type { ApiBackendConfig } from '../api/types';
 
 import { DEFAULT_RETRIES } from '../config';
 import { setBackendConfigCache } from '../api/common/cache';
+import { pauseWithAbortSignal } from './abortSignal';
 import { CircuitOpenError } from './circuit-breaker';
 import {
   classifyFetchFailure,
   computeRetryBackoffMs,
   fetchWithRetry,
+  fetchWithTimeout,
   isNegativeCacheableStatus,
   resetFetchStateForTests,
 } from './fetch';
 
 // Pauses between retries are irrelevant to what we assert (call counts, classification, caching)
 // and would otherwise make the retry tests wall-clock slow. Everything else stays real.
-jest.mock('./schedulers', () => ({
-  ...jest.requireActual('./schedulers'),
-  pause: jest.fn(() => Promise.resolve()),
+jest.mock('./abortSignal', () => ({
+  ...jest.requireActual('./abortSignal'),
+  pauseWithAbortSignal: jest.fn(() => Promise.resolve()),
 }));
 
 function mockResponse(status: number, body: AnyLiteral = {}, headers: Record<string, string> = {}): Response {
@@ -69,6 +71,76 @@ describe('computeRetryBackoffMs', () => {
   });
 });
 
+describe('fetch cancellation', () => {
+  beforeEach(() => {
+    resetFetchStateForTests();
+    (global as unknown as { fetch: jest.Mock }).fetch = jest.fn();
+    const pauseMock = jest.mocked(pauseWithAbortSignal);
+    pauseMock.mockReset();
+    pauseMock.mockResolvedValue();
+  });
+
+  afterEach(() => {
+    const pauseMock = jest.mocked(pauseWithAbortSignal);
+    pauseMock.mockReset();
+    pauseMock.mockResolvedValue();
+  });
+
+  it('preserves the caller abort reason through the timeout signal', async () => {
+    const controller = new AbortController();
+    const reason = new Error('agent run stopped');
+    const fetchMock = global.fetch as jest.Mock;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    fetchMock.mockImplementation((_url, init: RequestInit) => {
+      markStarted();
+      return new Promise((_resolve, reject) => {
+        init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true });
+      });
+    });
+
+    const request = fetchWithTimeout('https://example.com', { signal: controller.signal });
+    await started;
+    controller.abort(reason);
+
+    await expect(request).rejects.toBe(reason);
+    expect(fetchMock.mock.calls[0][1].signal.reason).toBe(reason);
+  });
+
+  it('stops before transport when the caller signal is already aborted', async () => {
+    const controller = new AbortController();
+    const reason = new Error('already stopped');
+    controller.abort(reason);
+
+    await expect(fetchWithRetry('https://example.com', { signal: controller.signal })).rejects.toBe(reason);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('stops retry backoff without starting another transport attempt', async () => {
+    const controller = new AbortController();
+    const reason = new Error('stop retrying');
+    const fetchMock = global.fetch as jest.Mock;
+    fetchMock.mockRejectedValue(new TypeError('network error'));
+    jest.mocked(pauseWithAbortSignal).mockImplementation((_milliseconds, signal) => (
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+      })
+    ));
+
+    const request = fetchWithRetry('https://example.com', { signal: controller.signal }, { retries: 3 });
+    for (let i = 0; i < 10 && jest.mocked(pauseWithAbortSignal).mock.calls.length === 0; i++) {
+      await Promise.resolve();
+    }
+    expect(pauseWithAbortSignal).toHaveBeenCalledTimes(1);
+    controller.abort(reason);
+
+    await expect(request).rejects.toBe(reason);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('fetchWithRetry negative-verdict cache', () => {
   let fetchMock: jest.Mock;
 
@@ -96,6 +168,18 @@ describe('fetchWithRetry negative-verdict cache', () => {
 
     await expect(fetchWithRetry(BURN_URL)).rejects.toMatchObject({ statusCode: 400 });
     await expect(fetchWithRetry(OTHER_URL)).rejects.toMatchObject({ statusCode: 400 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not replay or populate the shared verdict cache for a signalled request', async () => {
+    setNegVerdictCacheFlag(true);
+    fetchMock.mockResolvedValue(mockResponse(400, { error: 'untrackable wallet address' }));
+
+    await expect(fetchWithRetry(BURN_URL)).rejects.toMatchObject({ statusCode: 400 });
+
+    const controller = new AbortController();
+    await expect(fetchWithRetry(BURN_URL, { signal: controller.signal })).rejects.toMatchObject({ statusCode: 400 });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

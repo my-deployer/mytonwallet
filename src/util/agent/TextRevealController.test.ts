@@ -179,6 +179,20 @@ describe('TextRevealController', () => {
     expect(Math.max(...getSteadyDeltas(snapshots))).toBeLessThanOrEqual(3);
     expect(snapshots.at(-1)).toBe(target.graphemeCount);
   });
+
+  it.each([60, 120])('paces a long completed response like streaming text at %i Hz', (refreshRate) => {
+    const target = buildRevealTarget('atomic semantic response '.repeat(80));
+    const controller = new TextRevealController(0, target);
+
+    controller.observeUpdate(target, 0);
+    controller.finalize(target, 0);
+    for (let frame = 1; frame <= refreshRate; frame++) {
+      controller.tick(frame / refreshRate);
+    }
+
+    expect(controller.getSnapshot().revealedGraphemeCount).toBeLessThanOrEqual(252);
+    expect(controller.getSnapshot().phase).toBe('draining');
+  });
 });
 
 describe('Agent text segmentation', () => {

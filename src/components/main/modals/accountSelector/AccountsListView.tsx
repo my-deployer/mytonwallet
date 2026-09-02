@@ -6,7 +6,6 @@ import type { AccountBalance } from '../../../../hooks/useAccountsBalances';
 import type { SortState } from '../../../../hooks/useSortableList';
 import type { AccountTab } from './constants';
 
-import { IS_FEATURE_LIMITED } from '../../../../config';
 import buildClassName from '../../../../util/buildClassName';
 import buildStyle from '../../../../util/buildStyle';
 import { REM } from '../../../../util/windowEnvironment';
@@ -137,7 +136,7 @@ function AccountsListView({
                 title={title}
                 balanceData={balanceData}
                 cardBackgroundNft={cardBackgroundNft}
-                withContextMenu={!IS_FEATURE_LIMITED && !isReorder}
+                withContextMenu={!isReorder}
                 isSensitiveDataHidden={isSensitiveDataHidden}
                 onClick={onSwitchAccount}
                 onRename={onRename}

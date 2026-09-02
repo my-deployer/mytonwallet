@@ -6,7 +6,7 @@ import type { ApiSwapAsset, ApiToken } from '../../api/types';
 import type { UserSwapToken, UserToken } from '../../global/types';
 
 import buildClassName from '../../util/buildClassName';
-import { unique } from '../../util/iteratees';
+import { compact, unique } from '../../util/iteratees';
 import getChainNetworkIcon from '../../util/swap/getChainNetworkIcon';
 import { getIsNativeToken } from '../../util/tokens';
 
@@ -19,6 +19,8 @@ import styles from './TransactionBanner.module.scss';
 interface OwnProps {
   tokenIn?: UserToken | UserSwapToken | ApiSwapAsset | ApiToken;
   imageUrl?: string | string[];
+  /** Keeps the NFT presentation when every `imageUrl` is empty: a placeholder instead of the `tokenIn` icon */
+  withNftPlaceholder?: boolean;
   text?: string | TeactNode[];
   withChainIcon?: boolean;
   tokenOut?: UserToken | UserSwapToken | ApiSwapAsset | ApiToken;
@@ -32,6 +34,7 @@ interface OwnProps {
 function TransactionBanner({
   tokenIn,
   imageUrl,
+  withNftPlaceholder,
   text,
   withChainIcon,
   tokenOut,
@@ -50,18 +53,20 @@ function TransactionBanner({
     className,
   );
 
-  const isNftTransaction = !!imageUrl;
-
   const imageUrls = useMemo(() => {
-    return unique(Array.isArray(imageUrl) ? imageUrl : [imageUrl]);
+    return compact(unique(Array.isArray(imageUrl) ? imageUrl : [imageUrl]));
   }, [imageUrl]);
+
+  const isNftTransaction = imageUrls.length > 0 || withNftPlaceholder;
 
   function renderNftIcon() {
     return (
       <div className={buildClassName(styles.nftIcon, Array.isArray(imageUrl) && imageUrl.length > 1 && styles.stacked)}>
-        {imageUrls.map((image) => (
+        {imageUrls.length ? imageUrls.map((image) => (
           <img src={image} alt="" key={image} className={styles.image} />
-        ))}
+        )) : (
+          <div className={buildClassName(styles.image, styles.imageNoData)} />
+        )}
         {withChainIcon && tokenIn?.chain && tokenIn.slug && !getIsNativeToken(tokenIn.slug) && (
           <img
             src={getChainNetworkIcon(tokenIn.chain)}

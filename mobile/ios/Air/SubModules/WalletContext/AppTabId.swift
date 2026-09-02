@@ -8,6 +8,7 @@ public struct AppTabId: Hashable, Sendable, Codable {
     }
 
     public static let wallet = AppTabId("wallet")
+    public static let market = AppTabId("market")
     public static let agent = AppTabId("agent")
     public static let explore = AppTabId("explore")
     public static let settings = AppTabId("settings")

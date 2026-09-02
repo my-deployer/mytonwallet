@@ -61,7 +61,7 @@ final class CrosschainFromWalletModel {
     var infoText: String {
         hasAddressError
             ? lang("Incorrect address.")
-            : lang("Please provide an address of your wallet in %blockchain% blockchain to receive bought tokens.", arg1: getChainName(buyingToken.type.chain))
+            : L10n.pleaseProvideAnAddressOfYourWalletInBlockchainBlockchainToReceiveBoughtTokens(blockchain: getChainName(buyingToken.type.chain))
     }
 
     var showsSuggestions: Bool {

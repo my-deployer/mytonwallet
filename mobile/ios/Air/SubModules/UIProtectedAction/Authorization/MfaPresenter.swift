@@ -61,6 +61,7 @@ enum MfaPresenter {
                                 accountId: account.id,
                                 request: request
                             )
+                            let canTransitionPresentation = mfaVC?.submissionDidResolve() == true
                             guard !session.resolveDeferredCancellationIfRetryAllowed(for: submission) else {
                                 return
                             }
@@ -68,7 +69,7 @@ enum MfaPresenter {
                             if shouldRemoveScreen(
                                 after: submission,
                                 completionBehavior: completionBehavior
-                            ), let mfaVC {
+                            ), canTransitionPresentation, let mfaVC {
                                 await remove(mfaVC, presentationStyle: presentationStyle)
                                 authorizationUI.clear()
                             }

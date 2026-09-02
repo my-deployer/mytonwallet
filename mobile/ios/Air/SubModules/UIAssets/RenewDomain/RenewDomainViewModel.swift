@@ -34,7 +34,7 @@ import Dependencies
     
     var subtitle: String? {
         guard let date = Calendar.current.date(byAdding: .year, value: 1, to: Date()) else { return nil }
-        return lang("Until %date%", arg1: date.formatted(.dateTime.year().month().day().locale(LocalizationSupport.shared.locale)))
+        return L10n.untilDateCapitalized(date: date.formatted(.dateTime.year().month().day().locale(LocalizationSupport.shared.locale)))
     }
     
     var fee: MFee? {

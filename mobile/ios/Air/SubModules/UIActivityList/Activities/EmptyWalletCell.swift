@@ -1,11 +1,16 @@
 import UIKit
 
-final class EmptyWalletCell: UICollectionViewCell {
+public final class EmptyWalletCell: UICollectionViewCell {
+    public enum Layout {
+        case standard
+        case compact
+    }
+
     private let containerView = UIView()
     private var walletCreatedView: WalletCreatedView?
     private var heightConstraint: NSLayoutConstraint!
 
-    override init(frame: CGRect) {
+    public override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.backgroundColor = .clear
         containerView.translatesAutoresizingMaskIntoConstraints = false
@@ -21,14 +26,18 @@ final class EmptyWalletCell: UICollectionViewCell {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { nil }
+    public required init?(coder: NSCoder) { nil }
 
-    override func prepareForReuse() {
+    public override func prepareForReuse() {
         super.prepareForReuse()
         walletCreatedView?.alpha = 0
     }
 
-    func set(animated: Bool) {
+    public func set(animated: Bool, layout: Layout = .standard) {
+        heightConstraint.constant = switch layout {
+        case .standard: 300
+        case .compact: 120
+        }
         showWalletCreatedView(animated: animated)
     }
 

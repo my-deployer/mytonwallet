@@ -85,6 +85,8 @@ final class AgentStreamingTextView: UIView {
         let isStreaming: Bool
         let hadStreaming: Bool
         let rendersMarkdown: Bool
+        let markdownProfile: AgentMessageMarkdownProfile
+        let baseFont: UIFont
         let allowsLinks: Bool
     }
 
@@ -190,6 +192,8 @@ final class AgentStreamingTextView: UIView {
         isStreaming: Bool,
         hadStreaming: Bool,
         rendersMarkdown: Bool,
+        markdownProfile: AgentMessageMarkdownProfile = .legacy,
+        baseFont: UIFont = AgentMessageTextRenderer.baseFont,
         allowsLinks: Bool,
         layoutMaxWidth: CGFloat,
         streamingIdentity: String? = nil
@@ -211,6 +215,8 @@ final class AgentStreamingTextView: UIView {
             isStreaming: isStreaming,
             hadStreaming: hadStreaming,
             rendersMarkdown: rendersMarkdown,
+            markdownProfile: markdownProfile,
+            baseFont: baseFont,
             allowsLinks: allowsLinks
         )
         self.layoutMaxWidth = max(AgentStreamingTextMetrics.minimumLayoutWidth, layoutMaxWidth)
@@ -356,7 +362,9 @@ final class AgentStreamingTextView: UIView {
             configuration.text,
             textColor: configuration.textColor.resolvedColor(with: traitCollection),
             rendersMarkdown: configuration.rendersMarkdown,
-            detectsLinks: configuration.allowsLinks
+            detectsLinks: configuration.allowsLinks,
+            markdownProfile: configuration.markdownProfile,
+            baseFont: configuration.baseFont
         )
 
         if configuration.isStreaming {

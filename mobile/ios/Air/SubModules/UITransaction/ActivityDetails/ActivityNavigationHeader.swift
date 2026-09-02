@@ -102,7 +102,7 @@ extension DisplayStatus {
         case .expired: lang("Expired")
         case .refunded: lang("Refunded")
         case .failed: lang("Failed")
-        case .hold: lang("Hold")
+        case .hold: lang("On Hold")
         case .waitingForPayment: lang("Waiting For Payment")
         }
     }

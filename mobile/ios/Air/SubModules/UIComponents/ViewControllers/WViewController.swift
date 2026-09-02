@@ -134,7 +134,11 @@ open class WViewController: UIViewController {
     }
     
     @discardableResult
-    public func addCustomNavigationBarBackground(color: UIColor?, navItemTransparent: Bool = true) -> UIView {
+    public func addCustomNavigationBarBackground(
+        color: UIColor?,
+        navItemTransparent: Bool = true,
+        inside scrollView: UIScrollView? = nil
+    ) -> UIView {
         
         if navItemTransparent {
             configureNavigationItemWithTransparentBackground()
@@ -160,13 +164,23 @@ open class WViewController: UIViewController {
             maxEdgeSize: maxEdgeSize
         )
         customBackground.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(customBackground)
-        NSLayoutConstraint.activate([
-            customBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            customBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            customBackground.topAnchor.constraint(equalTo: view.topAnchor, constant: -topOverscan),
-            customBackground.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: bottomExtension),
-        ])
+        if let scrollView {
+            scrollView.addSubview(customBackground)
+            NSLayoutConstraint.activate([
+                customBackground.leadingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.leadingAnchor),
+                customBackground.trailingAnchor.constraint(equalTo: scrollView.frameLayoutGuide.trailingAnchor),
+                customBackground.topAnchor.constraint(equalTo: scrollView.frameLayoutGuide.topAnchor, constant: -topOverscan),
+                customBackground.bottomAnchor.constraint(equalTo: scrollView.safeAreaLayoutGuide.topAnchor, constant: bottomExtension),
+            ])
+        } else {
+            view.addSubview(customBackground)
+            NSLayoutConstraint.activate([
+                customBackground.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                customBackground.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                customBackground.topAnchor.constraint(equalTo: view.topAnchor, constant: -topOverscan),
+                customBackground.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: bottomExtension),
+            ])
+        }
         return customBackground
     }
     

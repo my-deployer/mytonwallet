@@ -119,72 +119,13 @@ struct WalletConnectInjectionScript {
                             version: '1.0.0',
                             connect: async (input) => {
                                 try {
-                                    const id = ++this.lastGeneratedId;
                                     if (input && input.silent) {
-                                        const response = await this.request('reconnect', [id]);
-                                        if (!response.success) {
-                                            return { accounts: [] };
-                                        }
-                                        const standardWalletAddresses = response.session.chains.map((e) => ({
-                                            address: e.address,
-                                            publicKey: new Uint8Array(decodeBase58(e.address)),
-                                            chains: [`${e.chain}:${e.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
-                                            features: Object.keys(this.features),
-                                        }));
-                                        this.accounts = standardWalletAddresses;
+                                        return this.connectSilent();
+                                    }
+                                    if (this.accounts.length) {
                                         return { accounts: this.accounts };
                                     }
-                                    const metadata = {
-                                        url: window.origin,
-                                        name: (document.querySelector('meta[property*="og:title"]') || {}).content || document.title,
-                                        description: '',
-                                        icons: [(document.querySelector('link[rel*="icon"]') || {}).href || `${window.location.origin}/favicon.ico` || ''],
-                                    };
-                                    const payload = {
-                                        id,
-                                        params: {
-                                            id,
-                                            expiryTimestamp: 0,
-                                            relays: [],
-                                            proposer: {
-                                                publicKey: '',
-                                                metadata,
-                                            },
-                                            requiredNamespaces: {},
-                                            optionalNamespaces: {
-                                                solana: {
-                                                    methods: [],
-                                                    events: [],
-                                                },
-                                            },
-                                            pairingTopic: '',
-                                        },
-                                    };
-                                    const unifiedPayload = {
-                                        protocolType: 'walletConnect',
-                                        transport: 'inAppBrowser',
-                                        protocolData: payload,
-                                        permissions: {
-                                            isPasswordRequired: false,
-                                            isAddressRequired: false,
-                                        },
-                                        requestedChains: [{
-                                            chain: 'solana',
-                                            network: 'mainnet',
-                                        }],
-                                    };
-                                    const response = await this.request('connect', [unifiedPayload]);
-                                    if (!response.success) {
-                                        return { accounts: [] };
-                                    }
-                                    const standardWalletAddresses = response.session.chains.map((e) => ({
-                                        address: e.address,
-                                        publicKey: new Uint8Array(decodeBase58(e.address)),
-                                        chains: [`${e.chain}:${e.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
-                                        features: Object.keys(this.features),
-                                    }));
-                                    this.accounts = standardWalletAddresses;
-                                    return { accounts: this.accounts };
+                                    return this.connectWithModal();
                                 } catch (error) {
                                     return { accounts: [] };
                                 }
@@ -317,6 +258,76 @@ struct WalletConnectInjectionScript {
                             this.onDisconnect();
                         }
                     });
+                }
+
+                mapSessionChainsToAccounts(chains) {
+                    return chains
+                        .filter((chain) => chain.chain === 'solana')
+                        .map((chain) => ({
+                            address: chain.address,
+                            publicKey: new Uint8Array(decodeBase58(chain.address)),
+                            chains: [`${chain.chain}:${chain.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
+                            features: Object.keys(this.features),
+                        }));
+                }
+
+                async connectSilent() {
+                    const id = ++this.lastGeneratedId;
+                    const response = await this.request('reconnect', [id]);
+                    if (!response.success) {
+                        return { accounts: [] };
+                    }
+                    this.accounts = this.mapSessionChainsToAccounts(response.session.chains);
+                    return { accounts: this.accounts };
+                }
+
+                async connectWithModal() {
+                    const id = ++this.lastGeneratedId;
+                    const metadata = {
+                        url: window.origin,
+                        name: (document.querySelector('meta[property*="og:title"]') || {}).content || document.title,
+                        description: '',
+                        icons: [(document.querySelector('link[rel*="icon"]') || {}).href || `${window.location.origin}/favicon.ico` || ''],
+                    };
+                    const payload = {
+                        id,
+                        params: {
+                            id,
+                            expiryTimestamp: 0,
+                            relays: [],
+                            proposer: {
+                                publicKey: '',
+                                metadata,
+                            },
+                            requiredNamespaces: {},
+                            optionalNamespaces: {
+                                solana: {
+                                    methods: [],
+                                    events: [],
+                                },
+                            },
+                            pairingTopic: '',
+                        },
+                    };
+                    const unifiedPayload = {
+                        protocolType: 'walletConnect',
+                        transport: 'inAppBrowser',
+                        protocolData: payload,
+                        permissions: {
+                            isPasswordRequired: false,
+                            isAddressRequired: false,
+                        },
+                        requestedChains: [{
+                            chain: 'solana',
+                            network: 'mainnet',
+                        }],
+                    };
+                    const response = await this.request('connect', [unifiedPayload]);
+                    if (!response.success) {
+                        return { accounts: [] };
+                    }
+                    this.accounts = this.mapSessionChainsToAccounts(response.session.chains);
+                    return { accounts: this.accounts };
                 }
 
                 onDisconnect() {

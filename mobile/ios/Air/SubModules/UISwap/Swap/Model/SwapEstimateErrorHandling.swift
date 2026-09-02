@@ -16,3 +16,19 @@ func isSwapEstimateRateLimited(_ error: Error) -> Bool {
     }
     return message.contains("too many requests") || (message.contains("request") && message.contains("limit"))
 }
+
+func swapEstimateIssue(from error: Error) -> SwapIssue {
+    guard let message = swapEstimateBackendMessage(from: error) else {
+        return .unexpectedEstimateError
+    }
+    switch message.trimmingCharacters(in: .whitespacesAndNewlines) {
+    case "Insufficient liquidity":
+        return .insufficientLiquidity
+    case "Tokens must be different", "Asset not found", "Pair not found":
+        return .invalidPair
+    case "Too small amount":
+        return .tooSmallAmount
+    default:
+        return .unexpectedEstimateError
+    }
+}

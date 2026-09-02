@@ -69,13 +69,11 @@ struct AboutView: View {
     
     var resources: some View {
         InsetSection(dividersInset: 46) {
-            if !IS_GRAM_WALLET {
-                Item(
-                    icon: "PlayIcon",
-                    text: lang("Watch Video about Features"),
-                    onTap: onWatch
-                )
-            }
+            Item(
+                icon: "PlayIcon",
+                text: lang("Watch Video about Features"),
+                onTap: onWatch
+            )
             Item(
                 icon: "FireIcon",
                 text: lang("Enjoy Monthly Updates in Blog"),

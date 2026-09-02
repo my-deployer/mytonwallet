@@ -4,7 +4,7 @@ import UIComponents
 import WalletCore
 import WalletContext
 
-enum MfaConfirmationCancellationReason {
+enum MfaConfirmationCancellationReason: Equatable {
     case dismissed
     case cancelButton
     case closeButton
@@ -16,6 +16,46 @@ enum MfaConfirmationEvent {
     case cancelled(MfaConfirmationCancellationReason)
 }
 
+enum MfaConfirmationCloseBehavior: Equatable {
+    case cancel
+    case dismissInBackground
+    case ignore
+}
+
+struct MfaConfirmationPresentationState {
+    private enum Phase {
+        case awaitingConfirmation
+        case submissionInFlight
+        case submissionResolved
+    }
+
+    private var phase = Phase.awaitingConfirmation
+
+    var closeBehavior: MfaConfirmationCloseBehavior {
+        switch phase {
+        case .awaitingConfirmation:
+            .cancel
+        case .submissionInFlight:
+            .dismissInBackground
+        case .submissionResolved:
+            .ignore
+        }
+    }
+
+    var shouldShowBackgroundToastAfterDismissal: Bool {
+        phase == .submissionInFlight
+    }
+
+    mutating func beginSubmission() {
+        guard phase == .awaitingConfirmation else { return }
+        phase = .submissionInFlight
+    }
+
+    mutating func resolveSubmission() {
+        phase = .submissionResolved
+    }
+}
+
 @MainActor
 public final class MfaConfirmationVC: WViewController {
     private let account: MAccount
@@ -23,7 +63,8 @@ public final class MfaConfirmationVC: WViewController {
     private let titleText: String
     private let compactRepresentation: AnyView
     private let prefersNavigationTitleWithCustomHeader: Bool
-    private var didComplete = false
+    private var presentationState = MfaConfirmationPresentationState()
+    private var didEmitCancellation = false
     private var isLeaving = false
     private weak var completionNavigationController: UINavigationController?
     private var wasModalInPresentation = false
@@ -87,7 +128,7 @@ public final class MfaConfirmationVC: WViewController {
 
     public override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if !didComplete {
+        if presentationState.closeBehavior != .ignore {
             isLeaving = true
         }
     }
@@ -99,23 +140,28 @@ public final class MfaConfirmationVC: WViewController {
             completionNavigationController.isModalInPresentation = wasModalInPresentation
             self.completionNavigationController = nil
         }
-        if !didComplete {
-            cancel(reason: .dismissed, dismissIfNeeded: false)
+        if presentationState.closeBehavior != .ignore, !didEmitCancellation {
+            if presentationState.closeBehavior == .cancel {
+                presentationState.resolveSubmission()
+                model.cancel()
+            }
+            emitCancellation(.dismissed)
         }
     }
 
     private func handleModelEvent(_ event: MfaConfirmationModelEvent) {
-        guard !didComplete, !isLeaving else { return }
+        guard presentationState.closeBehavior == .cancel, !isLeaving else { return }
         switch event {
         case .confirmed(let request):
-            didComplete = true
-            lockDismissalForCompletion()
+            presentationState.beginSubmission()
+            lockInteractiveDismissalForSubmission()
             Haptics.play(.success)
             onEvent?(.confirmed(request))
 
         case .failed(let error):
-            didComplete = true
-            lockDismissalForCompletion()
+            presentationState.resolveSubmission()
+            lockInteractiveDismissalForSubmission()
+            navigationItem.rightBarButtonItem?.isEnabled = false
             if let onEvent {
                 onEvent(.failed(error))
             } else {
@@ -129,29 +175,50 @@ public final class MfaConfirmationVC: WViewController {
         UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
 
-    private func lockDismissalForCompletion() {
+    private func lockInteractiveDismissalForSubmission() {
         completionNavigationController = navigationController
         wasModalInPresentation = navigationController?.isModalInPresentation ?? false
         wasBackSwipeToDismissAllowed = navigationController?.isBackSwipeToDismissAllowed ?? true
         completionNavigationController?.allowBackSwipeToDismiss(false)
         completionNavigationController?.isModalInPresentation = true
+    }
+
+    @discardableResult
+    func submissionDidResolve() -> Bool {
+        guard presentationState.closeBehavior == .dismissInBackground else { return false }
+        presentationState.resolveSubmission()
         navigationItem.rightBarButtonItem?.isEnabled = false
+        return !didEmitCancellation && !isLeaving
     }
 
     private func cancel(
         reason: MfaConfirmationCancellationReason,
         dismissIfNeeded: Bool = true
     ) {
-        guard !didComplete else { return }
-        didComplete = true
-        model.cancel()
+        let closeBehavior = presentationState.closeBehavior
+        switch closeBehavior {
+        case .cancel:
+            presentationState.resolveSubmission()
+            model.cancel()
+        case .dismissInBackground:
+            guard reason == .closeButton else { return }
+        case .ignore:
+            return
+        }
+        emitCancellation(reason)
         if dismissIfNeeded {
             switch reason {
             case .closeButton:
+                let completion = { [self] in
+                    guard presentationState.shouldShowBackgroundToastAfterDismissal else {
+                        return
+                    }
+                    AppActions.showToast(message: lang("$action_will_continue_in_background"))
+                }
                 if let navigationController {
-                    navigationController.dismiss(animated: true)
+                    navigationController.dismiss(animated: true, completion: completion)
                 } else {
-                    dismiss(animated: true)
+                    dismiss(animated: true, completion: completion)
                 }
             case .dismissed, .cancelButton:
                 if canGoBack {
@@ -161,6 +228,11 @@ public final class MfaConfirmationVC: WViewController {
                 }
             }
         }
+    }
+
+    private func emitCancellation(_ reason: MfaConfirmationCancellationReason) {
+        guard !didEmitCancellation else { return }
+        didEmitCancellation = true
         onEvent?(.cancelled(reason))
     }
 }

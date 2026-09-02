@@ -12,8 +12,11 @@ import kotlin.math.roundToInt
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 
-class RoundProgressDrawable(private val sizeDp: Float = 16f, strokeWidthDp: Float = 3f) :
-    Drawable() {
+class RoundProgressDrawable(
+    private val sizeDp: Float = 16f,
+    strokeWidthDp: Float = 3f,
+    private val cycleDurationMs: Long = AnimationConstants.SLOW_ANIMATION
+) : Drawable() {
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Style.STROKE
         strokeWidth = strokeWidthDp.dp
@@ -34,8 +37,8 @@ class RoundProgressDrawable(private val sizeDp: Float = 16f, strokeWidthDp: Floa
         val t = SystemClock.uptimeMillis()
         val dt = min(t - lastFrameTime, 100)
 
-        angle += (dt / AnimationConstants.SLOW_ANIMATION.toFloat() * 360f) % 360f
-        angle2 += (dt / AnimationConstants.SLOW_ANIMATION.toFloat() * 180f * dir)
+        angle += (dt / cycleDurationMs.toFloat() * 360f) % 360f
+        angle2 += (dt / cycleDurationMs.toFloat() * 180f * dir)
         if (angle2 >= 300) {
             angle2 = 300f
             dir = -1

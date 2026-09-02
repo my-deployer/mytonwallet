@@ -49,15 +49,22 @@ describe('claimAttribution', () => {
 });
 
 describe('isAllowedChannel', () => {
-  it('accepts provisioned channels and rejects everything else', () => {
+  it('accepts any well-formed channel slug (format guard, not a fixed allowlist)', () => {
     expect(isAllowedChannel('wc')).toBe(true);
     expect(isAllowedChannel('probe_web')).toBe(true);
     expect(isAllowedChannel('probe_tg')).toBe(true);
     expect(isAllowedChannel('probe_x')).toBe(true);
     expect(isAllowedChannel('probe_yt')).toBe(true);
-    expect(isAllowedChannel('youtube')).toBe(false); // a live iOS campaign, not a claim channel
+    expect(isAllowedChannel('organic')).toBe(true); // Android referrer fallback bucket
+    expect(isAllowedChannel('app_share')).toBe(true); // in-app install link tag
+    expect(isAllowedChannel('youtube')).toBe(true); // a live campaign bucket
+  });
+
+  it('rejects malformed input so a raw untrusted string never reaches the POST', () => {
     expect(isAllowedChannel('WC')).toBe(false);
     expect(isAllowedChannel('')).toBe(false);
+    expect(isAllowedChannel('BAD!')).toBe(false);
+    expect(isAllowedChannel('a'.repeat(65))).toBe(false); // over the 64-char bound
   });
 });
 
@@ -79,10 +86,10 @@ describe('claimInstallAttribution', () => {
     expect(storage._map.get('attributionClaimed')).toBe('1');
   });
 
-  it('disallowed channel is neither persisted nor POSTed', async () => {
+  it('malformed channel is neither persisted nor POSTed', async () => {
     const storage = makeStorage();
 
-    await claimInstallAttribution(argsWith('youtube'), storage);
+    await claimInstallAttribution(argsWith('BAD!'), storage);
 
     expect(storage._map.get('attributionChannel')).toBeUndefined();
     expect(mockCallBackendPost).not.toHaveBeenCalled();
@@ -118,7 +125,7 @@ describe('claimInstallAttribution', () => {
     expect(mockCallBackendPost).not.toHaveBeenCalled();
   });
 
-  it('organic (no channel) does nothing', async () => {
+  it('no channel (undefined) does nothing', async () => {
     const storage = makeStorage();
 
     await claimInstallAttribution(argsWith(undefined), storage);
@@ -127,7 +134,7 @@ describe('claimInstallAttribution', () => {
   });
 
   it('re-validates a stale or tampered persisted channel and never POSTs it', async () => {
-    const storage = makeStorage({ attributionChannel: 'youtube' }); // leftover from an older build
+    const storage = makeStorage({ attributionChannel: 'BAD!' }); // tampered/corrupted leftover
 
     await claimInstallAttribution(argsWith(undefined), storage);
 
@@ -182,7 +189,7 @@ describe('setInstallChannel (android)', () => {
     mockGetEnvironment.mockReturnValue({ isIosApp: false, isAndroidApp: false, isElectron: false });
   });
 
-  it('setInstallChannel claims an allowlisted channel on android', async () => {
+  it('setInstallChannel claims a well-formed channel on android', async () => {
     mockCallBackendPost.mockResolvedValue({ ok: true });
     const storage = makeStorage();
     await setInstallChannel('wc', storage);
@@ -190,9 +197,29 @@ describe('setInstallChannel (android)', () => {
     expect(storage._map.get('attributionClaimed')).toBe('1');
   });
 
-  it('setInstallChannel drops a disallowed channel', async () => {
+  it('setInstallChannel claims the organic referrer fallback', async () => {
+    mockCallBackendPost.mockResolvedValue({ ok: true });
     const storage = makeStorage();
-    await setInstallChannel('youtube', storage);
+    await setInstallChannel('organic', storage);
+    expect(mockCallBackendPost).toHaveBeenCalledWith(
+      '/attribution/claim', { channel: 'organic', platform: 'android' },
+    );
+    expect(storage._map.get('attributionClaimed')).toBe('1');
+  });
+
+  it('setInstallChannel claims the app_share tag', async () => {
+    mockCallBackendPost.mockResolvedValue({ ok: true });
+    const storage = makeStorage();
+    await setInstallChannel('app_share', storage);
+    expect(mockCallBackendPost).toHaveBeenCalledWith(
+      '/attribution/claim', { channel: 'app_share', platform: 'android' },
+    );
+    expect(storage._map.get('attributionClaimed')).toBe('1');
+  });
+
+  it('setInstallChannel drops a malformed channel', async () => {
+    const storage = makeStorage();
+    await setInstallChannel('BAD!', storage);
     expect(mockCallBackendPost).not.toHaveBeenCalled();
   });
 });

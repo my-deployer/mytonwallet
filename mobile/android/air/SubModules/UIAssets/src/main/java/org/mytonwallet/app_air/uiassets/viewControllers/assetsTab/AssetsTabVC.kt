@@ -28,6 +28,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
+import org.mytonwallet.app_air.walletcontext.utils.ensureMainThread
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
 import org.mytonwallet.app_air.walletcore.models.NftCollection
@@ -615,26 +616,28 @@ class AssetsTabVC(
                 NftStore.getHasHiddenNft(showingAccountId) ||
                     NftStore.nftData?.blacklistedNftAddresses?.isNotEmpty() == true
             val showCollectionsMenu = !NftStore.getCollections().isEmpty() || hiddenNFTsExist
-            segmentedController.updateOnMenuPressed(
-                identifier = TAB_COLLECTIBLES,
-                onMenuPressed = if (showCollectionsMenu) {
-                    { v ->
-                        CollectionsMenuHelpers.presentCollectionsMenuOn(
-                            showingAccountId,
-                            v,
-                            navigationController!!,
-                            onReorderTapped = {
-                                openReordering(collectiblesVC)
-                            },
-                            onSelectTapped = {
-                                openSelectionMode(collectiblesVC)
-                            }
-                        )
+            ensureMainThread {
+                segmentedController.updateOnMenuPressed(
+                    identifier = TAB_COLLECTIBLES,
+                    onMenuPressed = if (showCollectionsMenu) {
+                        { v ->
+                            CollectionsMenuHelpers.presentCollectionsMenuOn(
+                                showingAccountId,
+                                v,
+                                navigationController!!,
+                                onReorderTapped = {
+                                    openReordering(collectiblesVC)
+                                },
+                                onSelectTapped = {
+                                    openSelectionMode(collectiblesVC)
+                                }
+                            )
+                        }
+                    } else {
+                        null
                     }
-                } else {
-                    null
-                }
-            )
+                )
+            }
         }
     }
 

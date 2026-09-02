@@ -1,6 +1,6 @@
 import { Address, Dictionary } from '@ton/core';
 import { beginCell, Cell, storeStateInit } from '@ton/core';
-import type { WalletContractV5R1 } from '@ton/ton';
+import type { WalletContractV5R1 } from '@ton/ton/dist/wallets/WalletContractV5R1';
 
 import type {
   ApiBalanceBySlug } from '../../types';
@@ -16,6 +16,7 @@ import {
 } from '../../types';
 
 import { DEFAULT_WALLET_VERSION, TONCOIN } from '../../../config';
+import { raceWithAbortSignal } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { extractKey, findLast } from '../../../util/iteratees';
 import withCacheAsync from '../../../util/withCacheAsync';
@@ -41,10 +42,12 @@ export const isAddressInitialized = withCacheAsync(
   },
 );
 
-export const isActiveSmartContract = withCacheAsync(async (network: ApiNetwork, address: string) => {
-  const { isInitialized, version } = await getWalletInfo(network, address);
+export const isActiveSmartContract = withCacheAsync(fetchIsActiveSmartContract, (value) => value !== undefined);
+
+export async function fetchIsActiveSmartContract(network: ApiNetwork, address: string, signal?: AbortSignal) {
+  const { isInitialized, version } = await getWalletInfo(network, address, signal);
   return isInitialized ? !version : undefined;
-}, (value) => value !== undefined);
+}
 
 export function publicKeyToAddress(
   network: ApiNetwork,
@@ -94,22 +97,28 @@ export function buildWallet(
   });
 }
 
-export async function getWalletInfo(network: ApiNetwork, walletOrAddress: TonWallet | string): Promise<ApiWalletInfo> {
+export async function getWalletInfo(
+  network: ApiNetwork,
+  walletOrAddress: TonWallet | string,
+  signal?: AbortSignal,
+): Promise<ApiWalletInfo> {
   const address = typeof walletOrAddress === 'string'
     ? walletOrAddress
     : toBase64Address(walletOrAddress.address, undefined, network);
 
-  return (await getWalletInfos(network, [address]))[address];
+  return (await getWalletInfos(network, [address], signal))[address];
 }
 
 export async function fetchBalances(
   network: ApiNetwork,
   address: string,
   sendUpdateTokens: NoneToVoidFunction,
+  options?: { signal?: AbortSignal },
 ): Promise<ApiBalanceBySlug> {
+  const { signal } = options ?? {};
   const [{ balance: tonBalance }, tokenBalances] = await Promise.all([
-    getWalletInfo(network, address),
-    loadTokenBalances(network, address, sendUpdateTokens),
+    getWalletInfo(network, address, signal),
+    loadTokenBalances(network, address, sendUpdateTokens, signal),
   ]);
 
   return {
@@ -118,7 +127,7 @@ export async function fetchBalances(
   };
 }
 
-export async function getContractInfo(network: ApiNetwork, address: string): Promise<{
+export async function getContractInfo(network: ApiNetwork, address: string, signal?: AbortSignal): Promise<{
   isInitialized: boolean;
   isSwapAllowed?: boolean;
   isWallet?: boolean;
@@ -126,7 +135,7 @@ export async function getContractInfo(network: ApiNetwork, address: string): Pro
   codeHash?: string;
   codeHashOld?: string;
 }> {
-  const data = await getTonClient(network).getAddressInfo(address);
+  const data = await raceWithAbortSignal(() => getTonClient(network).getAddressInfo(address), signal);
 
   const { code, state } = data;
 
@@ -152,8 +161,12 @@ export async function getContractInfo(network: ApiNetwork, address: string): Pro
   };
 }
 
-export async function getWalletBalance(network: ApiNetwork, walletOrAddress: TonWallet | string): Promise<bigint> {
-  return (await getWalletInfo(network, walletOrAddress)).balance;
+export async function getWalletBalance(
+  network: ApiNetwork,
+  walletOrAddress: TonWallet | string,
+  signal?: AbortSignal,
+): Promise<bigint> {
+  return (await getWalletInfo(network, walletOrAddress, signal)).balance;
 }
 
 export async function getWalletSeqno(network: ApiNetwork, walletOrAddress: TonWallet | string): Promise<number> {
@@ -386,10 +399,17 @@ export function getTonWallet(tonWallet: ApiTonWallet) {
   return buildWallet(publicKey, version);
 }
 
-export async function getW5WalletExtensionAddresses(network: ApiNetwork, walletAddress: string): Promise<string[]> {
+export async function getW5WalletExtensionAddresses(
+  network: ApiNetwork,
+  walletAddress: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
   const client = getTonClient(network);
 
-  const { stack, exit_code } = await client.runMethodWithError(Address.parse(walletAddress), 'get_extensions');
+  const { stack, exit_code } = await raceWithAbortSignal(
+    () => client.runMethodWithError(Address.parse(walletAddress), 'get_extensions'),
+    signal,
+  );
 
   if (exit_code !== 0) return [];
 

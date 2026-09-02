@@ -843,9 +843,52 @@ export async function processSelfDeeplink(deeplink: string, isFromInAppBrowser =
       case DeeplinkCommand.Stake: {
         if (isTestnet) {
           actions.showError({ error: 'Staking is not supported in Testnet.' });
-        } else {
-          actions.startStaking();
+          return true;
         }
+
+        const productId = searchParams.get('product') ?? undefined;
+        const tokenSlug = searchParams.get('asset') ?? undefined;
+        const amountValue = searchParams.get('amount') ?? undefined;
+        if (!productId && !tokenSlug && !amountValue) {
+          actions.startStaking();
+          return true;
+        }
+        const token = tokenSlug ? global.tokenInfo.bySlug[tokenSlug] : undefined;
+        if (
+          !productId
+          || !tokenSlug
+          || !token
+          || !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/u.test(productId)
+        ) {
+          actions.showError({ error: '$unsupported_deeplink_parameter' });
+          return true;
+        }
+
+        let initialAmount: bigint | 'all' | undefined;
+        if (amountValue === 'all') {
+          initialAmount = 'all';
+        } else if (amountValue !== undefined) {
+          const match = /^(?:0|[1-9]\d*)(?:\.(\d+))?$/u.exec(amountValue);
+          if (!match || (match[1]?.length ?? 0) > token.decimals) {
+            actions.showError({ error: '$unsupported_deeplink_parameter' });
+            return true;
+          }
+          try {
+            initialAmount = fromDecimal(amountValue, token.decimals);
+          } catch {
+            actions.showError({ error: '$unsupported_deeplink_parameter' });
+            return true;
+          }
+          if (initialAmount <= 0n) {
+            actions.showError({ error: '$unsupported_deeplink_parameter' });
+            return true;
+          }
+        }
+        actions.startStaking({
+          stakingId: productId,
+          tokenSlug,
+          ...(initialAmount !== undefined ? { initialAmount } : {}),
+        });
         return true;
       }
 
@@ -1052,7 +1095,7 @@ export async function processSelfDeeplink(deeplink: string, isFromInAppBrowser =
         const { network } = ensureNetwork(searchParams, currentNetwork);
         const shouldOpenViewAccount = IS_EXPLORER || network !== currentNetwork;
 
-        const nft = await callApi('fetchNftByAddress', network, nftAddress);
+        const nft = await callApi('fetchNftByAddress', 'ton', network, nftAddress);
 
         if (!nft) {
           actions.showError({ error: '$nft_not_found' });

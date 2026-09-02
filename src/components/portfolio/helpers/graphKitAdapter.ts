@@ -184,7 +184,7 @@ function getDisplayName(lang: LangFn, dataset: ApiPortfolioHistoryDataset) {
   const contract = dataset.contractAddress.trim();
   if (contract) return contract;
 
-  return lang('Asset %1$@').replace('%1$@', String(dataset.assetId));
+  return lang('Asset %asset%', { asset: String(dataset.assetId) }) as string;
 }
 
 function buildDateLocale(lang: LangFn): LovelyChartParams['dateLocale'] {

@@ -20,8 +20,11 @@ export async function fetchAndParseTrace(
   walletAddress: string,
   msgHashNormalized: string,
   isActionPending?: boolean,
+  signal?: AbortSignal,
 ): Promise<ParsedTrace | undefined> {
-  const { trace, addressBook, metadata } = await fetchTrace({ network, msgHashNormalized, isActionPending });
+  const {
+    trace, addressBook, metadata,
+  } = await fetchTrace({ network, msgHashNormalized, isActionPending, signal });
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
 
   return trace && parseTrace({

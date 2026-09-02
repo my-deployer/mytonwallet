@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 import { Buffer } from 'buffer/';
 import { webcrypto as crypto } from 'node:crypto';
-import { CompressionStream, DecompressionStream } from 'node:stream/web';
+import { CompressionStream, DecompressionStream, ReadableStream } from 'node:stream/web';
 import { TextDecoder, TextEncoder } from 'node:util';
 
 jest.mock('../src/lib/rlottie/RLottie');
@@ -52,6 +52,21 @@ Object.defineProperty(global, 'IntersectionObserver', {
   },
 });
 
+Object.defineProperty(global, 'ResizeObserver', {
+  writable: true,
+  configurable: true,
+  value: class {
+    observe() {
+    }
+
+    unobserve() {
+    }
+
+    disconnect() {
+    }
+  },
+});
+
 Object.defineProperty(global, 'indexedDB', {
   writable: true,
   configurable: true,
@@ -68,6 +83,7 @@ Object.assign(global, {
   TextDecoder,
   CompressionStream,
   DecompressionStream,
+  ReadableStream,
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   Uint8Array: Object.getPrototypeOf(Object.getPrototypeOf(require('node:buffer').Buffer.from(''))).constructor, // The JSDOM's implementation isn't compatible with 'node:crypto'
 });

@@ -29,7 +29,7 @@ final class AgentScrollToBottomButton: UIButton {
         layer.shadowOffset = CGSize(width: 0, height: 4)
     }
 
-    func setVisible(_ isVisible: Bool, animated: Bool) {
+    func setButtonVisible(_ isVisible: Bool, animated: Bool) {
         guard isVisible != isButtonVisible else { return }
         isButtonVisible = isVisible
 

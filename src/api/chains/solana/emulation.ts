@@ -228,7 +228,7 @@ export function isComplexTransaction(
   return isComplex;
 }
 
-export async function emulateTransaction(transaction: string, network: ApiNetwork) {
+export async function emulateTransaction(transaction: string, network: ApiNetwork, signal?: AbortSignal) {
   const options = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -250,7 +250,7 @@ export async function emulateTransaction(transaction: string, network: ApiNetwor
   const response = await fetchJson<SolanaTransactionEmulationResultRaw>(
     NETWORK_CONFIG[network].rpcUrl,
     undefined,
-    options,
+    { ...options, signal },
   );
 
   return response.result.value;

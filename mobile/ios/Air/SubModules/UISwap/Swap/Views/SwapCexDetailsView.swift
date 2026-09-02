@@ -57,34 +57,14 @@ struct SwapCexDetailsView: View {
     
     @ViewBuilder
     var pricePerCoinRow: some View {
-        
-        if let exchangeRate = exchangeRate, displayEstimate != nil {
-            InsetCell {
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 0) {
-                        Text(lang("Exchange Rate"))
-                            .foregroundStyle(Color.air.secondaryLabel)
-                        Spacer(minLength: 4)
-                        let priceAmount = DecimalAmount.fromDouble(exchangeRate.price, exchangeRate.fromToken)
-                        Text("\(exchangeRate.toToken.symbol) ≈ \(priceAmount.formatted(.compact))")
-                            .textStyle(
-                                .body,
-                                content: .technical,
-                                scaling: .dynamic
-                            )
-                    }
-                }
-            }
-        }
+        SwapExchangeRateRow(exchangeRate: exchangeRate)
     }
     
     @ViewBuilder
     var blockchainFeeRow: some View {
         let sellingToken = inputModel.sellingToken
         if let feeDetails, let nativeToken = TokenStore.tokens[sellingToken.nativeTokenSlug] {
-            InsetDetailCell {
-                SwapBlockchainFeeLabel(nativeToken: nativeToken, feeDetails: feeDetails)
-            } value: {
+            SwapBlockchainFeeRow(nativeToken: nativeToken, feeDetails: feeDetails) {
                 FeeView(
                     token: sellingToken,
                     nativeToken: nativeToken,

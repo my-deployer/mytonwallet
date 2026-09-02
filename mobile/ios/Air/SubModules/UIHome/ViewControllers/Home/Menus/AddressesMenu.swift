@@ -143,13 +143,13 @@ private func makeAddressDetailsPage(row: AddressesMenuContentRow, domain: String
             title: domain,
             subtitle: lang("Domain"),
             value: domain,
-            toastMessage: lang("%chain% Domain Copied", arg1: row.chain.title)
+            toastMessage: L10n.chainDomainCopied(chain: row.chain.title)
         ),
         makeAddressValueRowItem(
             title: formatStartEndAddress(row.accountChain.address, prefix: 6, suffix: 6),
             subtitle: lang("Address"),
             value: row.accountChain.address,
-            toastMessage: lang("%chain% Address Copied", arg1: row.chain.title)
+            toastMessage: L10n.chainAddressCopied(chain: row.chain.title)
         ),
     ])
 }
@@ -398,9 +398,9 @@ private final class AddressValueMenuRowView: UIView {
 @MainActor
 private func copyAddress(row: AddressesMenuContentRow) {
     let message = if row.accountChain.domain != nil {
-        lang("%chain% Domain Copied", arg1: row.chain.title)
+        L10n.chainDomainCopied(chain: row.chain.title)
     } else {
-        lang("%chain% Address Copied", arg1: row.chain.title)
+        L10n.chainAddressCopied(chain: row.chain.title)
     }
     copyValue(row.accountChain.preferredCopyString, toastMessage: message)
 }

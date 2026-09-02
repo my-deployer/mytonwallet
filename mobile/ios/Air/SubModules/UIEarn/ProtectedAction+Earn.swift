@@ -4,8 +4,12 @@ import WalletCore
 
 extension ProtectedAction where HeaderView == StakingConfirmHeaderView, Result == ApiMfaProtectedResult {
     static func stake(model: AddStakeModel, account: MAccount) throws -> Self {
-        let amount = try model.amount.orThrow("invalid stake amount")
-        let stakingState = model.stakingState
+        guard let snapshot = model.currentDraftSnapshot,
+              snapshot.request.accountId == account.id else {
+            throw DisplayError(text: lang("Transaction is not ready"))
+        }
+        let amount = snapshot.request.amount
+        let stakingState = snapshot.request.stakingState
         let realFee = getStakeOperationFee(stakingType: stakingState.type, stakeOperation: .stake).real
         return Self(
             account: account,
@@ -40,13 +44,17 @@ extension ProtectedAction where HeaderView == StakingConfirmHeaderView, Result =
     }
 
     static func unstake(model: UnstakeModel, account: MAccount) throws -> Self {
-        let stakingState = model.stakingState
-        let displayedAmount = model.amount ?? 0
+        guard let snapshot = model.currentDraftSnapshot,
+              snapshot.request.accountId == account.id else {
+            throw DisplayError(text: lang("Transaction is not ready"))
+        }
+        let stakingState = snapshot.request.stakingState
+        let displayedAmount = snapshot.request.amount
         let submitAmount: BigInt = switch stakingState.type {
         case .nominators:
             stakingState.balance
         default:
-            try (model.draft?.tokenAmount).orThrow()
+            try snapshot.draft.tokenAmount.orThrow()
         }
         let realFee = getStakeOperationFee(stakingType: stakingState.type, stakeOperation: .unstake).real
         return Self(

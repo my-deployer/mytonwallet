@@ -41,9 +41,9 @@ struct UseResponsiblyView: View {
     @ViewBuilder
     var longDescription: some View {
         let text = [
-            lang("$auth_responsibly_description1", arg1: APP_NAME),
+            L10n.authResponsiblyDescription1(appName: APP_NAME),
             lang("$auth_responsibly_description2"),
-            lang("$auth_responsibly_description3", arg1: APP_NAME),
+            L10n.authResponsiblyDescription3(appName: APP_NAME),
             lang("$auth_responsibly_description4"),
         ].joined(separator: "\n\n")
         InsetSection {

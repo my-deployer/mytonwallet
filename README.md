@@ -94,6 +94,65 @@ npm ci
 npm run dev
 ```
 
+### Agent V2 local cycle
+
+Agent V2 is bundled in Classic but normal builds force Agent V1 for the current release. `AGENT_OVERRIDE=v2` enables
+V2 explicitly for development, while `AGENT_OVERRIDE=no_override` follows the backend config and falls back to V1 when
+it is absent. On the regular Web app, `?agent=v2` enables V2 for the browser profile and `?agent=v1` switches it back
+when `AGENT_OVERRIDE=no_override` is set; both parameters are removed from the URL after the choice is saved. Native iOS
+uses the same override from the embedded SDK configuration and also defaults to V1 for the current release. To validate
+the common SDK and Classic integration against two local Agent replicas, keep the `agent` repository next to this
+repository and run:
+
+```sh
+npm run test:agent:v2
+npm run smoke:agent:v2:local
+```
+
+The smoke uses PostgreSQL, the Agent scripted provider and synthetic wallet data. It does not call an external LLM,
+wallet backend, Portfolio API or Market API. It validates the shared SDK and Classic integration through the production
+decoders and client-side wallet tool paths. Native iOS uses the same SDK through the WalletCore bridge; Android Air
+continues to use Agent V1.
+
+For interactive Classic testing, start the backend from the sibling `agent`
+repository. The backend owns its PostgreSQL lifecycle, migrations, provider
+selection, credentials and `.env.agent-v2.local`:
+
+```sh
+cd ../agent
+npm run dev:v2:codex
+```
+
+Then start Classic from this repository:
+
+```sh
+npm run dev:agent:v2
+```
+
+The frontend command only checks that `http://127.0.0.1:3001/ready` reports a
+compatible ready Agent V2 runtime, then points the frontend at its `/api`
+endpoint. It never reads sibling env files, starts PostgreSQL, applies backend
+migrations, selects a provider, or starts and stops backend processes.
+
+For native Air testing, use the corresponding iOS launcher. The first command keeps the deterministic scripted
+provider; the second selects the owner's Codex subscription with the same Anthropic fallback configuration:
+
+```sh
+npm run dev:agent:v2:ios
+npm run dev:agent:v2:ios:codex
+```
+
+Both commands rebuild the embedded Air SDK and the `MyTonWallet_AirOnly` application, install it into an iPhone
+Simulator and launch it. If no iPhone is booted, the launcher reopens the last-used available device (or the first
+available iPhone). Stop an existing iOS launcher before switching providers. Set `AGENT_V2_IOS_SIMULATOR_UDID`
+when a specific destination is required; a shutdown destination is booted automatically.
+
+In the launched iOS app, open the Agent tab and accept consent. The scripted local profile enables wallet tools without
+reading Codex or Anthropic credentials. The development-only `Search TON across wallets` hint exercises the typed
+Global Search entry point. Receive and Portfolio are available through the server
+starter hints. The scripted Send success case expects the exact text `Send 1.5 TON to Mom`, a current TON account with
+a TON holding and a saved address named `Mom`; otherwise the flow safely ends with a clarification.
+
 ## Linux Desktop Troubleshooting
 
 **If the app does not start after click:**

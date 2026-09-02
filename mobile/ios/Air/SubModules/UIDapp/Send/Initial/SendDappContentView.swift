@@ -70,7 +70,7 @@ private struct SendDappContentView: View {
 
                 if request.isEmulationFeeInsufficient(accountContext: accountContext) {
                     WarningView(
-                        text: lang("$dapp_insufficient_network_fee_warning", arg1: operationChain.nativeToken.symbol),
+                        text: L10n.dappInsufficientNetworkFeeWarning(token: operationChain.nativeToken.symbol),
                         kind: .warning
                     )
                     .padding(.horizontal, 16)
@@ -105,7 +105,7 @@ private struct SendDappContentView: View {
                 )
             }
         } header: {
-            Text(lang("$many_transactions", arg1: transactionsCount))
+            Text(L10n.manyTransactions(count: transactionsCount))
         }
     }
     
@@ -222,7 +222,7 @@ private struct SendDappPlaceholderView: View {
                     }
                 }
             } header: {
-                Text(lang("$many_transactions", arg1: 1))
+                Text(L10n.manyTransactions(count: 1))
                    .skeletonPlaceholder(surface: .dark, cornerRadius: 8)
             }
             

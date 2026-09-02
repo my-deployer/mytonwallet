@@ -1,8 +1,6 @@
 import type { ApiInitArgs, OnApiUpdate } from '../types';
 
-import { NO_MFA, NO_STAKING, NO_SWAP } from '../../config';
 import { initWindowConnector } from '../../util/windowProvider/connector';
-import * as ton from '../chains/ton';
 import { fetchBackendReferrer } from '../common/backend';
 import { connectUpdater, disconnectUpdater, tryMigrateStorage } from '../common/helpers';
 import { initClientId } from '../common/other';
@@ -29,18 +27,27 @@ export default async function init(onUpdate: OnApiUpdate, args: ApiInitArgs) {
 
   await withStorage(runtimeStorage, async () => {
     await initClientId();
-    await tryMigrateStorage(onUpdate, ton, args.accountIds);
+    await tryMigrateStorage(onUpdate, args.accountIds);
   });
 
   methods.initAccounts(onUpdate);
   methods.initAuth(onUpdate);
-  if (!NO_MFA) methods.initMfa(onUpdate);
   methods.initPolling(onUpdate);
   methods.initTransfer(onUpdate);
   methods.initTokens(onUpdate);
-  if (!NO_STAKING) methods.initStaking();
-  if (!NO_SWAP) methods.initSwap(onUpdate);
   methods.initNfts(onUpdate);
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const extra = require('./extra') as typeof import('./extra');
+    extra.initMfa(onUpdate);
+    extra.initStaking();
+    extra.initSwap(onUpdate);
+  }
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { initAgentV2IfEnabled } = require('./agentV2Lifecycle') as typeof import('./agentV2Lifecycle');
+    await initAgentV2IfEnabled(onUpdate);
+  }
 
   await initProtocolManager(onUpdate, environment);
 
@@ -61,6 +68,11 @@ export default async function init(onUpdate: OnApiUpdate, args: ApiInitArgs) {
 
 export function destroy() {
   void destroyPolling();
+  if (process.env.NO_EXTRA_FEATURES !== '1') {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { destroyAgentV2IfEnabled } = require('./agentV2Lifecycle') as typeof import('./agentV2Lifecycle');
+    void destroyAgentV2IfEnabled();
+  }
   disconnectUpdater();
 }
 

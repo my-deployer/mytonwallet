@@ -4,6 +4,7 @@ import UserNotifications
 import UIDapp
 import UIInAppBrowser
 import UIComponents
+import UniversalSearchFeature
 import WalletContext
 import WalletCore
 
@@ -14,6 +15,7 @@ final class AirRuntimeCoordinator: NSObject {
     private lazy var deeplinkHandler = DeeplinkHandler(deeplinkNavigator: self)
     private let lockCoordinator = AirAppLockCoordinator()
     private lazy var startupCoordinator = AirStartupCoordinator(lockCoordinator: lockCoordinator)
+    private var universalSearchIndexService: UniversalSearchIndexService?
 
     private var nextDeeplink: (deeplink: Deeplink, source: DeeplinkOpenSource)?
     private var nextNotification: UNNotification?
@@ -75,6 +77,7 @@ final class AirRuntimeCoordinator: NSObject {
     // until the wallet is ready and unlocked.
     func reset() {
         _isWalletReady = false
+        universalSearchIndexService?.setWalletReady(false)
         didSchedulePushPermissionRequest = false
         startupImportError = nil
         lockCoordinator.reset()
@@ -311,6 +314,15 @@ extension AirRuntimeCoordinator: WalletContextDelegate {
     func walletIsReady(isReady: Bool) {
         _isWalletReady = isReady
         if isReady {
+            let indexService = universalSearchIndexService
+                ?? UniversalSearchFeatureFactory.sharedIndexService
+            universalSearchIndexService = indexService
+            indexService.start()
+            indexService.setWalletReady(true)
+        } else {
+            universalSearchIndexService?.setWalletReady(false)
+        }
+        if isReady {
             StartupTrace.markOnce("wallet.ready", details: "source=AirRuntimeCoordinator")
             flushPendingActionsIfPossible()
             presentStartupImportErrorIfNeeded()
@@ -328,6 +340,9 @@ extension AirRuntimeCoordinator: WalletContextDelegate {
     }
 
     func restartApp() {
+        // Restart lifecycle subscriptions with WalletCore rather than carrying
+        // pending work from the previous wallet session into the next one.
+        universalSearchIndexService?.stop()
         WalletCoreData.removeObservers()
         _isWalletReady = false
         StartupTrace.reset(flow: "restart-app")

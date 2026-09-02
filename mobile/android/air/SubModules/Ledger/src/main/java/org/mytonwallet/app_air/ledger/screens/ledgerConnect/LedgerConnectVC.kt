@@ -854,9 +854,12 @@ class LedgerConnectVC(
                             if (sentNftAddresses.contains(nft.address)) return@forEachIndexed
                             Handler(Looper.getMainLooper()).post {
                                 signOnDeviceStep.setSubtitle(
-                                    LocaleController.getFormattedString(
+                                    LocaleController.getStringWithKeyValues(
                                         $$"$ledger_confirm_progress",
-                                        listOf((index + 1).toString(), nfts.size.toString())
+                                        listOf(
+                                            "%current%" to (index + 1).toString(),
+                                            "%total%" to nfts.size.toString()
+                                        )
                                     )
                                 )
                             }

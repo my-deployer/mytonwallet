@@ -2,10 +2,10 @@ import type { GlobalState } from '../../types';
 import type { SwapEstimateResult } from './swap';
 import { SwapInputSource, SwapState } from '../../types';
 
-import { TONCOIN, TRX } from '../../../config';
+import { MYCOIN_MAINNET, TONCOIN, TRX } from '../../../config';
 import { getGlobal, setGlobal } from '../../index';
 import { clearCurrentSwap, updateCurrentSwap } from '../../reducers';
-import { estimateSwapConcurrently, shouldBlockUnsupportedNearIntentsMemo } from './swap';
+import { buildSwapBuildRequest, estimateSwapConcurrently, shouldBlockUnsupportedNearIntentsMemo } from './swap';
 
 describe('estimateSwapConcurrently', () => {
   beforeEach(() => {
@@ -163,5 +163,69 @@ describe('shouldBlockUnsupportedNearIntentsMemo', () => {
   it('does not block memo-less Near Intents or non-Near CEX results', () => {
     expect(shouldBlockUnsupportedNearIntentsMemo('near-intents', 'base')).toBe(false);
     expect(shouldBlockUnsupportedNearIntentsMemo('changelly', 'base', 'memo')).toBe(false);
+  });
+});
+
+describe('buildSwapBuildRequest', () => {
+  const ACCOUNT_ADDRESS = 'UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJKZ';
+
+  function makeGlobal(currentSwap: Partial<GlobalState['currentSwap']>): GlobalState {
+    return {
+      currentAccountId: 'acc',
+      accounts: { byId: { acc: { byChain: { ton: { address: ACCOUNT_ADDRESS } } } } },
+      byAccountId: { acc: {} },
+      swapTokenInfo: {
+        bySlug: {
+          [TONCOIN.slug]: { slug: TONCOIN.slug, chain: 'ton', decimals: TONCOIN.decimals },
+          [MYCOIN_MAINNET.slug]: {
+            slug: MYCOIN_MAINNET.slug,
+            chain: 'ton',
+            decimals: MYCOIN_MAINNET.decimals,
+            tokenAddress: MYCOIN_MAINNET.minterAddress,
+          },
+        },
+      },
+      currentSwap: {
+        tokenInSlug: TONCOIN.slug,
+        tokenOutSlug: MYCOIN_MAINNET.slug,
+        amountIn: '10',
+        amountOutMin: '900',
+        slippage: 5,
+        ...currentSwap,
+      },
+    } as unknown as GlobalState;
+  }
+
+  it('reports the input side when the user fixed what they pay', () => {
+    const request = buildSwapBuildRequest(makeGlobal({
+      inputSource: SwapInputSource.In,
+      amountOut: '1000',
+      quotedAmountOut: '1000',
+    }));
+
+    expect(request.swapMode).toBe('exact_in');
+    expect(request.toAmount).toBe('1000');
+  });
+
+  it('reports the output side and sends what was quoted rather than what was typed', () => {
+    // The form keeps the figure the user entered while the estimate answers with what the venue
+    // could reach against it. The routes in the same request were priced for the latter.
+    const request = buildSwapBuildRequest(makeGlobal({
+      inputSource: SwapInputSource.Out,
+      amountOut: '1000',
+      quotedAmountOut: '999.87',
+    }));
+
+    expect(request.swapMode).toBe('exact_out');
+    expect(request.toAmount).toBe('999.87');
+  });
+
+  it('falls back to the form figure when no estimate has answered yet', () => {
+    const request = buildSwapBuildRequest(makeGlobal({
+      inputSource: SwapInputSource.Out,
+      amountOut: '1000',
+    }));
+
+    expect(request.toAmount).toBe('1000');
   });
 });

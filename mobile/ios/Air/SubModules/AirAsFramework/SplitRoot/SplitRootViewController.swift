@@ -282,9 +282,19 @@ final class SplitRootViewController: UISplitViewController, VisibleContentProvid
         syncSidebarFocusWithHomeStack(animated: animated)
     }
 
-    func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) {
+    func showAssets(
+        accountSource: AccountSource,
+        selectedTab: DisplayAssetTab,
+        collectionsFilter: NftCollectionFilter,
+        initialPosition: AssetListInitialPosition?
+    ) {
         let nc = currentNavigationController
-        if nc.showExistingAssetsTab(accountSource: accountSource, selectedTab: selectedTab, animated: true) {
+        if nc.showExistingAssetsTab(
+            accountSource: accountSource,
+            selectedTab: selectedTab,
+            initialPosition: initialPosition,
+            animated: true
+        ) {
             return
         }
 
@@ -295,13 +305,31 @@ final class SplitRootViewController: UISplitViewController, VisibleContentProvid
         )
 
         if shouldPushCollection, (nc.visibleViewController is AssetsTabVC || nc.visibleViewController is NftDetailsVC) {
-            nc.pushViewController(NftsFullScreenVC(accountSource: accountSource, filter: collectionsFilter), animated: true)
+            nc.pushViewController(
+                NftsFullScreenVC(
+                    accountSource: accountSource,
+                    filter: collectionsFilter,
+                    initialNftID: initialPosition?.nftID
+                ),
+                animated: true
+            )
             return
         }
-        let assetsVC = AssetsTabVC(accountSource: accountSource, defaultTab: selectedTab)
+        let assetsVC = AssetsTabVC(
+            accountSource: accountSource,
+            defaultTab: selectedTab,
+            initialPosition: initialPosition
+        )
         nc.pushViewController(assetsVC, animated: true)
         if shouldPushCollection {
-            nc.pushViewController(NftsFullScreenVC(accountSource: accountSource, filter: collectionsFilter), animated: false)
+            nc.pushViewController(
+                NftsFullScreenVC(
+                    accountSource: accountSource,
+                    filter: collectionsFilter,
+                    initialNftID: initialPosition?.nftID
+                ),
+                animated: false
+            )
         }
     }
 

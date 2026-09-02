@@ -198,6 +198,9 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
     ViewDragHelper viewDragHelper;
     int parentWidth;
     int parentHeight;
+
+    /** Extra distance below the parent's bottom edge that collapsed and hidden states offset to. */
+    private int bottomOverflow = 0;
     @Nullable
     WeakReference<V> viewRef;
     @Nullable
@@ -423,7 +426,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
             @Override
             public int getViewVerticalDragRange(@NonNull View child) {
                 if (canBeHiddenByDragging()) {
-                    return parentHeight;
+                    return getHiddenOffset();
                 } else {
                     return collapsedOffset;
                 }
@@ -707,7 +710,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
         } else if (state == STATE_HALF_EXPANDED) {
             ViewCompat.offsetTopAndBottom(child, halfExpandedOffset);
         } else if (hideable && state == STATE_HIDDEN) {
-            ViewCompat.offsetTopAndBottom(child, parentHeight);
+            ViewCompat.offsetTopAndBottom(child, getHiddenOffset());
         } else if (state == STATE_COLLAPSED) {
             ViewCompat.offsetTopAndBottom(child, collapsedOffset);
         } else if (state == STATE_DRAGGING || state == STATE_SETTLING) {
@@ -1707,13 +1710,31 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
         return peekHeight + insetBottom;
     }
 
+    private int getHiddenOffset() {
+        return parentHeight + bottomOverflow;
+    }
+
+    public void setBottomOverflow(int bottomOverflow) {
+        if (this.bottomOverflow == bottomOverflow) {
+            return;
+        }
+        this.bottomOverflow = bottomOverflow;
+        if (viewRef != null) {
+            calculateCollapsedOffset();
+        }
+    }
+
+    public int getBottomOverflow() {
+        return bottomOverflow;
+    }
+
     private void calculateCollapsedOffset() {
         int peek = calculatePeekHeight();
 
         if (fitToContents) {
-            collapsedOffset = max(parentHeight - peek, fitToContentsOffset);
+            collapsedOffset = max(getHiddenOffset() - peek, fitToContentsOffset);
         } else {
-            collapsedOffset = parentHeight - peek;
+            collapsedOffset = getHiddenOffset() - peek;
         }
     }
 
@@ -1724,7 +1745,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
     private float calculateSlideOffsetWithTop(int top) {
         return
             (top > collapsedOffset || collapsedOffset == getExpandedOffset())
-                ? (float) (collapsedOffset - top) / (parentHeight - collapsedOffset)
+                ? (float) (collapsedOffset - top) / (getHiddenOffset() - collapsedOffset)
                 : (float) (collapsedOffset - top) / (collapsedOffset - getExpandedOffset());
     }
 
@@ -1998,7 +2019,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
 
     private void startSettling(View child, @StableState int state, boolean isReleasingView) {
         int top = getTopOffsetForState(state);
-        
+
         // Use SpringAnimation only for Half ↔ Full transitions (not drag releases)
         boolean isHalfToFull = (lastStableState == STATE_HALF_EXPANDED && state == STATE_EXPANDED);
         boolean isFullToHalf = (lastStableState == STATE_EXPANDED && state == STATE_HALF_EXPANDED);
@@ -2006,7 +2027,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
             startSpringSettling(child, state, top);
             return;
         }
-        
+
         boolean settling =
             viewDragHelper != null
                 && (isReleasingView
@@ -2021,22 +2042,22 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
             setStateInternal(state);
         }
     }
-    
+
     private void startSpringSettling(View child, @StableState int targetState, int targetTop) {
         // Cancel any existing spring animation
         if (settlingSpringAnimation != null) {
             settlingSpringAnimation.cancel();
         }
-        
+
         setStateInternal(STATE_SETTLING);
         updateDrawableForTargetState(targetState, /* animate= */ true);
-        
+
         FloatPropertyCompat<View> property = new FloatPropertyCompat<View>("top") {
             @Override
             public float getValue(View view) {
                 return view.getTop();
             }
-            
+
             @Override
             public void setValue(View view, float value) {
                 int newTop = (int) value;
@@ -2044,18 +2065,18 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
                 dispatchOnSlide(newTop);
             }
         };
-        
+
         settlingSpringAnimation = new SpringAnimation(child, property, targetTop);
         settlingSpringAnimation.getSpring().setDampingRatio(SpringForce.DAMPING_RATIO_NO_BOUNCY);
         settlingSpringAnimation.getSpring().setStiffness(500f);
-        
+
         settlingSpringAnimation.addEndListener((animation, canceled, value, velocity) -> {
             settlingSpringAnimation = null;
             if (!canceled) {
                 setStateInternal(targetState);
             }
         });
-        
+
         settlingSpringAnimation.start();
     }
 
@@ -2068,7 +2089,7 @@ public class BottomSheetBehavior<V extends View> extends CoordinatorLayout.Behav
             case STATE_HALF_EXPANDED:
                 return halfExpandedOffset;
             case STATE_HIDDEN:
-                return parentHeight;
+                return getHiddenOffset();
             default:
                 // Fall through
         }

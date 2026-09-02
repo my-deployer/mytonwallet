@@ -302,9 +302,9 @@ private extension ApiWalletPermission {
     var alertMessage: String {
         switch self {
         case .approval(let approval):
-            lang("Are you sure you want to revoke approval for %token%?", arg1: approval.tokenName)
+            L10n.areYouSureYouWantToRevokeApprovalForToken(token: approval.tokenName)
         case .delegation(let delegation):
-            lang("Are you sure you want to revoke delegation for %name%?", arg1: delegation.delegateLabel)
+            L10n.areYouSureYouWantToRevokeDelegationForName(name: delegation.delegateLabel)
         }
     }
 }
@@ -346,7 +346,7 @@ private struct ApprovalCellContent: View {
                     .textStyle(.calloutEmphasized)
                     .foregroundStyle(Color.air.primaryLabel)
                     .lineLimit(1)
-                Text(lang("Approved to %name%", arg1: approval.spenderLabel))
+                Text(L10n.approvedToName(name: approval.spenderLabel))
                     .textStyle(.supporting)
                     .foregroundStyle(Color.air.secondaryLabel)
                     .lineLimit(1)

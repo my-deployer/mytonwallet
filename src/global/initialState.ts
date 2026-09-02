@@ -26,8 +26,6 @@ import {
   DEFAULT_TRANSFER_TOKEN_SLUG,
   INIT_SWAP_ASSETS,
   IS_EXPLORER,
-  IS_FEATURE_LIMITED,
-  SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
   SWAP_API_VERSION,
   THEME_DEFAULT,
 } from '../config';
@@ -35,7 +33,7 @@ import { getTokenInfo } from '../util/chain';
 import { buildCollectionByKey, mapValues } from '../util/iteratees';
 import { USER_AGENT_LANG_CODE } from '../util/windowEnvironment';
 
-export const STATE_VERSION = 61;
+export const STATE_VERSION = 62;
 
 export const INITIAL_STATE: GlobalState = {
   appState: IS_EXPLORER ? AppState.Main : AppState.Auth,
@@ -111,14 +109,14 @@ export const INITIAL_STATE: GlobalState = {
     state: SettingsState.Initial,
     theme: THEME_DEFAULT,
     animationLevel: ANIMATION_LEVEL_DEFAULT,
-    areTinyTransfersHidden: !SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
-    areUnverifiedNftsHidden: !SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
+    areTinyTransfersHidden: true,
+    areUnverifiedNftsHidden: true,
     areTokenNamesLocalized: true,
     canPlaySounds: true,
     langCode: USER_AGENT_LANG_CODE,
     langSource: 'system',
     byAccountId: {},
-    areTokensWithNoCostHidden: !SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
+    areTokensWithNoCostHidden: true,
     autolockValue: DEFAULT_AUTOLOCK_OPTION,
     baseCurrency: DEFAULT_PRICE_CURRENCY,
   },
@@ -133,9 +131,9 @@ export const INITIAL_STATE: GlobalState = {
 
   restrictions: {
     isLimitedRegion: false,
-    isSwapDisabled: IS_FEATURE_LIMITED,
-    isOnRampDisabled: IS_FEATURE_LIMITED,
-    isOffRampDisabled: IS_FEATURE_LIMITED,
+    isSwapDisabled: false,
+    isOnRampDisabled: false,
+    isOffRampDisabled: false,
     isNftBuyingDisabled: false,
   },
 

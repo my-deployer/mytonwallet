@@ -99,6 +99,7 @@ public class ActivityCell: WHighlightCollectionViewCell {
     var activity: ApiActivity?
     private var contextMenuInteraction: ContextMenuInteraction?
     private var trackedValue: Double?
+    private var timestampDisplayMode: ActivityTimestampDisplayMode = .timeOnly
 
     private var viewModel: ActivityCellViewModel?
 
@@ -283,7 +284,7 @@ public class ActivityCell: WHighlightCollectionViewCell {
         updateTheme()
     }
 
-    func setContextMenuInteraction(_ interaction: ContextMenuInteraction?) {
+    public func setContextMenuInteraction(_ interaction: ContextMenuInteraction?) {
         contextMenuInteraction?.detach()
         contextMenuInteraction = interaction
         interaction?.attach(to: self)
@@ -333,10 +334,17 @@ public class ActivityCell: WHighlightCollectionViewCell {
 
     // MARK: - Configure
 
-    public func configure(with activity: ApiActivity, accountContext: AccountContext, delegate: Delegate, showsRightChevron: Bool = false) {
+    public func configure(
+        with activity: ApiActivity,
+        accountContext: AccountContext,
+        delegate: Delegate,
+        showsRightChevron: Bool = false,
+        timestampDisplayMode: ActivityTimestampDisplayMode = .timeOnly
+    ) {
         showMainContent()
         self.activity = activity
         self.delegate = delegate
+        self.timestampDisplayMode = timestampDisplayMode
         setShowsRightChevron(showsRightChevron)
         resetTitleVisibility()
 
@@ -346,7 +354,12 @@ public class ActivityCell: WHighlightCollectionViewCell {
 
         configureWithoutAnimation {
             configureTitle(activity: activity, accountChains: accountContext.account.supportedChains)
-            configureDetails(.init(activity: activity, accountContext: accountContext, isEmulation: false))
+            configureDetails(.init(
+                activity: activity,
+                accountContext: accountContext,
+                isEmulation: false,
+                timestampDisplayMode: timestampDisplayMode
+            ))
             configureAmount(.init(activity: activity, tokenStore: viewModel.tokenStore))
             configureAmount2(.init(activity: activity, tokenStore: viewModel.tokenStore))
             configureSensitiveData(activity: activity)
@@ -361,6 +374,7 @@ public class ActivityCell: WHighlightCollectionViewCell {
         showMainContent()
         self.activity = activity
         self.delegate = nil
+        self.timestampDisplayMode = .timeOnly
         setShowsRightChevron(false)
         configureViewModel(accountId: accountContext.accountId, activity: activity, tokenStore: tokenStore, isEmulation: true)
 
@@ -406,7 +420,12 @@ public class ActivityCell: WHighlightCollectionViewCell {
                 if let chain = getChainBySlug(activity.slug), let peerAddress = activity.peerAddress {
                     _ = viewModel.$account.getLocalName(chain: chain, address: peerAddress)
                 }
-                configureDetails(.init(activity: activity, accountContext: viewModel.$account, isEmulation: viewModel.isEmulation))
+                configureDetails(.init(
+                    activity: activity,
+                    accountContext: viewModel.$account,
+                    isEmulation: viewModel.isEmulation,
+                    timestampDisplayMode: timestampDisplayMode
+                ))
                 configureAmount(.init(activity: activity, tokenStore: viewModel.tokenStore))
                 configureAmount2(.init(activity: activity, tokenStore: viewModel.tokenStore))
             }
@@ -446,17 +465,38 @@ public class ActivityCell: WHighlightCollectionViewCell {
     }
 
     @MainActor struct ConfigureDetailsOptions {
+        enum AddressLabel {
+            case from
+            case on
+            case to
+
+            var localize: (String) -> String {
+                switch self {
+                case .from: L10n.transactionFrom
+                case .on: L10n.transactionOn
+                case .to: L10n.transactionTo
+                }
+            }
+        }
+
         var activity: ApiActivity
         var isMultichain = false
         var stakingState: ApiStakingState?
         var accountChains: Set<ApiChain> = []
         var isEmulation: Bool
+        var timestampDisplayMode: ActivityTimestampDisplayMode
         var address: String = ""
-        var addressLabelKey: String = "$transaction_to"
+        var addressLabel: AddressLabel = .to
 
-        init(activity: ApiActivity, accountContext: AccountContext, isEmulation: Bool) {
+        init(
+            activity: ApiActivity,
+            accountContext: AccountContext,
+            isEmulation: Bool,
+            timestampDisplayMode: ActivityTimestampDisplayMode = .timeOnly
+        ) {
             self.activity = activity
             self.isEmulation = isEmulation
+            self.timestampDisplayMode = timestampDisplayMode
             self.accountChains = accountContext.account.supportedChains
             if  case .transaction(let transaction) = activity {
                 isMultichain = accountContext.account.isMultichain
@@ -465,9 +505,9 @@ public class ActivityCell: WHighlightCollectionViewCell {
                 }
                 if let address = transaction.extra?.dex?.displayName ?? transaction.extra?.marketplace?.displayName {
                     self.address = address
-                    self.addressLabelKey = "$transaction_on"
+                    self.addressLabel = .on
                 } else {
-                    self.addressLabelKey = transaction.isIncoming ? "$transaction_from" : "$transaction_to"
+                    self.addressLabel = transaction.isIncoming ? .from : .to
                     let chain = getChainBySlug(transaction.slug) ?? FALLBACK_CHAIN
                     let vm = AddressViewModel.fromTransaction(transaction, chain: chain, addressKind: .peer).withLocalName(account: accountContext)
                     if let name = vm.name {
@@ -507,10 +547,10 @@ public class ActivityCell: WHighlightCollectionViewCell {
                     address = ChainIcon(chain).prepended(to: options.address, font: addressFont, separator: .hairline)
                 }
 
-                attr.append(attributedLang(
-                    options.addressLabelKey,
+                attr.append(attributedLocalizedString(
                     attributes: detailsAttributes,
-                    arg1: address
+                    argument: address,
+                    localize: options.addressLabel.localize
                 ))
 
             }
@@ -522,10 +562,10 @@ public class ActivityCell: WHighlightCollectionViewCell {
                 let annualYield = NSAttributedString(string: "\(stakingState.yieldType.rawValue) \(stakingState.annualYield.value)%", attributes: [
                     .font: WTypography.uiFont(.supportingStrong, content: .technical)
                 ])
-                attr.append(attributedLang(
-                    "at %annual_yield%",
+                attr.append(attributedLocalizedString(
                     attributes: detailsAttributes,
-                    arg1: annualYield
+                    argument: annualYield,
+                    localize: L10n.atAnnualYield
                 ))
             } else {
                 // TODO: auction bid, nft bought
@@ -556,7 +596,10 @@ public class ActivityCell: WHighlightCollectionViewCell {
             if !attr.string.isEmpty {
                 attr.append(NSAttributedString(string: " · ", attributes: detailsAttributes))
             }
-            let timestamp = stringForTimestamp(timestamp: Int32(clamping: activity.timestamp / 1000))
+            let timestamp = ActivityDateFormatting.timestampText(
+                for: activity.timestampDate,
+                mode: options.timestampDisplayMode
+            )
             attr.append(NSAttributedString(string: timestamp, attributes: [
                 .font: WTypography.uiFont(.supporting, content: .technical)
             ]))

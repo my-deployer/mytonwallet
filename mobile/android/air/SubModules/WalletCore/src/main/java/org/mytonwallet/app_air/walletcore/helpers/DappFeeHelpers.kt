@@ -45,10 +45,10 @@ class DappFeeHelpers {
             }
 
             val realReceived = received - fullFee
-            return LocaleController.getFormattedString(
-                "%1$@ will be returned",
+            return LocaleController.getStringWithKeyValues(
+                "%amount% will be returned",
                 listOf(
-                    realReceived.toString(
+                    "%amount%" to realReceived.toString(
                         nativeToken.decimals,
                         nativeToken.symbol,
                         realReceived.smartDecimalsCount(nativeToken.decimals),

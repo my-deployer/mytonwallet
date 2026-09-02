@@ -6,7 +6,6 @@ import { getActions, withGlobal } from '../../../../global';
 import type { ApiNft, ApiNftCollection } from '../../../../api/types';
 import { type IAnchorPosition } from '../../../../global/types';
 
-import { IS_FEATURE_LIMITED } from '../../../../config';
 import {
   selectCurrentAccountState,
   selectIsCurrentAccountViewMode,
@@ -82,7 +81,7 @@ function NftSelectionHeader({
             days: formatRelativeDays(lang, dnsExpireInDays!),
           }) as string,
       } satisfies DropdownItem<MenuHandler>,
-      !IS_FEATURE_LIMITED && {
+      {
         name: 'Hide',
         value: 'hide',
       } satisfies DropdownItem<MenuHandler>,

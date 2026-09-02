@@ -14,8 +14,12 @@ public extension ApiChain {
     }
 
     func isValidAddressOrDomain(_ addressOrDomain: String) -> Bool {
+        isValidAddress(addressOrDomain) || isValidDomain(addressOrDomain)
+    }
+
+    func isValidAddress(_ address: String) -> Bool {
         guard isSupported else { return false }
-        return config.addressRegex.matches(addressOrDomain) || isValidDomain(addressOrDomain)
+        return config.addressRegex.matches(address)
     }
 
     func isValidDomain(_ domain: String) -> Bool {

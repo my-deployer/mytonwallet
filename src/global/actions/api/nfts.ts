@@ -5,7 +5,12 @@ import { callApi } from '../../../api';
 import { NFT_COLLECTION_CACHE_TTL } from '../../../api/constants';
 import { addActionHandler, setGlobal } from '../../index';
 import { updateAccountState, updateCurrentAccountState } from '../../reducers';
-import { selectAccountState, selectCurrentAccountId, selectCurrentAccountState } from '../../selectors';
+import {
+  selectAccountState,
+  selectCurrentAccountId,
+  selectCurrentAccountState,
+  selectCurrentNetwork,
+} from '../../selectors';
 
 addActionHandler('fetchNftsFromCollection', (global, actions, { collection }) => {
   const accountId = selectCurrentAccountId(global);
@@ -122,6 +127,34 @@ addActionHandler('closeHideNftModal', (global) => {
   return updateCurrentAccountState(global, {
     selectedNftsToHide: undefined,
   });
+});
+
+addActionHandler('openReportNftModal', (global, actions, { chain, address }) => {
+  return updateCurrentAccountState(global, {
+    selectedNftToReport: { chain, address },
+  });
+});
+
+addActionHandler('closeReportNftModal', (global) => {
+  return updateCurrentAccountState(global, {
+    selectedNftToReport: undefined,
+  });
+});
+
+addActionHandler('hideNft', (global, actions, props) => {
+  const selectedNftToReport = selectCurrentAccountState(global)?.selectedNftToReport;
+  if (!selectedNftToReport) return;
+
+  const { chain, address } = selectedNftToReport;
+
+  if (props?.shouldReport) {
+    void callApi('reportNft', { chain, network: selectCurrentNetwork(global), nftAddress: address });
+  }
+
+  actions.closeReportNftModal();
+  actions.addNftsToBlacklist({ addresses: [address] });
+  actions.closeMediaViewer();
+  actions.closeNftAttributesModal();
 });
 
 addActionHandler('openNftAttributesModal', (global, actions, { nft, withOwner }) => {

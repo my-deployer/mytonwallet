@@ -31,6 +31,7 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
     private enum Row: Hashable {
         case renewalWarning(NftRenewDomainWarningContent)
         case placeholder
+        case loadingPlaceholder(Int)
         case nft(String)
         case action(Action)
     }
@@ -73,19 +74,28 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
     private var isViewVisibleForNftAnimationPlayback = false
     private var nftAnimationPlaybackEligibleIDs = Set<String>()
     private var pendingInteractiveSwitchAccountId: String?
+    private var pendingScrollNftID: String?
     
     private var contextMenuExtraBlurView: UIView?
     
     var inSelectionMode: Bool { selectedIds != nil }
     private var selectedIds: Set<String>?
         
-    public init(accountSource: AccountSource, manager: NftsVCManager?, layoutMode: LayoutMode, canOpenCollection: Bool = true, filter: NftCollectionFilter) {
+    public init(
+        accountSource: AccountSource,
+        manager: NftsVCManager?,
+        layoutMode: LayoutMode,
+        canOpenCollection: Bool = true,
+        filter: NftCollectionFilter,
+        initialNftID: String? = nil
+    ) {
         self._account = AccountContext(source: accountSource)
         self.filter = filter
         self.layoutMode = layoutMode
         self.manager = manager
         self.layoutGeometry = LayoutGeometry(layoutMode: layoutMode)
         self.canOpenCollection = canOpenCollection
+        self.pendingScrollNftID = initialNftID
 
         super.init(nibName: nil, bundle: nil)
         
@@ -135,6 +145,18 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
     private var domainRenewalWarning: NftRenewDomainWarningContent?
     private(set) internal var allShownNftsCount: Int = 0
 
+    private var loadingPlaceholderCount: Int {
+        Self.loadingPlaceholderCount(layoutMode: layoutMode, hasLoadedData: displayNfts != nil)
+    }
+
+    static func loadingPlaceholderCount(layoutMode: LayoutMode, hasLoadedData: Bool) -> Int {
+        !hasLoadedData && layoutMode.isCompact ? 3 : 0
+    }
+
+    private var displayedItemCount: Int {
+        displayNfts?.count ?? loadingPlaceholderCount
+    }
+
     private func setupViews() {
         title = filter.displayTitle
         let compactMode = layoutMode.isCompact
@@ -175,6 +197,14 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
             }
             reorderController.updateCell(cell, indexPath: indexPath)
         }
+        let loadingNftCellRegistration = UICollectionView.CellRegistration<NftCell, Int> { cell, _, _ in
+            cell.configure(
+                nft: nil,
+                compactMode: compactMode,
+                domainExpirationText: nil,
+                isSelected: nil
+            )
+        }
         let placeholderCellRegistration = UICollectionView.CellRegistration<WalletAssetsEmptyCell, String> { [weak self] cell, _, _ in
             let marketplace = self.flatMap { ExplorerHelper.defaultMarketplace(for: $0.account) }
             let shouldShowMarketplace = !ConfigStore.shared.shouldRestrictBuyNfts && marketplace != nil
@@ -182,7 +212,7 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
                 animationName: "animation_happy",
                 title: lang("No NFTs yet"),
                 description: shouldShowMarketplace ? lang("$nft_explore_offer") : nil,
-                actionTitle: marketplace.flatMap { shouldShowMarketplace ? lang("Open %nft_marketplace%", arg1: $0.title) : nil },
+                actionTitle: marketplace.flatMap { shouldShowMarketplace ? L10n.openNftMarketplace(nftMarketplace: $0.title) : nil },
                 height: WalletAssetsEmptyCell.collectiblesHeight,
                 descriptionNumberOfLines: 3
             ) { [weak self] in
@@ -223,6 +253,8 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
                 collectionView.dequeueConfiguredReusableCell(using: renewalWarningCellRegistration, for: indexPath, item: content)
             case .nft(let nftId):
                 collectionView.dequeueConfiguredReusableCell(using: nftCellRegistration, for: indexPath, item: nftId)
+            case .loadingPlaceholder(let index):
+                collectionView.dequeueConfiguredReusableCell(using: loadingNftCellRegistration, for: indexPath, item: index)
             case .action(let actionId):
                 collectionView.dequeueConfiguredReusableCell(using: actionCellRegistration, for: indexPath, item: actionId)
             case .placeholder:
@@ -244,7 +276,7 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
     
     private func applyLayoutIfNeeded() {
         let layoutChangeID = layoutGeometry.calcLayoutChangeID(
-            itemCount: displayNfts?.count ?? 0,
+            itemCount: displayedItemCount,
             hasRenewalWarning: domainRenewalWarning != nil,
             collectionView: collectionView
         )
@@ -382,16 +414,36 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
                 snapshot.appendSections([.actions])
                 let title = filter == .none
                     ? lang("Show All Collectibles")
-                    : lang("Show All %1$@", arg1: filter.displayTitle)
+                    : L10n.showAllName(name: filter.displayTitle)
                 snapshot.appendItems([Row.action(.showAll(title: title, count: allShownNftsCount))], toSection: .actions)
             }
+        } else if loadingPlaceholderCount > 0 {
+            snapshot.appendSections([.main])
+            snapshot.appendItems((0..<loadingPlaceholderCount).map(Row.loadingPlaceholder), toSection: .main)
         }
         return snapshot
     }
         
     private func applySnapshot(_ snapshot: NSDiffableDataSourceSnapshot<Section, Row>, animated: Bool) {
         guard let dataSource else { return }
-        dataSource.apply(snapshot, animatingDifferences: animated)
+        dataSource.apply(snapshot, animatingDifferences: animated) { [weak self] in
+            self?.applyPendingScrollPosition(animated: false)
+        }
+    }
+
+    public func scrollToNft(_ nftID: String, animated: Bool) {
+        loadViewIfNeeded()
+        pendingScrollNftID = nftID
+        applyPendingScrollPosition(animated: animated)
+    }
+
+    private func applyPendingScrollPosition(animated: Bool) {
+        guard let dataSource, let pendingScrollNftID else { return }
+        let item = Row.nft(pendingScrollNftID)
+        guard let indexPath = dataSource.indexPath(for: item) else { return }
+        collectionView.layoutIfNeeded()
+        collectionView.scrollToItem(at: indexPath, at: .centeredVertically, animated: animated)
+        self.pendingScrollNftID = nil
     }
 
     private func persistNftOrder(from snapshot: NSDiffableDataSourceSnapshot<Section, Row>) {
@@ -405,7 +457,6 @@ public class NftsVC: WViewController, WSegmentedControllerContent, Sendable, UIA
     public func calculateHeight(isHosted: Bool) -> CGFloat {
         loadViewIfNeeded()
     
-        let displayedItemCount = displayNfts?.count ?? 0
         let isPlaceholderShown = displayNfts?.isEmpty == true
         let isActionShown = layoutMode.isCompact && layoutGeometry.shouldShowShowAllAction(itemCount: allShownNftsCount)
 
@@ -582,6 +633,8 @@ extension NftsVC: ReorderableCollectionViewControllerDelegate {
         switch id {
         case .renewalWarning:
             break
+        case .loadingPlaceholder:
+            break
         case .nft(let nftId):
             if let nft = displayNfts?[nftId]?.nft {
                 if inSelectionMode {
@@ -593,10 +646,12 @@ extension NftsVC: ReorderableCollectionViewControllerDelegate {
             }
         case .action(let actionId):
             if case .showAll = actionId {
+                let lastDisplayedNftID = displayNfts?.keys.last
                 AppActions.showAssets(
                     accountSource: $account.source,
                     selectedTab: filter == .none ? .nfts : .nftCollectionFilter(filter),
-                    collectionsFilter: filter
+                    collectionsFilter: filter,
+                    initialPosition: lastDisplayedNftID.map(AssetListInitialPosition.nft)
                 )
             }
         case .placeholder:
@@ -1012,15 +1067,15 @@ extension NftsVC {
         if nftsForRenewal.count == 1 {
             let domainName = nftsForRenewal[0].displayName
             if expireInDays < 0 {
-                text = lang("$domain_was_expired", arg1: domainName)
+                text = L10n.domainWasExpired(domain: domainName)
             } else {
-                text = lang("$domain_expire", arg1: domainName, arg2: langRelativeDays(expireInDays))
+                text = L10n.domainExpire(domain: domainName, days: langRelativeDays(expireInDays))
             }
         } else if expireInDays < 0 {
             let expiredCount = domains.expiredForRenewalWarning(in: nftsForRenewal).count
-            text = lang("$domains_was_expired", arg1: expiredCount)
+            text = L10n.domainsWasExpired(domain: expiredCount)
         } else {
-            text = lang("$domains_expire", arg1: langRelativeDays(expireInDays), arg2: nftsForRenewal.count)
+            text = L10n.domainsExpire(days: langRelativeDays(expireInDays), domain: nftsForRenewal.count)
         }
 
         return .init(

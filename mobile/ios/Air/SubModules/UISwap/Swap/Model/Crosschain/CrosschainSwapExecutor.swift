@@ -13,8 +13,8 @@ import WalletCore
         guard let swapEstimate else {
             throw SdkError.unexpected(message: "Missing swap estimate")
         }
-        switch swapType {
-        case .crosschainFromWallet:
+        switch swapType.cexTopology {
+        case .fromWallet:
             return try await performFromWalletSwap(
                 swapEstimate: swapEstimate,
                 sellingToken: sellingToken,
@@ -23,7 +23,7 @@ import WalletCore
                 payoutAddress: payoutAddress,
                 enclaveToken: enclaveToken
             )
-        case .crosschainInsideWallet, .crosschainToWallet:
+        case .insideWallet, .toWallet:
             return try await performToWalletSwap(
                 swapEstimate: swapEstimate,
                 sellingToken: sellingToken,
@@ -31,7 +31,7 @@ import WalletCore
                 account: account,
                 enclaveToken: enclaveToken
             )
-        case .onChain:
+        case nil:
             throw SdkError.unexpected(message: "Invalid cross-chain swap type")
         }
     }
@@ -102,22 +102,22 @@ import WalletCore
             fromAddress = historyAddress
         }
         let networkFee = swapEstimate.realNetworkFee ?? swapEstimate.networkFee
-        let params = ApiSwapCexCreateTransactionParams(
+        let request = ApiSwapBuildRequest(
             from: sellingToken.swapIdentifier,
-            fromAmount: swapEstimate.fromAmount,
+            to: buyingToken.swapIdentifier,
             fromAddress: fromAddress,
             historyAddress: historyAddress,
             cexLabel: swapEstimate.cexLabel,
-            to: buyingToken.swapIdentifier,
+            fromAmount: swapEstimate.fromAmount,
             toAmount: swapEstimate.toAmount,
             toAddress: toAddress,
-            swapFee: swapEstimate.swapFee,
-            networkFee: networkFee
+            networkFee: networkFee,
+            swapFee: swapEstimate.swapFee
         )
         let result = try await SwapCexSupport.swapCexCreateTransaction(
             accountId: account.id,
             sellingToken: sellingToken,
-            params: params,
+            request: request,
             shouldTransfer: shouldTransfer,
             enclaveToken: enclaveToken
         )

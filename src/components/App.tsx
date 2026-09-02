@@ -8,10 +8,8 @@ import {
   APP_NAME,
   INACTIVE_MARKER,
   IS_ANDROID_DIRECT,
-  IS_CORE_WALLET,
   IS_EXPLORER,
-  IS_FEATURE_LIMITED,
-  IS_MY_WALLET_BRAND,
+  IS_GRAM_WALLET,
 } from '../config';
 import { selectCurrentAccountId, selectCurrentAccountSettings, selectCurrentAccountState } from '../global/selectors';
 import { useAccentColor } from '../util/accentColor';
@@ -38,7 +36,8 @@ import useInterval from '../hooks/useInterval';
 import useSyncEffect from '../hooks/useSyncEffect';
 import useTimeout from '../hooks/useTimeout';
 
-import Agent from './agent/Agent';
+import Agent from './agent/AgentRuntime';
+import AgentV2HostContextBridgeRuntime from './agent/AgentV2HostContextBridgeRuntime';
 import AppEmpty from './AppEmpty';
 import AppInactive from './AppInactive';
 import AppLocked from './appLocked/AppLocked';
@@ -57,6 +56,7 @@ import BackupModal from './main/modals/BackupModal';
 import NftAttributesModal from './main/modals/NftAttributesModal';
 import OffRampWidgetModal from './main/modals/OffRampWidgetModal';
 import OnRampWidgetModal from './main/modals/OnRampWidgetModal';
+import ReportNftModal from './main/modals/ReportNftModal';
 import SignatureModal from './main/modals/SignatureModal';
 import UnhideNftModal from './main/modals/UnhideNftModal';
 import BottomBar from './main/sections/Actions/BottomBar';
@@ -150,8 +150,8 @@ function App({
     renderingKey === AppState.Auth && !canPrerenderMain ? PRERENDER_MAIN_DELAY : undefined,
   );
 
-  // Core builds are deployed to a domain we do not own and have no store presence, so there is no version to nag about
-  useInterval(checkAppVersion, IS_CORE_WALLET ? undefined : APP_UPDATE_INTERVAL);
+  // Gram Wallet Web is deployed to a domain we do not own and has no store presence, so there is no version to nag about
+  useInterval(checkAppVersion, IS_GRAM_WALLET ? undefined : APP_UPDATE_INTERVAL);
 
   useEffect(() => {
     document.documentElement.classList.toggle('with-bottombar', withBottomBar);
@@ -241,6 +241,7 @@ function App({
 
   return (
     <>
+      <AgentV2HostContextBridgeRuntime />
       {IS_ELECTRON && <ElectronHeader withTitle />}
 
       <Transition
@@ -267,14 +268,9 @@ function App({
             onClose={closeBackupWalletModal}
           />
           <TransferModal />
-          {!IS_FEATURE_LIMITED && <SwapModal />}
-          {/* Cards and the wallet customization built on them are a My Wallet product, absent from the Gram brand */}
-          {IS_MY_WALLET_BRAND && (
-            <>
-              <MintCardModal />
-              <CustomizeWalletModal isOpen={isCustomizeWalletModalOpen} />
-            </>
-          )}
+          <SwapModal />
+          <MintCardModal />
+          <CustomizeWalletModal isOpen={isCustomizeWalletModalOpen} />
           <SignatureModal />
           <TransactionModal />
           <TransactionInfoModal />
@@ -288,6 +284,7 @@ function App({
           <WalletConnectPayOptionSelectionModal />
           <WalletConnectPayDataCollectionModal />
           <UnhideNftModal />
+          <ReportNftModal />
           <NftAttributesModal />
           <Toasts />
           <WalletRenameModal />

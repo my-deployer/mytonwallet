@@ -25,7 +25,7 @@ final class WalletConnectPayLoadingVC: WViewController {
     private lazy var subtitleLabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = lang("Please wait")
+        label.text = lang("Please wait...")
         label.textColor = .air.secondaryLabel
         label.applyTextStyle(.callout)
         label.textAlignment = .center

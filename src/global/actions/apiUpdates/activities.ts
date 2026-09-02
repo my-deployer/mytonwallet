@@ -2,8 +2,6 @@ import type { ApiActivity, ApiChain, ApiTransactionActivity } from '../../../api
 import type { GlobalState } from '../../types';
 
 import {
-  IS_FEATURE_LIMITED,
-  IS_MY_WALLET_BRAND,
   MINT_CARD_ADDRESS,
   MINT_CARD_REFUND_COMMENT,
   MW_CARDS_COLLECTION,
@@ -177,47 +175,41 @@ addActionHandler('apiUpdate', async (global, actions, update) => {
         );
         updatePoisoningCacheFromActivities(newConfirmedActivities);
 
-        if (!IS_FEATURE_LIMITED) {
-          // NFT polling is executed at long intervals, so a transaction-event with an NFT can arrive
-          // long before the next polling round. Apply the change to local NFT state immediately so the UI
-          // reflects new ownership (incl. MW-card auto-install) without waiting for polling.
-          // A subsequent `nftReceived`/`nftSent` socket update or polling round is idempotent here.
-          for (const activity of newConfirmedActivities) {
-            if (activity.kind !== 'transaction' || !activity.nft) continue;
+        // NFT polling is executed at long intervals, so a transaction-event with an NFT can arrive
+        // long before the next polling round. Apply the change to local NFT state immediately so the UI
+        // reflects new ownership (incl. MW-card auto-install) without waiting for polling.
+        // A subsequent `nftReceived`/`nftSent` socket update or polling round is idempotent here.
+        for (const activity of newConfirmedActivities) {
+          if (activity.kind !== 'transaction' || !activity.nft) continue;
 
-            // For `nftTrade` (marketplace buy/sell) `isIncoming` reflects the `TONCOIN` direction,
-            // not the NFT direction - so it must be inverted here
-            const isNftIncoming = activity.type === 'nftTrade' ? !activity.isIncoming : activity.isIncoming;
+          // For `nftTrade` (marketplace buy/sell) `isIncoming` reflects the `TONCOIN` direction,
+          // not the NFT direction - so it must be inverted here
+          const isNftIncoming = activity.type === 'nftTrade' ? !activity.isIncoming : activity.isIncoming;
 
-            if (isNftIncoming) {
-              global = applyIncomingNftFromActivity(global, accountId, activity.nft);
+          if (isNftIncoming) {
+            global = applyIncomingNftFromActivity(global, accountId, activity.nft);
 
-              if (activity.type === 'nftTrade') {
-                global = whitelistNft(global, accountId, activity.nft.address);
-              }
-
-              // Auto-installing a card is only safe where the card can also be taken off: every removal surface
-              // (customization modal, accent picker, the NFT menu's reset action) belongs to the My Wallet brand
-              if (IS_MY_WALLET_BRAND && activity.nft.collectionAddress === MW_CARDS_COLLECTION) {
-                const settings = selectAccountSettings(global, accountId);
-
-                if (!settings?.cardBackgroundNft) {
-                  getActions().setCardBackgroundNft({ nft: activity.nft, accountId });
-                  getActions().installAccentColorFromNft({ nft: activity.nft, accountId });
-                }
-              }
-            } else {
-              // `newOwnerAddress` is `unknown` from the sender's activity; `ownedSet` pruning is the meaningful effect
-              global = applyOutgoingNftFromActivity(global, accountId, activity.nft);
+            if (activity.type === 'nftTrade') {
+              global = whitelistNft(global, accountId, activity.nft.address);
             }
-          }
 
-          // Handles the `isCardMinting` flag reset and refund branch. `addNft`/`setCardBackgroundNft` are
-          // idempotent, so the small overlap with the loop above is harmless.
-          if (IS_MY_WALLET_BRAND) {
-            global = processCardMintingActivity(global, accountId, newConfirmedActivities);
+            if (activity.nft.collectionAddress === MW_CARDS_COLLECTION) {
+              const settings = selectAccountSettings(global, accountId);
+
+              if (!settings?.cardBackgroundNft) {
+                getActions().setCardBackgroundNft({ nft: activity.nft, accountId });
+                getActions().installAccentColorFromNft({ nft: activity.nft, accountId });
+              }
+            }
+          } else {
+            // `newOwnerAddress` is `unknown` from the sender's activity; `ownedSet` pruning is the meaningful effect
+            global = applyOutgoingNftFromActivity(global, accountId, activity.nft);
           }
         }
+
+        // Handles the `isCardMinting` flag reset and refund branch. `addNft`/`setCardBackgroundNft` are
+        // idempotent, so the small overlap with the loop above is harmless.
+        global = processCardMintingActivity(global, accountId, newConfirmedActivities);
 
         setGlobal(global);
       });

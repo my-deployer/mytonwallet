@@ -7,7 +7,7 @@ import type {
 import type { LoadMoreDirection, Theme, UserSwapToken, UserToken } from '../../../../global/types';
 import { SettingsState } from '../../../../global/types';
 
-import { ANIMATED_STICKER_SMALL_SIZE_PX, IS_FEATURE_LIMITED, IS_MY_WALLET_BRAND } from '../../../../config';
+import { ANIMATED_STICKER_SMALL_SIZE_PX } from '../../../../config';
 import {
   selectAccountStakingStates,
   selectCurrentAccountId,
@@ -123,11 +123,7 @@ function Assets({
   const { isLandscape, isPortrait } = useDeviceScreen();
   const appTheme = useAppTheme(theme);
 
-  const activeStates = useMemo(() => {
-    if (IS_FEATURE_LIMITED) return [];
-
-    return states?.filter(getIsActiveStakingState) ?? [];
-  }, [states]);
+  const activeStates = useMemo(() => states?.filter(getIsActiveStakingState) ?? [], [states]);
 
   // Set of BASE token slugs that have active staking.
   // Used to prevent showing staking info (APY, etc.) on base tokens when a separate staking token exists.
@@ -148,7 +144,6 @@ function Assets({
     return buildCollectionByKey<UserSwapToken>(swapTokens ?? [], 'slug');
   }, [swapTokens]);
 
-  // Vesting is a MYCOIN perk, i.e. a My Wallet product that the Gram brand does not carry
   const {
     ref: vestingTokenRef,
     shouldRender: shouldRenderVestingToken,
@@ -156,7 +151,7 @@ function Assets({
     vestingStatus,
     unfreezeEndDate,
     onVestingTokenClick,
-  } = useVesting({ vesting, userMycoin, isDisabled: !IS_MY_WALLET_BRAND });
+  } = useVesting({ vesting, userMycoin });
 
   const tokenSlugs = useMemo(() => (
     allTokensWithStaked

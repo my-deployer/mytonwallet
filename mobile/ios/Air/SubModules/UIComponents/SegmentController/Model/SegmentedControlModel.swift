@@ -84,13 +84,20 @@ public final class SegmentedControlModel {
             constants.topInset = 0
             constants.innerPadding = 16
             constants.backgroundPadding = 3
-        case .rootHeader, .compactRootHeader:
+        case .rootHeader:
             font = WTypography.uiFont(.subheadlineEmphasized)
             constants.spacing = 0
             constants.height = 36
             constants.topInset = 0
-            constants.innerPadding = style == .compactRootHeader ? 13 : 24
+            constants.innerPadding = 24
             constants.backgroundPadding = 4
+        case .compactRootHeader:
+            font = WTypography.uiFont(.subheadlineEmphasized)
+            constants.spacing = 0
+            constants.height = 34
+            constants.topInset = 0
+            constants.innerPadding = 13
+            constants.backgroundPadding = 3
         }
         self.constants = constants
         self.style = style
@@ -259,7 +266,7 @@ public final class SegmentedControlModel {
         }
         let frame1 = CGRect(x: x, y: 0, width: w1, height: constants.height)
         let frame2 = CGRect(x: x2, y: 0, width: w2, height: constants.height)
-        let progress = (selection.progress ?? 0.0).clamped(to: 0...1)
+        let progress = clamp(selection.progress ?? 0.0, to: 0...1)
         return interpolate(from: frame1, to: frame2, progress: progress)
     }
     

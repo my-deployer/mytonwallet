@@ -3,10 +3,11 @@ import { getActions } from '../../../../global';
 
 import type { StakingStateStatus } from '../../../../util/staking';
 
-import { IS_FEATURE_LIMITED } from '../../../../config';
 import buildClassName from '../../../../util/buildClassName';
 import { vibrate } from '../../../../util/haptics';
-import { handleSendMenuItemClick, SEND_CONTEXT_MENU_ITEMS } from './helpers/sendMenu';
+import {
+  handleSendMenuItemClick, SEND_CONTEXT_MENU_ITEMS, SEND_CONTEXT_MENU_ITEMS_WITHOUT_SELL,
+} from './helpers/sendMenu';
 import { STAKING_TAB_TEXT_VARIANTS } from './helpers/stakingLabels';
 
 import useLang from '../../../../hooks/useLang';
@@ -46,13 +47,10 @@ function PortraitActions({
   const lang = useLang();
 
   const isOnRampAllowed = !isTestnet && !isOnRampDisabled;
-  const addBuyButtonName = IS_FEATURE_LIMITED
-    ? lang('Receive')
-    : (!isSwapDisabled || isOnRampAllowed
-      ? lang('Fund')
-      : lang('Add')
-    );
-  const sendButtonName = IS_FEATURE_LIMITED || isOffRampDisabled || lang.code !== 'en'
+  const addBuyButtonName = !isSwapDisabled || isOnRampAllowed
+    ? lang('Fund')
+    : lang('Add');
+  const sendButtonName = isOffRampDisabled || lang.code !== 'en'
     ? lang('Send')
     : <span className={styles.name}>{lang('Send')}<span className={styles.divider}>/</span>{lang('Sell')}</span>;
 
@@ -93,7 +91,7 @@ function PortraitActions({
         </Button>
         <WithContextMenu
           rootRef={containerRef}
-          items={SEND_CONTEXT_MENU_ITEMS}
+          items={isOffRampDisabled ? SEND_CONTEXT_MENU_ITEMS_WITHOUT_SELL : SEND_CONTEXT_MENU_ITEMS}
           withBackdrop
           menuClassName={styles.menu}
           onItemClick={handleSendMenuItemClick}

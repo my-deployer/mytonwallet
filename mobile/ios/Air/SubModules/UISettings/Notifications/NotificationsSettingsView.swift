@@ -101,7 +101,7 @@ struct NotificationsSettingsView: View {
                 }
             }
         } header: {
-            Text(lang("Select up to %count% wallets for notifications", arg1: localizedIntegerString(MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT)))
+            Text(L10n.selectUpToCountWalletsForNotifications(count: MAX_PUSH_NOTIFICATIONS_ACCOUNT_COUNT))
         }
     }
     

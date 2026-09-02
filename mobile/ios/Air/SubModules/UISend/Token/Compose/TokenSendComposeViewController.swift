@@ -134,10 +134,7 @@ final class TokenSendComposeViewController:
         case .unavailable(.insufficientFee):
             lang("Insufficient Fee")
         case .authorizeDiesel:
-            lang(
-                "Authorize %token% Fee",
-                arg1: model.token.symbol
-            )
+            L10n.authorizeTokenFeeCapitalized(token: model.token.symbol)
         case .awaitingPreviousDiesel:
             lang("Awaiting Previous Fee")
         case .retryDraft, .retryMaximum:

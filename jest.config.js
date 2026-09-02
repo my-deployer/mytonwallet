@@ -13,13 +13,15 @@ module.exports = {
     // Local-only artifacts: agent worktrees (full repo copies), headless build output,
     // SwiftPM checkouts under mobile carry their own test.js files
     '<rootDir>/.claude/',
+    '<rootDir>/worktrees/',
     '<rootDir>/headless/',
     '<rootDir>/mobile/',
   ],
-  // Repo copies in .claude/worktrees duplicate workspace packages (e.g. @mytonwallet/air-app-launcher)
+  // Repo copies in local worktree directories duplicate workspace packages (e.g. @mytonwallet/air-app-launcher)
   // and break jest-haste-map module resolution
   modulePathIgnorePatterns: [
     '<rootDir>/.claude/',
+    '<rootDir>/worktrees/',
   ],
   testEnvironment: 'jest-environment-jsdom',
   transform: {
@@ -32,6 +34,4 @@ module.exports = {
   transformIgnorePatterns: [
     '/node_modules/(?!(axios)/)',
   ],
-  // Fixes https://github.com/jestjs/jest/issues/11617 (expected to be fixed properly in Jest 30.0.0)
-  maxWorkers: 1,
 };

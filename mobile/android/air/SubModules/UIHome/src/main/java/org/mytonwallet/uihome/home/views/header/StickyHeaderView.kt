@@ -15,6 +15,7 @@ import org.mytonwallet.app_air.uicomponents.base.WActionBar
 import org.mytonwallet.app_air.uicomponents.base.WActionBar.TitleAnimationMode
 import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.commonViews.HeaderActionsView
+import org.mytonwallet.app_air.uicomponents.commonViews.UpdateStatusView
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.exactly
@@ -35,12 +36,12 @@ import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.getDrawableCompat
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcore.models.MScreenMode
-import org.mytonwallet.uihome.home.views.UpdateStatusView
 
 @SuppressLint("ViewConstructor", "ClickableViewAccessibility")
 class StickyHeaderView(
     context: Context,
     private val screenMode: MScreenMode,
+    private val experimentalTopTabsEnabled: Boolean,
     private val onActionClick: (HeaderActionsView.Identifier) -> Unit
 ) : WFrameLayout(context),
     WThemedView,
@@ -214,6 +215,12 @@ class StickyHeaderView(
         listOf(scanButton, lockButton, eyeButton).forEach {
             it.updateColors(WColor.Tint, WColor.BackgroundRipple)
         }
+        val hideDefaultItems = shouldHideDefaultItems(isWideScreen = false)
+        if (screenMode is MScreenMode.Default) {
+            scanButton.isVisible = !hideDefaultItems
+        }
+        eyeButton.isVisible = !hideDefaultItems
+        updateStatusView.setAppearance(!hideDefaultItems, animated = false)
         updateActions()
         updateTheme()
     }
@@ -248,26 +255,29 @@ class StickyHeaderView(
             }
         val isShowing =
             state is UpdateStatusView.State.Updated && effectiveMode == Mode.Collapsed
+        val isWideScreen = effectiveMode == Mode.WideScreen
         updateStatusView.setAppearance(
-            isShowing = effectiveMode != Mode.WideScreen && !isShowing,
+            isShowing = !shouldHideDefaultItems(isWideScreen) && !isWideScreen && !isShowing,
             animated = handleAnimation
         )
         state?.let {
             updateStatusView.setState(state, effectiveMode != Mode.WideScreen && handleAnimation)
         }
-        applyWideScreenLayout(effectiveMode == Mode.WideScreen)
+        applyWideScreenLayout(isWideScreen)
     }
 
     private fun applyWideScreenLayout(isWideScreen: Boolean) {
         if (appliedWideScreen == isWideScreen) return
         appliedWideScreen = isWideScreen
+        val hideDefaultItems = shouldHideDefaultItems(isWideScreen)
 
         if (screenMode is MScreenMode.Default) {
-            scanButton.isVisible = !isWideScreen
+            scanButton.isVisible = !isWideScreen && !hideDefaultItems
         }
+        eyeButton.isVisible = !hideDefaultItems
         editButton.isVisible = isWideScreen && !isInActionMode
 
-        updateButtonPositions()
+        updateActions()
     }
 
     private fun applyButtonEdge(button: View, atStart: Boolean, edgeMargin: Int) {
@@ -286,8 +296,9 @@ class StickyHeaderView(
     }
 
     fun updateActions() {
+        val hideDefaultItems = shouldHideDefaultItems(appliedWideScreen == true)
         val lockButtonVisibility =
-            if (WGlobalStorage.isPasscodeSet()) VISIBLE else GONE
+            if (!hideDefaultItems && WGlobalStorage.isPasscodeSet()) VISIBLE else GONE
         if (lockButton.visibility != lockButtonVisibility) {
             lockButton.visibility = lockButtonVisibility
             updateButtonPositions()
@@ -300,6 +311,9 @@ class StickyHeaderView(
             }
         }
     }
+
+    private fun shouldHideDefaultItems(isWideScreen: Boolean): Boolean =
+        experimentalTopTabsEnabled && !isWideScreen
 
     private fun updateButtonPositions() {
         val isWideScreen = appliedWideScreen == true
@@ -378,8 +392,9 @@ class StickyHeaderView(
         )
     }
 
-    fun exitActionMode() {
+    fun exitActionMode(onCompletion: (() -> Unit)? = null) {
         if (!actionBar.isVisible) {
+            onCompletion?.invoke()
             return
         }
         actionMode = null
@@ -395,6 +410,7 @@ class StickyHeaderView(
             }
             hiddenViewsForActionMode = emptyList()
             updateActions()
+            onCompletion?.invoke()
         }
     }
 

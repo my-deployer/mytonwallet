@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "structured-terminal-bundle-v1",
+  "cases": [
+    {
+      "id": "complete.action-committed-terminal-bundle",
+      "expectedValid": true,
+      "terminalOutcome": "complete",
+      "terminalBundleStartsAtSequence": 4,
+      "deliveryCursors": [0, 3, 4, 5],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-1" },
+        { "sequence": 3, "type": "text_delta", "messageId": "message-1", "delta": "Ready for review." },
+        { "sequence": 4, "type": "action", "messageId": "message-1", "structuredId": "action-send-1" },
+        { "sequence": 5, "type": "thread" },
+        { "sequence": 6, "type": "message_end", "messageId": "message-1", "finishReason": "complete" }
+      ],
+      "expectedHydration": {
+        "status": "complete",
+        "actionIds": ["action-send-1"],
+        "semanticContentCount": 0,
+        "invalidEvent": false
+      }
+    },
+    {
+      "id": "complete.semantic-content-committed-terminal-bundle",
+      "expectedValid": true,
+      "terminalOutcome": "complete",
+      "terminalBundleStartsAtSequence": 4,
+      "deliveryCursors": [0, 3, 4, 5],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-1-semantic" },
+        { "sequence": 3, "type": "text_delta", "messageId": "message-1-semantic", "delta": "Analysis is ready." },
+        { "sequence": 4, "type": "semantic_content", "messageId": "message-1-semantic" },
+        { "sequence": 5, "type": "thread" },
+        { "sequence": 6, "type": "message_end", "messageId": "message-1-semantic", "finishReason": "complete" }
+      ],
+      "expectedHydration": {
+        "status": "complete",
+        "actionIds": [],
+        "semanticContentCount": 1,
+        "invalidEvent": false
+      }
+    },
+    {
+      "id": "error.open-message-drops-pending-structured-output-before-journal",
+      "expectedValid": true,
+      "terminalOutcome": "error",
+      "deliveryCursors": [0, 3, 4, 5],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-2" },
+        { "sequence": 3, "type": "text_delta", "messageId": "message-2", "delta": "Partial" },
+        { "sequence": 4, "type": "error", "messageId": "message-2" },
+        { "sequence": 5, "type": "thread" },
+        { "sequence": 6, "type": "message_end", "messageId": "message-2", "finishReason": "error" }
+      ],
+      "expectedHydration": {
+        "status": "error",
+        "actionIds": [],
+        "semanticContentCount": 0,
+        "invalidEvent": false
+      }
+    },
+    {
+      "id": "cancel.open-message-drops-pending-structured-output-before-journal",
+      "expectedValid": true,
+      "terminalOutcome": "cancelled",
+      "deliveryCursors": [0, 2, 3, 4],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-3" },
+        { "sequence": 3, "type": "text_delta", "messageId": "message-3", "delta": "Partial" },
+        { "sequence": 4, "type": "thread" },
+        { "sequence": 5, "type": "message_end", "messageId": "message-3", "finishReason": "cancelled" }
+      ],
+      "expectedHydration": {
+        "status": "cancelled",
+        "actionIds": [],
+        "semanticContentCount": 0,
+        "invalidEvent": false
+      }
+    },
+    {
+      "id": "invalid.injected-action-before-error-clears-reducer-state",
+      "expectedValid": false,
+      "terminalOutcome": "error",
+      "deliveryCursors": [0, 3, 4, 5],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-4" },
+        { "sequence": 3, "type": "action", "messageId": "message-4", "structuredId": "unsafe-action" },
+        { "sequence": 4, "type": "error", "messageId": "message-4" },
+        { "sequence": 5, "type": "thread" },
+        { "sequence": 6, "type": "message_end", "messageId": "message-4", "finishReason": "error" }
+      ],
+      "expectedHydration": {
+        "status": "error",
+        "actionIds": [],
+        "semanticContentCount": 0,
+        "invalidEvent": true
+      }
+    },
+    {
+      "id": "invalid.text-after-success-terminal-bundle-start",
+      "expectedValid": false,
+      "terminalOutcome": "complete",
+      "terminalBundleStartsAtSequence": 3,
+      "deliveryCursors": [0, 2, 3, 4, 5],
+      "events": [
+        { "sequence": 1, "type": "run_start" },
+        { "sequence": 2, "type": "message_start", "messageId": "message-5" },
+        { "sequence": 3, "type": "semantic_content", "messageId": "message-5" },
+        { "sequence": 4, "type": "text_delta", "messageId": "message-5", "delta": "Late content" },
+        { "sequence": 5, "type": "thread" },
+        { "sequence": 6, "type": "message_end", "messageId": "message-5", "finishReason": "complete" }
+      ],
+      "expectedHydration": {
+        "status": "complete",
+        "actionIds": [],
+        "semanticContentCount": 0,
+        "invalidEvent": true
+      }
+    }
+  ]
+}

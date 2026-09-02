@@ -16,7 +16,11 @@ export type EmulationResponse = {
   address_book: AddressBook;
 };
 
-export async function fetchEmulateTrace(network: ApiNetwork, boc: string): Promise<EmulationResponse> {
+export async function fetchEmulateTrace(
+  network: ApiNetwork,
+  boc: string,
+  signal?: AbortSignal,
+): Promise<EmulationResponse> {
   const baseUrl = NETWORK_CONFIG[network].toncenterUrl;
 
   const response = await fetchWithRetry(`${baseUrl}/api/emulate/v1/emulateTrace`, {
@@ -33,6 +37,7 @@ export async function fetchEmulateTrace(network: ApiNetwork, boc: string): Promi
       include_address_book: true,
       include_metadata: true,
     }),
+    signal,
   });
 
   return response.json();

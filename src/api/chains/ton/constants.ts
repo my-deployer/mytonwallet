@@ -10,8 +10,7 @@ import {
 } from '../../../config';
 import { JettonStakingGas } from './contracts/JettonStaking/imports/constants';
 
-export const TON_BIP39_PATH = `m/44'/607'/{index}'`;
-export const TON_DEFAULT_DERIVATION_PATH = `m/44'/607'/0'`;
+export { TON_BIP39_PATH } from './derivationConstants';
 
 export const NETWORK_CONFIG = {
   mainnet: {
@@ -305,6 +304,18 @@ export const KnownContracts: Record<ContractName, ContractInfo> = {
     oldHash: 'f216ded2b43d32e2d487db6fa6e4d2387f0ef1d7b53ec1ad85f0b4feb8e4ed62',
     isSwapAllowed: true,
   },
+  // Example: https://tonviewer.com/EQDFJ4-4-CXUn7TTt3e1Z7FBpH6lkJRP5mVkGtGd5dHZzGe0
+  dedustV2Cpmm: {
+    name: 'dedustV2Cpmm',
+    hash: '3997a5c1ee8923e93cf3a6a98ea3ef9482c64dd8aea2ba8365689e14d99c760d',
+    isSwapAllowed: true,
+  },
+  // Example: https://tonviewer.com/EQD026kOv4j6-56O6y8kbaaFZdQhVkh4RbEGrQND7XJMlgLf
+  dedustV2CpmmPoolV2: {
+    name: 'dedustV2CpmmPoolV2',
+    hash: '5851780d2386e989b9ab956da7cec5c69a667b9e525f628dcba5eb02c1ee0367',
+    isSwapAllowed: true,
+  },
   dedustVaultNative: {
     name: 'dedustVaultNative',
     oldHash: '64a42ad66688097422901ae6188670f0d6292ad3bdb4139289666f24187e86cb',
@@ -313,6 +324,18 @@ export const KnownContracts: Record<ContractName, ContractInfo> = {
   dedustVaultNativeV2: {
     name: 'dedustVaultNativeV2',
     hash: '875fac5e08e5062f0f7c5c9f4c989607108e35a9ad88dc563e3e4fc7a3d3e75c',
+    isSwapAllowed: true,
+  },
+  // Example: https://tonviewer.com/EQAO_1qemostkDtMfhp7XU0nOsAkQ_tLUO5YJeNMrj3dRAaH
+  dedustUranusMemeV2: {
+    name: 'dedustUranusMemeV2',
+    hash: '722d37be518ee0d4b6714077727ed60724bf379e8f1479c220b853d1af3cf00d',
+    isSwapAllowed: true,
+  },
+  // Example: https://tonviewer.com/EQA6dGeKIcHUVQghKGmGe1fEfyfYaYyLC594PkYO5uIbEqT4
+  dedustUranusMemeV3: {
+    name: 'dedustUranusMemeV3',
+    hash: '1e4f8fcaabefdbbb9b397372d9f021511c272eda2b492ca2d33b817bc3251afe',
     isSwapAllowed: true,
   },
   // Example: https://tonscan.org/address/EQAYqo4u7VF0fa4DPAebk4g9lBytj2VFny7pzXR0trjtXQaO
@@ -375,6 +398,12 @@ export const KnownContracts: Record<ContractName, ContractInfo> = {
   wrappedToncoTonWallet: {
     name: 'wrappedToncoTonWallet',
     hash: 'c16fb5d47aa4f0ad23057d34490e6f26a62c71e6422e4f6a8648126857c71438',
+    isSwapAllowed: true,
+  },
+  // Example: https://tonviewer.com/EQC7D80WjxMZZmvdCJxWhR-X69p-WesFsRtn-fu-hq_MQY3S
+  wrappedToncoGramWallet: {
+    name: 'wrappedToncoGramWallet',
+    hash: 'caa9701013595a9a3e13a0ebb24fa7630cadd558824efee977e54b571904e824',
     isSwapAllowed: true,
   },
   // Example: https://tonviewer.com/EQAbWJ3Y1HgIIvcMq1prG1anlDC0T3cZlAU7luPT6LmTpmrZ

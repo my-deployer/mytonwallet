@@ -3,9 +3,9 @@ import type { MethodArgsWithMaybePrefix, MethodResponseWithMaybePrefix } from '.
 import { type AllMethods, recognizeDappMethod } from '../../types/methods';
 
 import { getProtocolManager } from '../../dappProtocols';
-import * as methods from '../../methods';
 import { setInstallChannel as claimInstallChannel } from '../../methods/attribution';
 import init from '../../methods/init';
+import { methods } from '../../methods/registry';
 import { createStorage, withStorage } from '../../storages';
 
 export function createDirectApiConnector() {

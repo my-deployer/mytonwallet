@@ -4,7 +4,6 @@ import type { ApiChain } from '../../../../api/types';
 import type { Account, AccountSettings, AccountType } from '../../../../global/types';
 import type { AccountTab } from './constants';
 
-import { IS_FEATURE_LIMITED } from '../../../../config';
 import buildClassName from '../../../../util/buildClassName';
 
 import Transition from '../../../ui/Transition';
@@ -80,7 +79,7 @@ function AccountsGridView({
         isRecoveryRequired={isRecoveryRequired}
         balanceData={balanceData}
         cardBackgroundNft={cardBackgroundNft}
-        withContextMenu={!IS_FEATURE_LIMITED}
+        withContextMenu
         isSensitiveDataHidden={isSensitiveDataHidden}
         onClick={onSwitchAccount}
         onRename={onRename}

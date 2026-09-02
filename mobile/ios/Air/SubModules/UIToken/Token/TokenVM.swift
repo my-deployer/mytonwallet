@@ -114,13 +114,20 @@ import WReachability
         }
         let slug = selectedToken.slug
         let asset = selectedToken.swapIdentifier
+        let accountId = accountId
+        let selectedToken = selectedToken
         loadTokenDetailsTask = Task { [weak self] in
             do {
-                let details = try await Api.fetchTokenDetails(asset: asset, slug: slug)
-                guard let self, !Task.isCancelled else { return }
+                let details: ApiTokenDetails?
                 if preset == .disabled {
-                    TokenStore.setCachedTokenDetails(tokenSlug: slug, details: details)
+                    details = try await TokenStore.refreshTokenDetails(
+                        accountId: accountId,
+                        token: selectedToken
+                    )
+                } else {
+                    details = try await Api.fetchTokenDetails(asset: asset, slug: slug)
                 }
+                guard let self, !Task.isCancelled else { return }
                 setTokenInfoState(Self.tokenInfoState(details: details))
             } catch is CancellationError {
                 return

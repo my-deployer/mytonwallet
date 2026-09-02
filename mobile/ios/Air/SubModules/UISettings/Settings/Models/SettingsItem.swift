@@ -164,7 +164,7 @@ extension SettingsItem.Identifier {
             return SettingsItem(
                 id: self,
                 icon: UIImage.airBundle("TipsIcon30"),
-                title: lang("%app_name% Tips", arg1: APP_NAME),
+                title: L10n.appNameTips(appName: APP_NAME),
                 hasPrimaryColor: false,
                 hasChild: true,
                 isDangerous: false
@@ -191,7 +191,7 @@ extension SettingsItem.Identifier {
             return SettingsItem(
                 id: self,
                 icon: UIImage.airBundle("AboutIcon"),
-                title: lang("About %app_name%", arg1: APP_NAME),
+                title: L10n.aboutAppName(appName: APP_NAME),
                 hasPrimaryColor: false,
                 hasChild: true,
                 isDangerous: false

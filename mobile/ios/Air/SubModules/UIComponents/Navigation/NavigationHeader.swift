@@ -7,6 +7,7 @@
 
 import SwiftUI
 import UIKit
+import WalletContext
 
 public struct NavigationHeader<Title: View, Subtitle: View>: View {
     
@@ -234,7 +235,7 @@ open class NavigationHeader2: UILabel {
         let navMidInContainer = navBar.convert(CGPoint(x: navBar.bounds.inset(by: navBar.safeAreaInsets).midX, y: 0), to: self).x
         let offset = navMidInContainer - bounds.midX
         let halfSlack = max(0, bounds.width - width) / 2
-        centerXConstraint.constant = offset.clamped(to: -halfSlack...halfSlack)
+        centerXConstraint.constant = clamp(offset, to: -halfSlack...halfSlack)
         widthConstraint.constant = CGFloat(width)
     }
 }

@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11AB000000000000000000E /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11AB000000000000000000A /* main.swift */; };
+		A11AB000000000000000000F /* MyLabAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11AB000000000000000000B /* MyLabAppDelegate.swift */; };
+		A11AB0000000000000000010 /* MyLabSceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A11AB000000000000000000C /* MyLabSceneDelegate.swift */; };
+		A11AB0000000000000000013 /* AirUILab in Frameworks */ = {isa = PBXBuildFile; productRef = A11AB0000000000000000011 /* AirUILab */; };
+		A11AB0000000000000000014 /* WalletResources in Frameworks */ = {isa = PBXBuildFile; productRef = A11AB0000000000000000012 /* WalletResources */; };
 		210369CA9C0F830790249E00 /* MyTonWalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27F19F5D2CECB4EB00ACE1B9 /* MyTonWalletApp.swift */; };
 		27F19F5E2CECB4EB00ACE1B9 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27F19F5C2CECB4EB00ACE1B9 /* main.swift */; };
 		27F19F5F2CECB4EB00ACE1B9 /* MyTonWalletApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27F19F5D2CECB4EB00ACE1B9 /* MyTonWalletApp.swift */; };
@@ -152,6 +157,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		A11AB0000000000000000015 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		25E81DF6D17BC7C934A315E4 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -219,6 +234,12 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A11AB0000000000000000002 /* MyLab.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyLab.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A11AB000000000000000000A /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		A11AB000000000000000000B /* MyLabAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyLabAppDelegate.swift; sourceTree = "<group>"; };
+		A11AB000000000000000000C /* MyLabSceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyLabSceneDelegate.swift; sourceTree = "<group>"; };
+		A11AB000000000000000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A11AB0000000000000000016 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 		272B3CF32D2AD4930024658E /* BigInt.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = BigInt.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		27B24C372C89CA4C00AACB5B /* Kingfisher.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = Kingfisher.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		27CBE7962CAEECD000FB0398 /* SwiftKeychainWrapper.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; path = SwiftKeychainWrapper.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -319,6 +340,15 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A11AB0000000000000000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A11AB0000000000000000013 /* AirUILab in Frameworks */,
+				A11AB0000000000000000014 /* WalletResources in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		504EC3011FED79650016851F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -407,6 +437,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A11AB0000000000000000009 /* MyLab */ = {
+			isa = PBXGroup;
+			children = (
+				A11AB000000000000000000A /* main.swift */,
+				A11AB000000000000000000B /* MyLabAppDelegate.swift */,
+				A11AB000000000000000000C /* MyLabSceneDelegate.swift */,
+				A11AB000000000000000000D /* Info.plist */,
+				A11AB0000000000000000016 /* README.md */,
+			);
+			path = MyLab;
+			sourceTree = "<group>";
+		};
 		271019712CBE6BA800972D1A /* Resources */ = {
 			isa = PBXGroup;
 			children = (
@@ -448,6 +490,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3061FED79650016851F /* App */,
+				A11AB0000000000000000009 /* MyLab */,
 				584C517D2F6142520079935F /* Air */,
 				582009F62E822DDD0010E2B5 /* AirWidget */,
 				59C100092FB1000100BEEF01 /* NotificationServiceExtension */,
@@ -468,6 +511,7 @@
 				59C100052FB1000100BEEF01 /* GramWalletNotificationServiceExtension.appex */,
 				59C200052FB2000100BEEF01 /* MyTonWalletNotificationServiceExtension.appex */,
 				47944749FD2D0A00CA7F241E /* MyTonWallet_Preview.app */,
+				A11AB0000000000000000002 /* MyLab.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -584,6 +628,28 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A11AB0000000000000000001 /* MyLab */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A11AB0000000000000000006 /* Build configuration list for PBXNativeTarget "MyLab" */;
+			buildPhases = (
+				A11AB0000000000000000003 /* Sources */,
+				A11AB0000000000000000004 /* Frameworks */,
+				A11AB0000000000000000005 /* Resources */,
+				A11AB0000000000000000015 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MyLab;
+			packageProductDependencies = (
+				A11AB0000000000000000011 /* AirUILab */,
+				A11AB0000000000000000012 /* WalletResources */,
+			);
+			productName = MyLab;
+			productReference = A11AB0000000000000000002 /* MyLab.app */;
+			productType = "com.apple.product-type.application";
+		};
 		504EC3031FED79650016851F /* MyTonWallet */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 504EC3161FED79650016851F /* Build configuration list for PBXNativeTarget "MyTonWallet" */;
@@ -793,6 +859,9 @@
 				LastSwiftUpdateCheck = 2600;
 				LastUpgradeCheck = 2630;
 				TargetAttributes = {
+					A11AB0000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+					};
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
@@ -849,11 +918,19 @@
 				59C1000A2FB1000100BEEF01 /* GramWalletNotificationServiceExtension */,
 				59C2000A2FB2000100BEEF01 /* MyTonWalletNotificationServiceExtension */,
 				7388E62D305CB72073B797EA /* MyTonWallet_Preview */,
+				A11AB0000000000000000001 /* MyLab */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A11AB0000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		14BCC992DD052C192B99C53D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -991,6 +1068,16 @@
 /* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A11AB0000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A11AB000000000000000000E /* main.swift in Sources */,
+				A11AB000000000000000000F /* MyLabAppDelegate.swift in Sources */,
+				A11AB0000000000000000010 /* MyLabSceneDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		4A9ADD0EA4262D6167811F4D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1123,6 +1210,51 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		A11AB0000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y54Z4K69Z9;
+				ENABLE_TESTABILITY = YES;
+				INFOPLIST_FILE = MyLab/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mytonwallet.app.mylab;
+				PRODUCT_NAME = MyLab;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A11AB0000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = Y54Z4K69Z9;
+				INFOPLIST_FILE = MyLab/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.mytonwallet.app.mylab;
+				PRODUCT_NAME = MyLab;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		194F61494DCC08445F401170 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1810,6 +1942,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A11AB0000000000000000006 /* Build configuration list for PBXNativeTarget "MyLab" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A11AB0000000000000000007 /* Debug */,
+				A11AB0000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		504EC2FF1FED79650016851F /* Build configuration list for PBXProject "App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1905,6 +2046,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A11AB0000000000000000011 /* AirUILab */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = AirUILab;
+		};
+		A11AB0000000000000000012 /* WalletResources */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = WalletResources;
+		};
 		238EDAED8A39AE9B0BC5976B /* FirebaseMessaging */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 2054E5367348F6E9D47E2836 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;

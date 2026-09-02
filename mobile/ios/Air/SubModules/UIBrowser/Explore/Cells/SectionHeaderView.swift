@@ -5,15 +5,19 @@ struct SectionHeaderView: View {
     let title: String
     let topInset: CGFloat
 
-    init(title: String, topInset: CGFloat = 27) {
+    init(title: String, topInset: CGFloat = 24) {
         self.title = title
         self.topInset = topInset
     }
 
     var body: some View {
-        Text(title).textStyle(.sectionTitle)
-            .kerning(-0.25)
-            .frame(height: 24)
-            .padding(EdgeInsets(top: topInset, leading: 0, bottom: 14, trailing: 0))
+        Text(title)
+            .textStyle(.bodyStrong, scaling: .dynamic)
+            .foregroundStyle(Color.air.secondaryLabel)
+            .accessibilityAddTraits(.isHeader)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 39)
+            .padding(.top, topInset)
     }
 }

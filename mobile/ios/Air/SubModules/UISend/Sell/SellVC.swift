@@ -115,7 +115,7 @@ public class SellVC: WViewController {
         }
         
         guard let token = TokenStore.getToken(slug: tokenSlug) else {
-            showDisplayErrorThenDismiss(lang("Token not found"))
+            showDisplayErrorThenDismiss(lang("Token Not Found"))
             return
         }
         

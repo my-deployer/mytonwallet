@@ -68,6 +68,7 @@ public class AirLauncher {
         log.info("soarIntoAir")
         StartupTrace.beginInterval("airLauncher.soarIntoAir")
         StartupTrace.mark("airLauncher.soarIntoAir.begin")
+        AgentV2LegacyWidgetCleanup.run()
         hasStartedWalletCore = false
         hasStartedDeferredLaunch = false
         appUnlocked = false
@@ -87,7 +88,7 @@ public class AirLauncher {
         let db = launchPreparation.db
         self.db = db
         WalletCore.db = db
-        
+
         configureAppActions()
         StartupTrace.mark("airLauncher.appActions.configured")
         AppStorageHelper.reset()
@@ -108,9 +109,9 @@ public class AirLauncher {
             log.info("Deleting accounts from previous install")
             KeychainHelper.deleteAccountsFromPreviousInstall()
         }
-        
+
         UIView.setAnimationsEnabled(AppStorageHelper.animations)
-        
+
         let nightMode = AppStorageHelper.activeNightMode
         window?.overrideUserInterfaceStyle = nightMode.userInterfaceStyle
         installCurrentAccountTheme()
@@ -172,13 +173,13 @@ public class AirLauncher {
         changeThemeColors(to: activeColorTheme)
         StartupTrace.mark("airLauncher.theme.account.ready", details: "accent=\(String(describing: activeColorTheme))")
     }
-    
+
     public static func setAppIsFocused(_ isFocused: Bool) {
         Task {
             try? await Api.setIsAppFocused(isFocused)
         }
     }
-    
+
     public static func handle(url: URL) {
         _ = runtimeCoordinator.handle(url: url)
     }

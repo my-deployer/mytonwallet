@@ -1,5 +1,6 @@
 import SwiftUI
 import UIComponents
+import WalletCore
 import WalletContext
 
 struct SwapDetailsContainer<Content: View>: View {
@@ -46,5 +47,49 @@ struct SwapDetailsContainer<Content: View>: View {
             .contentShape(.rect)
         }
         .buttonStyle(InsetButtonStyle())
+    }
+}
+
+struct SwapExchangeRateRow: View {
+    let exchangeRate: SwapRate?
+
+    @ViewBuilder
+    var body: some View {
+        if let exchangeRate {
+            InsetCell {
+                HStack(spacing: 0) {
+                    Text(lang("Exchange Rate"))
+                        .foregroundStyle(Color.air.secondaryLabel)
+                    Spacer(minLength: 4)
+                    let priceAmount = DecimalAmount.fromDouble(exchangeRate.price, exchangeRate.fromToken)
+                    Text("\(exchangeRate.toToken.symbol) ≈ \(priceAmount.formatted(.compact))")
+                        .textStyle(.body, content: .technical, scaling: .dynamic)
+                }
+            }
+        }
+    }
+}
+
+struct SwapBlockchainFeeRow<Value: View>: View {
+    let nativeToken: ApiToken?
+    let feeDetails: ExplainedTransferFee?
+    let value: Value
+
+    init(
+        nativeToken: ApiToken?,
+        feeDetails: ExplainedTransferFee?,
+        @ViewBuilder value: () -> Value
+    ) {
+        self.nativeToken = nativeToken
+        self.feeDetails = feeDetails
+        self.value = value()
+    }
+
+    var body: some View {
+        InsetDetailCell {
+            SwapBlockchainFeeLabel(nativeToken: nativeToken, feeDetails: feeDetails)
+        } value: {
+            value
+        }
     }
 }

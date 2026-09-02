@@ -12,6 +12,26 @@ export function getIsNewStakeAllowed(tokenSlug?: string) {
   return !tokenSlug || !NEW_STAKE_DISABLED_TOKEN_SLUGS.has(tokenSlug);
 }
 
+export function filterStakingStatesByTonStrategy(
+  states: ApiStakingState[],
+  shouldUseNominators?: boolean,
+) {
+  const hasNominatorsStake = states.some((state) => (
+    state.type === 'nominators' && getIsActiveStakingState(state)
+  ));
+  const hasLiquidStake = states.some((state) => (
+    state.type === 'liquid' && getIsActiveStakingState(state)
+  ));
+
+  if (shouldUseNominators && !hasLiquidStake) {
+    return states.filter((state) => state.type !== 'liquid');
+  }
+  if (!shouldUseNominators && !hasNominatorsStake) {
+    return states.filter((state) => state.type !== 'nominators');
+  }
+  return states;
+}
+
 export function getStakingMinAmount(type?: ApiStakingType) {
   switch (type) {
     case 'nominators':

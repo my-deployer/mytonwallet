@@ -4,6 +4,7 @@ import type {
   ApiActivity,
   ApiNetwork,
   ApiNft,
+  ApiNftAttribute,
   ApiNftSuperCollection,
   ApiSwapActivity,
   ApiSwapDexLabel,
@@ -16,7 +17,6 @@ import type { ParsedAction } from '../types';
 import type {
   AddressBook,
   AnyAction,
-  AnyTokenMetadata,
   AuctionBidAction,
   CallContractAction,
   ContractDeployAction,
@@ -80,6 +80,7 @@ import {
   OUR_FEE_PAYLOAD_BOC,
   TeleitemOpCode,
 } from '../constants';
+import { extractMetadata, getProxiedImage } from './metadata';
 import { callToncenterV3 } from './other';
 
 type ActionsResponse = {
@@ -134,6 +135,7 @@ type FetchActionsOptions = {
   shouldIncludeTo?: boolean;
   includeTypes?: AnyAction['type'][];
   excludeTypes?: AnyAction['type'][];
+  signal?: AbortSignal;
 };
 
 /**
@@ -143,7 +145,7 @@ export async function fetchActions(options: FetchActionsOptions): Promise<ApiAct
   const {
     network, filter, limit, toTimestamp, fromTimestamp,
     shouldIncludeFrom, shouldIncludeTo, walletAddress,
-    includeTypes, excludeTypes,
+    includeTypes, excludeTypes, signal,
   } = options;
 
   const data: AnyLiteral = {
@@ -163,7 +165,7 @@ export async function fetchActions(options: FetchActionsOptions): Promise<ApiAct
     actions,
     address_book: addressBook,
     metadata = {},
-  } = await callToncenterV3<ActionsResponse>(network, '/actions', data);
+  } = await callToncenterV3<ActionsResponse>(network, '/actions', data, signal);
 
   const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
 
@@ -515,6 +517,7 @@ function parseJettonBurn(action: JettonBurnAction, options: ParseOptions): Parse
 
 function parseNftTransfer(action: NftTransferAction, options: ParseOptions): ParsedAction {
   const {
+    network,
     metadata,
     walletAddress,
     addressBook,
@@ -536,11 +539,11 @@ function parseNftTransfer(action: NftTransferAction, options: ParseOptions): Par
   } = action.details;
 
   const { nft, isMetadataMissing } = parseToncenterNft(
+    network,
     metadata,
     rawNftAddress,
     nftSuperCollectionsByCollectionAddress,
-    rawCollectionAddress ?? undefined,
-    index ?? undefined,
+    { rawCollectionAddress: rawCollectionAddress ?? undefined, index: index ?? undefined },
   );
 
   let shouldHide = !nft && rawCollectionAddress ? isHiddenCollection(rawCollectionAddress, metadata) : undefined;
@@ -592,7 +595,7 @@ function parseNftTransfer(action: NftTransferAction, options: ParseOptions): Par
 }
 
 function parseNftMint(action: NftMintAction, options: ParseOptions): ParsedAction {
-  const { metadata, nftSuperCollectionsByCollectionAddress } = options;
+  const { network, metadata, nftSuperCollectionsByCollectionAddress } = options;
 
   const {
     owner,
@@ -602,11 +605,11 @@ function parseNftMint(action: NftMintAction, options: ParseOptions): ParsedActio
   } = action.details;
 
   const { nft, isMetadataMissing } = parseToncenterNft(
+    network,
     metadata,
     rawNftAddress,
     nftSuperCollectionsByCollectionAddress,
-    rawCollectionAddress ?? undefined,
-    index ?? undefined,
+    { rawCollectionAddress: rawCollectionAddress ?? undefined, index: index ?? undefined },
   );
 
   const activity: ApiTransactionActivity = {
@@ -758,10 +761,19 @@ function parseJettonSwap(action: SwapAction, options: ParseOptions): ParsedActio
 }
 
 function parseDns(action: DnsAction, options: ParseOptions): ParsedAction {
-  const { metadata, nftSuperCollectionsByCollectionAddress } = options;
+  const { network, metadata, nftSuperCollectionsByCollectionAddress } = options;
   const { details: { source, asset } } = action;
 
-  const { nft } = parseToncenterNft(metadata, asset, nftSuperCollectionsByCollectionAddress);
+  const { nft } = parseToncenterNft(
+    network,
+    metadata,
+    asset,
+    nftSuperCollectionsByCollectionAddress,
+    // Toncenter gives no collection address for DNS actions, and without one the parser would
+    // refuse to treat the item as a domain. Such an action can only come from a real DNS contract,
+    // so it is safe to confirm that here
+    { isDns: true },
+  );
 
   let type: ApiTransactionType;
   if (action.type === 'change_dns') {
@@ -798,7 +810,7 @@ function parseDns(action: DnsAction, options: ParseOptions): ParsedAction {
 }
 
 function parseAuctionBid(action: AuctionBidAction, options: ParseOptions): ParsedAction {
-  const { metadata, nftSuperCollectionsByCollectionAddress } = options;
+  const { network, metadata, nftSuperCollectionsByCollectionAddress } = options;
   const { details } = action;
 
   const {
@@ -810,11 +822,11 @@ function parseAuctionBid(action: AuctionBidAction, options: ParseOptions): Parse
   } = details;
 
   const { nft } = parseToncenterNft(
+    network,
     metadata,
     rawNftAddress ?? undefined,
     nftSuperCollectionsByCollectionAddress,
-    rawCollectionAddress ?? undefined,
-    index ?? undefined,
+    { rawCollectionAddress: rawCollectionAddress ?? undefined, index: index ?? undefined },
   );
 
   const activity: ApiTransactionActivity = {
@@ -947,13 +959,31 @@ function parseCommonFields(
   } satisfies Partial<ApiTransactionActivity>;
 }
 
-function parseToncenterNft(
+export function parseToncenterNft(
+  network: ApiNetwork,
   metadataMap: MetadataMap,
   rawNftAddress: string,
   nftSuperCollectionsByCollectionAddress: Record<string, ApiNftSuperCollection>,
-  rawCollectionAddress?: string,
-  index?: string,
+  options?: {
+    rawCollectionAddress?: string;
+    /** Stringified integer */
+    index?: string;
+    /**
+     * The NFT owner and whether it is listed for sale. Toncenter reports this only in `/nft/items`.
+     * When the NFT is rebuilt from a history action, the state is unknown and both fields are left out.
+     */
+    ownerAddress?: string;
+    isOnSale?: boolean;
+    /**
+     * Passed as `true` when we know the NFT is a DNS item. Without it an NFT with no collection is
+     * never shown as a domain: anyone can mint a standalone NFT and call it `whatever.ton`, so the
+     * name alone proves nothing.
+     */
+    isDns?: boolean;
+  },
 ): { nft?: ApiNft; isMetadataMissing?: true } {
+  const { rawCollectionAddress, index, ownerAddress, isOnSale, isDns: isDnsByContext } = options ?? {};
+
   try {
     const nftMetadata = extractMetadata<NftItemMetadata>(rawNftAddress, metadataMap, 'nft_items');
 
@@ -961,36 +991,46 @@ function parseToncenterNft(
       return { isMetadataMissing: true };
     }
 
-    const { name, description, extra } = nftMetadata;
-    let { image } = nftMetadata;
+    const {
+      name, description, extra, image, nft_index: metadataIndex,
+      is_nsfw: isNsfwByModeration, is_scam: isScamByModeration,
+    } = nftMetadata;
+    const parsedIndex = Number(index ?? metadataIndex);
+    const nftIndex = Number.isFinite(parsedIndex) ? parsedIndex : 0;
     const lottie = extra?.lottie ? getProxiedLottieUrl(extra.lottie) : undefined;
 
-    const nftAddress = toBase64Address(rawNftAddress, true);
+    const nftAddress = toBase64Address(rawNftAddress, true, network);
     const collectionMetadata = rawCollectionAddress
       ? extractMetadata<NftCollectionMetadata>(rawCollectionAddress, metadataMap, 'nft_collections')
       : undefined;
-    const collectionAddress = rawCollectionAddress ? toBase64Address(rawCollectionAddress, true) : undefined;
+    const collectionAddress = rawCollectionAddress ? toBase64Address(rawCollectionAddress, true, network) : undefined;
 
-    // TODO (actions) Determine that this is a domain by the collection address once Toncenter adds it
     const domain = extra?.domain ?? name ?? '';
     const { zone: domainZone, base: domainBase } = getDnsDomainZone(domain) ?? {};
+    // A name that looks like a domain is not enough. Treat the NFT as a real domain only if its
+    // collection is the zone resolver contract, or if the caller vouches that this is a DNS item
+    const isDns = collectionAddress
+      ? collectionAddress === domainZone?.resolver
+      : isDnsByContext;
 
-    if (domainZone && (!collectionAddress || !image)) {
-      if (domainZone.suffixes[0] === 'ton') {
-        image = `${DNS_IMAGE_GEN_URL}${domainBase}`;
-      }
+    if (domainZone && isDns && !image) {
+      // Rendered by our own service, so it is as trusted as an indexer preview
+      const generatedImage = domainZone.suffixes[0] === 'ton'
+        ? `${DNS_IMAGE_GEN_URL}${domainBase}`
+        : undefined;
 
       const nft = omitUndefined<ApiNft>({
         chain: 'ton',
         interface: 'default',
-        index: Number(index),
+        index: nftIndex,
         name: domain,
         address: nftAddress,
 
-        thumbnail: extra?._image_medium ?? image!,
-        image: extra?._image_big ?? image!,
+        thumbnail: generatedImage ?? extra?._image_medium,
+        image: generatedImage ?? extra?._image_big ?? extra?._image_medium,
         description,
-        isOnSale: false, // TODO (actions) Replace with real value when Toncenter supports it
+        ownerAddress,
+        isOnSale: isOnSale ?? false,
         collectionAddress: collectionAddress ?? domainZone.resolver,
         collectionName: domainZone.collectionName,
         metadata: {
@@ -1010,37 +1050,52 @@ function parseToncenterNft(
       }
     }
 
-    const isScam = hasScamLink; // TODO (actions) Replace with real value when Toncenter supports it
+    // Toncenter moderates whole collections too, and an item of a flagged collection carries no
+    // flag of its own
+    const isScam = (isScamByModeration ?? collectionMetadata?.is_scam) || hasScamLink;
+    const isNsfw = isNsfwByModeration ?? collectionMetadata?.is_nsfw;
     const isHidden = extra?.render_type === 'hidden' || isScam;
     const isFragmentGift = getIsFragmentGift(nftSuperCollectionsByCollectionAddress, collectionAddress);
     const isOnFragment = isFragmentGift || NFT_FRAGMENT_COLLECTIONS.includes(rawCollectionAddress!);
     const isMwCard = collectionAddress === MW_CARDS_COLLECTION;
-    const fixedImage = image ? fixIpfsUrl(image) : undefined;
-
-    const thumbnail = extra?._image_medium ?? fixedImage;
-    const fullImage = extra?._image_big ?? fixedImage;
+    // A non-string `value` breaks the UI, and the MyTonWallet card traits are read as strings too
+    const attributes = Array.isArray(extra?.attributes)
+      ? extra.attributes.filter((attribute): attribute is ApiNftAttribute => typeof attribute?.value === 'string')
+      : undefined;
+    // Our own collection served from our own CDN, so its metadata URL is as trusted as an indexer
+    // preview. Toncenter also fails to proxy these images, answering 404 for its cached source
+    const mwCardImage = isMwCard ? image : undefined;
+    // The whitelisted collections have known authors, so the hosts of their metadata URLs are trusted.
+    // Only a fallback: the indexer preview, when it exists, keeps the moderation applied
+    const trustedRawImage = image && collectionAddress && checkIsTrustedCollection(collectionAddress)
+      ? fixIpfsUrl(image)
+      : undefined;
 
     const nft: ApiNft = omitUndefined<ApiNft>({
       chain: 'ton',
       interface: 'default',
-      index: Number(index),
+      index: nftIndex,
       name: name!,
       address: nftAddress,
-      thumbnail,
-      image: fullImage,
+      thumbnail: mwCardImage ?? extra?._image_medium ?? trustedRawImage,
+      image: mwCardImage ?? extra?._image_big ?? extra?._image_medium ?? trustedRawImage,
       description,
-      isOnSale: false, // TODO (actions) Replace with real value when Toncenter supports it
+      ownerAddress,
+      isOnSale: isOnSale ?? false,
       isHidden,
+      isScam,
+      isNsfw,
       isUnverified: getIsNftUnverified({ collectionAddress, isOnFragment }),
       metadata: {
-        ...(isFragmentGift && {
-          fragmentUrl: image!.replace(NFT_FRAGMENT_GIFT_IMAGE_TO_URL_REGEX, 'https://$1'),
+        ...(attributes && { attributes }),
+        ...(lottie && { lottie }),
+        // The URL is derived from the image URL, so a gift without an image simply has no link
+        ...(isFragmentGift && image && {
+          fragmentUrl: image.replace(NFT_FRAGMENT_GIFT_IMAGE_TO_URL_REGEX, 'https://$1'),
         }),
         // `id` must be set to `index + 1`. Unlike TonApi where this field is preformatted,
         // we need to manually adjust it here due to data source differences.
-        ...(isMwCard && buildMwCardsNftMetadata({
-          id: Number(index || 0) + 1, image, attributes: extra?.attributes,
-        })),
+        ...(isMwCard && buildMwCardsNftMetadata({ id: nftIndex + 1, image, attributes })),
       },
       ...(collectionAddress && {
         collectionAddress,
@@ -1078,19 +1133,9 @@ function parseToncenterJetton(rawAddress: string, metadata: MetadataMap): ApiTok
     chain: 'ton',
     name: jettonMetadata.name!,
     symbol: jettonMetadata.symbol!,
-    image: jettonMetadata.image!,
+    image: getProxiedImage(jettonMetadata),
     decimals: Number(jettonMetadata.extra!.decimals),
   };
-}
-
-function extractMetadata<T extends AnyTokenMetadata>(
-  rawAddress: string,
-  metadata: MetadataMap,
-  type: AnyTokenMetadata['type'],
-): T | undefined {
-  const data = metadata[rawAddress];
-  if (!data || !data.is_indexed) return undefined;
-  return data.token_info?.find((tokenInfo) => tokenInfo.type === type) as T;
 }
 
 function safeReadComment(payloadBase64: string) {

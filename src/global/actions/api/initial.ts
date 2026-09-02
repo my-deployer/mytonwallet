@@ -1,4 +1,5 @@
 import { DEFAULT_PRICE_CURRENCY, IS_EXTENSION } from '../../../config';
+import { getAgentOverride } from '../../../util/agent/agentProtocolVersion';
 import { logDebug } from '../../../util/logs';
 import { IS_ELECTRON } from '../../../util/windowEnvironment';
 import { callApi, initApi } from '../../../api';
@@ -15,6 +16,7 @@ addActionHandler('initApi', async (global, actions) => {
     isElectron: IS_ELECTRON,
     isIosApp: false,
     isAndroidApp: false,
+    agentOverride: getAgentOverride(),
     langCode: global.settings.langCode,
     referrer: new URLSearchParams(window.location.search).get('r') ?? undefined,
     channel: new URLSearchParams(window.location.search).get('utm_source') ?? undefined,

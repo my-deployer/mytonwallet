@@ -63,6 +63,10 @@
   height: 1.25rem;
   border-radius: 50%;
 
+  &.imageNoData {
+    background-color: var(--color-background-second);
+  }
+
   &:not(:first-child) {
     margin-inline-start: -0.625rem;
     box-shadow: 0 0 0 0.0625rem var(--color-transaction-amount-bg);

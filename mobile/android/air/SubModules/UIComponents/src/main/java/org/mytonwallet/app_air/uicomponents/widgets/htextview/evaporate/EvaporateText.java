@@ -5,6 +5,7 @@ import android.animation.ValueAnimator;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.view.View;
 import android.view.animation.AccelerateDecelerateInterpolator;
 
 import org.mytonwallet.app_air.uicomponents.widgets.htextview.base.CharacterDiffResult;
@@ -31,6 +32,31 @@ public class EvaporateText extends HText {
     private long duration;
     private ValueAnimator animator;
     private final char[] mCharBuffer = new char[1];
+
+    public static final int RESIZE_ANCHOR_START = 0;
+    public static final int RESIZE_ANCHOR_CENTER = 1;
+    public static final int RESIZE_ANCHOR_END = 2;
+
+    // Which edge stays put when a text change resizes a wrap-content view. The old glyphs keep
+    // their position by shifting with the moving edge.
+    private int mResizeAnchor = RESIZE_ANCHOR_START;
+    private int mOldViewWidth;
+
+    public void setResizeAnchor(int anchor) {
+        mResizeAnchor = anchor;
+    }
+
+    private float resizeAnchorFactor() {
+        boolean isRtl = mHTextView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL;
+        switch (mResizeAnchor) {
+            case RESIZE_ANCHOR_END:
+                return isRtl ? 0f : 1f;
+            case RESIZE_ANCHOR_CENTER:
+                return 0.5f;
+            default:
+                return isRtl ? 1f : 0f;
+        }
+    }
 
     @Override
     public void init(final HTextView hTextView, AttributeSet attrs, int defStyle) {
@@ -68,6 +94,7 @@ public class EvaporateText extends HText {
                 return;
             }
             oldStartX = mHTextView.getLayout().getLineLeft(0);
+            mOldViewWidth = mHTextView.getWidth();
             EvaporateText.super.animateText(text, animated);
         };
 
@@ -116,6 +143,9 @@ public class EvaporateText extends HText {
 
         float startX = mHTextView.getLayout().getLineLeft(0);
         float startY = mHTextView.getBaseline();
+
+        float oldStartX = this.oldStartX +
+            (mHTextView.getWidth() - mOldViewWidth) * resizeAnchorFactor();
 
         float offset = startX;
         float oldOffset = oldStartX;

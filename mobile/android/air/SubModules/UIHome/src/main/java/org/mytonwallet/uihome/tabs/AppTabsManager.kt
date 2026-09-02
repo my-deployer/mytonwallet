@@ -4,6 +4,7 @@ import org.mytonwallet.app_air.icons.R
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.WalletEvent
+import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
 import org.mytonwallet.uihome.tabs.views.IBottomNavigationView
 
 object AppTabsManager {
@@ -18,6 +19,7 @@ object AppTabsManager {
     )
 
     const val TAB_WALLET = "wallet"
+    const val TAB_MARKET = "market"
     const val TAB_AGENT = "agent"
     const val TAB_EXPLORE = "explore"
     const val TAB_SETTINGS = "settings"
@@ -31,6 +33,14 @@ object AppTabsManager {
             R.drawable.ic_home_filled,
             "Wallet",
             isRequired = true
+        ),
+        AppTab(
+            TAB_MARKET,
+            IBottomNavigationView.ID_MARKET,
+            R.drawable.ic_market_thin,
+            R.drawable.ic_market_filled,
+            "Market",
+            isRequired = false
         ),
         AppTab(
             TAB_AGENT,
@@ -66,7 +76,9 @@ object AppTabsManager {
         )
     )
 
-    val defaultTabIds = listOf(TAB_WALLET, TAB_AGENT, TAB_EXPLORE, TAB_SETTINGS)
+    val defaultTabIds = listOf(TAB_WALLET, TAB_MARKET, TAB_AGENT, TAB_EXPLORE, TAB_SETTINGS)
+
+    private val legacyDefaultTabIds = listOf(TAB_WALLET, TAB_AGENT, TAB_EXPLORE, TAB_SETTINGS)
 
     private var _orderedTabIds: List<String>? = null
     val orderedTabIds: List<String>
@@ -74,17 +86,26 @@ object AppTabsManager {
             ?: validatedTabOrder(WGlobalStorage.getAppTabOrder()).also { _orderedTabIds = it }
 
     val orderedTabs: List<AppTab>
-        get() = orderedTabIds.mapNotNull(::tabFor)
+        get() = orderedTabIds.mapNotNull(::tabFor).filter(::isAvailable)
+
+    val selectableTabs: List<AppTab>
+        get() = registeredTabs.filter(::isAvailable)
 
     val availableTabs: List<AppTab>
-        get() = registeredTabs.filter { it.id !in orderedTabIds }
+        get() = selectableTabs.filter { it.id !in orderedTabIds }
+
+    val visibleDefaultTabIds: List<String>
+        get() = defaultTabIds.filter { id -> tabFor(id)?.let(::isAvailable) == true }
 
     val isCustomized: Boolean
-        get() = orderedTabIds != defaultTabIds
+        get() = orderedTabs.map { it.id } != visibleDefaultTabIds
 
     fun tabFor(id: String): AppTab? = registeredTabs.firstOrNull { it.id == id }
 
     fun contains(intId: Int): Boolean = orderedTabs.any { it.intId == intId }
+
+    private fun isAvailable(tab: AppTab): Boolean =
+        tab.id != TAB_MARKET || WGlobalStorage.areTopTabsEnabled()
 
     fun setTabIds(ids: List<String>) {
         val validated = validatedTabOrder(ids)
@@ -98,6 +119,7 @@ object AppTabsManager {
     // stored order can never leave the app without the wallet/settings tabs.
     private fun validatedTabOrder(raw: List<String>?): List<String> {
         if (raw.isNullOrEmpty()) return defaultTabIds
+        if (raw == legacyDefaultTabIds) return defaultTabIds
         val result = LinkedHashSet<String>()
         raw.forEach { id ->
             if (tabFor(id) != null) result.add(id)

@@ -13,6 +13,11 @@ private enum AgentMessageTextRendererMetrics {
     static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
 }
 
+enum AgentMessageMarkdownProfile: Equatable {
+    case legacy
+    case agentMarkdownV1
+}
+
 @MainActor
 enum AgentMessageTextRenderer {
     static var baseFont: UIFont {
@@ -23,19 +28,25 @@ enum AgentMessageTextRenderer {
         _ text: String,
         textColor: UIColor,
         rendersMarkdown: Bool,
-        detectsLinks: Bool = true
+        detectsLinks: Bool = true,
+        markdownProfile: AgentMessageMarkdownProfile = .legacy,
+        baseFont: UIFont = WTypography.uiFont(.body)
     ) -> NSAttributedString {
         let normalizedText = normalizedMessageSource(text)
         let attributedText: NSMutableAttributedString
 
-        if rendersMarkdown,
-           let attributedString = try? AttributedString(
-                markdown: normalizedMarkdownSource(normalizedText),
-                options: AgentMessageTextRendererMetrics.markdownOptions
-           ) {
+        if rendersMarkdown, markdownProfile == .agentMarkdownV1 {
+            attributedText = makeAgentMarkdownText(normalizedText, textColor: textColor, baseFont: baseFont)
+        } else if rendersMarkdown,
+                  let attributedString = try? AttributedString(
+                    markdown: normalizedMarkdownSource(normalizedText),
+                    options: AgentMessageTextRendererMetrics.markdownOptions
+                  ) {
             attributedText = NSMutableAttributedString(attributedString)
         } else {
-            attributedText = NSMutableAttributedString(attributedString: makePlainText(normalizedText, color: textColor))
+            attributedText = NSMutableAttributedString(
+                attributedString: makePlainText(normalizedText, color: textColor, font: baseFont)
+            )
         }
 
         let fullRange = NSRange(location: 0, length: attributedText.length)
@@ -43,16 +54,23 @@ enum AgentMessageTextRenderer {
 
         attributedText.addAttribute(.foregroundColor, value: textColor, range: fullRange)
         attributedText.enumerateAttribute(.font, in: fullRange) { value, range, _ in
-            let font = normalizedMarkdownFont(from: value as? UIFont)
+            let font = normalizedMarkdownFont(from: value as? UIFont, baseFont: baseFont)
             attributedText.addAttribute(.font, value: font, range: range)
         }
         attributedText.enumerateAttribute(.paragraphStyle, in: fullRange) { value, range, _ in
-            let paragraphStyle = normalizedParagraphStyle(from: value as? NSParagraphStyle)
+            let paragraphStyle = normalizedParagraphStyle(
+                from: value as? NSParagraphStyle,
+                lineHeight: markdownProfile == .agentMarkdownV1
+                    ? ceil(baseFont.lineHeight)
+                    : AgentMessageTextRendererMetrics.lineHeight
+            )
             attributedText.addAttribute(.paragraphStyle, value: paragraphStyle, range: range)
         }
-        applyEmptyLineHeights(to: attributedText)
+        applyEmptyLineHeights(to: attributedText, baseFont: baseFont)
         if detectsLinks {
             applyDetectedLinks(to: attributedText)
+        } else {
+            attributedText.removeAttribute(.link, range: fullRange)
         }
 
         return attributedText
@@ -84,11 +102,324 @@ enum AgentMessageTextRenderer {
             .joined(separator: "\n")
     }
 
-    private static func makePlainText(_ text: String, color: UIColor) -> NSAttributedString {
+    private static func makeAgentMarkdownText(
+        _ text: String,
+        textColor: UIColor,
+        baseFont: UIFont
+    ) -> NSMutableAttributedString {
+        let lines = text.components(separatedBy: "\n")
+        var renderedLines: [NSAttributedString] = []
+        var index = 0
+
+        while index < lines.count {
+            if isAgentCodeFenceStart(lines[index]) {
+                var codeLines: [String] = []
+                index += 1
+                while index < lines.count, lines[index].trimmingCharacters(in: .whitespaces) != "```" {
+                    codeLines.append(lines[index])
+                    index += 1
+                }
+                if index < lines.count {
+                    index += 1
+                }
+                renderedLines.append(makeAgentCodeBlock(
+                    codeLines.joined(separator: "\n"),
+                    textColor: textColor,
+                    baseFont: baseFont
+                ))
+                continue
+            }
+
+            renderedLines.append(makeAgentMarkdownLine(
+                lines[index],
+                textColor: textColor,
+                baseFont: baseFont
+            ))
+            index += 1
+        }
+
+        let result = NSMutableAttributedString()
+        for (lineIndex, line) in renderedLines.enumerated() {
+            if lineIndex > 0 {
+                result.append(NSAttributedString(string: "\n"))
+            }
+            result.append(line)
+        }
+        return result
+    }
+
+    private static func makeAgentMarkdownLine(
+        _ line: String,
+        textColor: UIColor,
+        baseFont: UIFont
+    ) -> NSAttributedString {
+        let unorderedPrefix = line.range(
+            of: #"^[-+*]\s+\S"#,
+            options: .regularExpression
+        )
+        let orderedPrefix = line.range(
+            of: #"^\d+[.)]\s+\S"#,
+            options: .regularExpression
+        )
+
+        let prefix: String?
+        let content: String
+        if unorderedPrefix != nil {
+            prefix = "•\t"
+            content = line.replacingOccurrences(
+                of: #"^[-+*]\s+"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else if orderedPrefix != nil,
+                  let markerRange = line.range(of: #"^\d+[.)]"#, options: .regularExpression) {
+            prefix = "\(line[markerRange].dropLast()).\t"
+            content = line.replacingOccurrences(
+                of: #"^\d+[.)]\s+"#,
+                with: "",
+                options: .regularExpression
+            )
+        } else {
+            prefix = nil
+            content = line
+        }
+
+        let parsed = parseAgentInlineMarkdown(
+            content,
+            textColor: textColor,
+            baseFont: baseFont
+        )
+        guard let prefix else { return parsed }
+
+        let listLine = NSMutableAttributedString(
+            string: prefix,
+            attributes: [
+                .font: baseFont,
+                .foregroundColor: textColor
+            ]
+        )
+        listLine.append(parsed)
+        let paragraphStyle = NSMutableParagraphStyle()
+        let contentIndent = ceil(baseFont.pointSize * 1.5)
+        paragraphStyle.firstLineHeadIndent = 0
+        paragraphStyle.headIndent = contentIndent
+        paragraphStyle.tabStops = [NSTextTab(textAlignment: .left, location: contentIndent)]
+        listLine.addAttribute(
+            .paragraphStyle,
+            value: paragraphStyle,
+            range: NSRange(location: 0, length: listLine.length)
+        )
+        return listLine
+    }
+
+    private static func parseAgentInlineMarkdown(
+        _ text: String,
+        textColor: UIColor,
+        baseFont: UIFont
+    ) -> NSAttributedString {
+        var escapedCharacters: [String] = []
+        let escapedText = replaceMatches(
+            in: text,
+            pattern: #"\\([\\|`*_{}\[\]()#+.!~-])"#,
+            replacement: { match, source in
+                guard match.numberOfRanges == 2,
+                      let characterRange = Range(match.range(at: 1), in: source) else { return nil }
+                let index = escapedCharacters.count
+                escapedCharacters.append(String(source[characterRange]))
+                return "\u{E002}\(index)\u{E003}"
+            }
+        )
+        let passiveLinks = passiveAgentLinks(in: escapedText)
+        var codeSpans: [String] = []
+        let protectedText = replaceMatches(
+            in: passiveLinks,
+            pattern: #"`([^`\n]+)`"#,
+            replacement: { match, source in
+                guard match.numberOfRanges == 2,
+                      let contentRange = Range(match.range(at: 1), in: source) else { return nil }
+                let index = codeSpans.count
+                codeSpans.append(String(source[contentRange]))
+                return "\u{E000}\(index)\u{E001}"
+            }
+        )
+        let result = NSMutableAttributedString(
+            string: protectedText,
+            attributes: [
+                .font: baseFont,
+                .foregroundColor: textColor
+            ]
+        )
+
+        applyInlineTrait(
+            to: result,
+            pattern: #"\*\*([^*\n]+)\*\*"#,
+            markerLength: 2,
+            trait: .traitBold
+        )
+        applyInlineTrait(
+            to: result,
+            pattern: #"(?<!\*)\*([^*\n]+)\*(?!\*)"#,
+            markerLength: 1,
+            trait: .traitItalic
+        )
+
+        guard let placeholders = try? NSRegularExpression(
+            pattern: "\u{E000}(\\d+)\u{E001}"
+        ) else {
+            return result
+        }
+        for match in placeholders.matches(
+            in: result.string,
+            range: NSRange(location: 0, length: result.length)
+        ).reversed() {
+            guard match.numberOfRanges == 2,
+                  let placeholderRange = Range(match.range(at: 1), in: result.string),
+                  let index = Int(result.string[placeholderRange]),
+                  codeSpans.indices.contains(index) else { continue }
+            result.replaceCharacters(
+                in: match.range,
+                with: NSAttributedString(
+                    string: codeSpans[index],
+                    attributes: [
+                        .font: UIFont.monospacedSystemFont(
+                            ofSize: baseFont.pointSize,
+                            weight: .regular
+                        ),
+                        .foregroundColor: textColor,
+                        .backgroundColor: UIColor.secondarySystemFill
+                    ]
+                )
+            )
+        }
+        guard let escapedPlaceholders = try? NSRegularExpression(
+            pattern: "\u{E002}(\\d+)\u{E003}"
+        ) else {
+            return result
+        }
+        for match in escapedPlaceholders.matches(
+            in: result.string,
+            range: NSRange(location: 0, length: result.length)
+        ).reversed() {
+            guard match.numberOfRanges == 2,
+                  let placeholderRange = Range(match.range(at: 1), in: result.string),
+                  let index = Int(result.string[placeholderRange]),
+                  escapedCharacters.indices.contains(index) else { continue }
+            let attributes = result.attributes(at: match.range.location, effectiveRange: nil)
+            result.replaceCharacters(
+                in: match.range,
+                with: NSAttributedString(
+                    string: escapedCharacters[index],
+                    attributes: attributes
+                )
+            )
+        }
+        return result
+    }
+
+    private static func applyInlineTrait(
+        to text: NSMutableAttributedString,
+        pattern: String,
+        markerLength: Int,
+        trait: UIFontDescriptor.SymbolicTraits
+    ) {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return }
+        let matches = expression.matches(
+            in: text.string,
+            range: NSRange(location: 0, length: text.length)
+        )
+
+        for match in matches.reversed() {
+            guard match.range.length > markerLength * 2 else { continue }
+            let contentLength = match.range.length - markerLength * 2
+            text.deleteCharacters(in: NSRange(
+                location: match.range.location + markerLength + contentLength,
+                length: markerLength
+            ))
+            text.deleteCharacters(in: NSRange(
+                location: match.range.location,
+                length: markerLength
+            ))
+            let contentRange = NSRange(location: match.range.location, length: contentLength)
+            text.enumerateAttribute(.font, in: contentRange) { value, range, _ in
+                let font = (value as? UIFont) ?? baseFont
+                let traits = font.fontDescriptor.symbolicTraits.union(trait)
+                guard let descriptor = font.fontDescriptor.withSymbolicTraits(traits) else { return }
+                text.addAttribute(
+                    .font,
+                    value: UIFont(descriptor: descriptor, size: font.pointSize),
+                    range: range
+                )
+            }
+        }
+    }
+
+    private static func makeAgentCodeBlock(
+        _ code: String,
+        textColor: UIColor,
+        baseFont: UIFont
+    ) -> NSAttributedString {
+        NSAttributedString(
+            string: code,
+            attributes: [
+                .font: UIFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular),
+                .foregroundColor: textColor,
+                .backgroundColor: UIColor.secondarySystemFill
+            ]
+        )
+    }
+
+    private static func isAgentCodeFenceStart(_ line: String) -> Bool {
+        line.range(
+            of: #"^```[A-Za-z0-9_+-]+\s*$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private static func passiveAgentLinks(in text: String) -> String {
+        replaceMatches(
+            in: replaceMatches(
+                in: text,
+                pattern: #"\[([^\]]+)\]\((https?://[^)]+)\)"#,
+                replacement: { match, source in
+                    guard match.numberOfRanges == 3,
+                          let labelRange = Range(match.range(at: 1), in: source),
+                          let urlRange = Range(match.range(at: 2), in: source) else { return nil }
+                    return "\(source[labelRange]) (\(source[urlRange]))"
+                }
+            ),
+            pattern: #"\[([^\]]+)\]\((mtw://[^)]+)\)"#,
+            replacement: { match, source in
+                guard match.numberOfRanges == 3,
+                      let labelRange = Range(match.range(at: 1), in: source) else { return nil }
+                return String(source[labelRange])
+            }
+        )
+    }
+
+    private static func replaceMatches(
+        in text: String,
+        pattern: String,
+        replacement: (NSTextCheckingResult, String) -> String?
+    ) -> String {
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return text }
+        var result = text
+        let matches = expression.matches(
+            in: text,
+            range: NSRange(text.startIndex..., in: text)
+        )
+        for match in matches.reversed() {
+            guard let range = Range(match.range, in: result),
+                  let replacement = replacement(match, result) else { continue }
+            result.replaceSubrange(range, with: replacement)
+        }
+        return result
+    }
+
+    private static func makePlainText(_ text: String, color: UIColor, font: UIFont) -> NSAttributedString {
         let attributedText = NSMutableAttributedString(
             string: text,
             attributes: [
-                .font: baseFont,
+                .font: font,
                 .foregroundColor: color
             ]
         )
@@ -96,7 +427,7 @@ enum AgentMessageTextRenderer {
         if fullRange.length > 0 {
             attributedText.addAttribute(
                 .paragraphStyle,
-                value: normalizedParagraphStyle(from: nil),
+                value: normalizedParagraphStyle(from: nil, lineHeight: ceil(font.lineHeight)),
                 range: fullRange
             )
         }
@@ -115,33 +446,32 @@ enum AgentMessageTextRenderer {
         }
     }
 
-    private static func normalizedMarkdownFont(from font: UIFont?) -> UIFont {
+    private static func normalizedMarkdownFont(from font: UIFont?, baseFont: UIFont) -> UIFont {
         guard let font else { return baseFont }
 
         let traits = font.fontDescriptor.symbolicTraits
         let isMonospaced = traits.contains(.traitMonoSpace)
-        let style: WTextStyle = traits.contains(.traitBold) ? .bodyStrong : .body
-
         if isMonospaced {
             let weight: UIFont.Weight = traits.contains(.traitBold) ? .semibold : .regular
             return .monospacedSystemFont(ofSize: baseFont.pointSize, weight: weight)
         }
 
-        let resolvedFont = WTypography.uiFont(style)
-        if traits.contains(.traitItalic) {
-            guard let descriptor = resolvedFont.fontDescriptor.withSymbolicTraits(.traitItalic) else {
-                return resolvedFont
-            }
-            return UIFont(descriptor: descriptor, size: resolvedFont.pointSize)
+        let resolvedTraits = baseFont.fontDescriptor.symbolicTraits.union(
+            traits.intersection([.traitBold, .traitItalic])
+        )
+        guard let descriptor = baseFont.fontDescriptor.withSymbolicTraits(resolvedTraits) else {
+            return baseFont
         }
-
-        return resolvedFont
+        return UIFont(descriptor: descriptor, size: baseFont.pointSize)
     }
 
-    private static func normalizedParagraphStyle(from style: NSParagraphStyle?) -> NSParagraphStyle {
+    private static func normalizedParagraphStyle(
+        from style: NSParagraphStyle?,
+        lineHeight: CGFloat
+    ) -> NSParagraphStyle {
         let paragraphStyle = (style?.mutableCopy() as? NSMutableParagraphStyle) ?? NSMutableParagraphStyle()
-        paragraphStyle.minimumLineHeight = AgentMessageTextRendererMetrics.lineHeight
-        paragraphStyle.maximumLineHeight = AgentMessageTextRendererMetrics.lineHeight
+        paragraphStyle.minimumLineHeight = lineHeight
+        paragraphStyle.maximumLineHeight = lineHeight
         paragraphStyle.paragraphSpacing = AgentMessageTextRendererMetrics.paragraphSpacing
         paragraphStyle.lineBreakMode = .byWordWrapping
         return paragraphStyle
@@ -156,7 +486,10 @@ enum AgentMessageTextRenderer {
         return paragraphStyle
     }
 
-    private static func applyEmptyLineHeights(to attributedText: NSMutableAttributedString) {
+    private static func applyEmptyLineHeights(
+        to attributedText: NSMutableAttributedString,
+        baseFont: UIFont
+    ) {
         let string = attributedText.string as NSString
         let fullRange = NSRange(location: 0, length: string.length)
         guard fullRange.length > 0 else { return }
@@ -172,6 +505,7 @@ enum AgentMessageTextRenderer {
             guard paragraphContent.trimmingCharacters(in: .whitespaces).isEmpty else { return }
             guard enclosingRange.length > 0 else { return }
             attributedText.addAttribute(.paragraphStyle, value: emptyStyle, range: enclosingRange)
+            attributedText.addAttribute(.font, value: baseFont, range: enclosingRange)
         }
     }
 

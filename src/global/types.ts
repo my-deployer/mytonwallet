@@ -1,5 +1,17 @@
 import type { TeactNode } from '../lib/teact/teact';
 
+import type {
+  AgentActionProposal,
+  AgentMessageErrorV2,
+  AgentPersistedActionV2,
+  AgentPublicFollowUpV2,
+  AgentPublicInputContinuationV1,
+  AgentSemanticContentV1,
+} from '../api/agentV2/protocol/types';
+import type {
+  AgentV2ActionPresentation,
+  AgentV2WalletConversationControls,
+} from '../api/agentV2/types';
 import type { ApiTonWalletVersion } from '../api/chains/ton/types';
 import type { TonConnectProof } from '../api/dappProtocols/adapters';
 import type {
@@ -68,6 +80,8 @@ import type { AUTOLOCK_OPTIONS_LIST } from '../config';
 import type { LegacyAuthConfig } from '../enclave';
 import type { ExplainedTransferFee } from '../util/fee/transferFee';
 import type { LedgerTransport } from '../util/ledger/types';
+
+export { SwapType } from '../util/swap/types';
 
 export type IAnchorPosition = {
   x: number;
@@ -357,20 +371,6 @@ export enum SwapErrorType {
   TooSmallAmount,
 }
 
-export enum SwapType {
-  /** The swap is on-chain, i.e. performed via a DEX */
-  OnChain,
-  /** The swap is crosschain (CEX) and happens within a single account */
-  CrosschainInsideWallet,
-  /** The swap is crosschain (CEX), the "in" token is sent from the app, and the "out" token is sent outside */
-  CrosschainFromWallet,
-  /**
-   * The swap is crosschain (CEX), the "in" token is sent manually by the user from another source, and the
-   * "out" token is sent to the user account.
-   */
-  CrosschainToWallet,
-}
-
 export enum DappConnectState {
   Info,
   SelectAccount,
@@ -378,7 +378,6 @@ export enum DappConnectState {
   ConnectHardware,
   ConfirmHardware,
   AddAccountPassword,
-  ConfirmMfa,
 }
 
 export enum HardwareConnectState {
@@ -553,10 +552,19 @@ export type AssetPairs = Record<string, {
 export interface AgentMessage {
   id: number;
   text: string;
+  shouldCommitMarkdownTail?: boolean;
   isOutgoing: boolean;
   timestamp: number;
   isTyping?: boolean;
   isStreaming?: boolean;
+  semanticContent?: AgentSemanticContentV1;
+  walletControls?: AgentV2WalletConversationControls;
+  actions?: Array<AgentActionProposal | AgentPersistedActionV2>;
+  actionPresentations?: Record<string, AgentV2ActionPresentation>;
+  followups?: AgentPublicFollowUpV2[];
+  inputContinuations?: AgentPublicInputContinuationV1[];
+  error?: AgentMessageErrorV2;
+  isRetryAvailable?: boolean;
 }
 
 export interface AgentHint {
@@ -626,6 +634,10 @@ export interface AccountState {
   selectedNftToUnhide?: {
     address: ApiNft['address'];
     name: ApiNft['name'];
+  };
+  selectedNftToReport?: {
+    chain: ApiChain;
+    address: ApiNft['address'];
   };
   currentNftForAttributes?: ApiNft;
   shouldShowOwnerInNftAttributes?: true;
@@ -855,6 +867,12 @@ export type GlobalState = {
      */
     isEstimating?: boolean;
     inputSource?: SwapInputSource;
+    /**
+     * The output the last estimate priced. When the user fixes the output, the form keeps their
+     * figure and the estimate answers with what the venue could reach against it, so the two are
+     * not the same number and only this one matches the routes the swap will be built from.
+     */
+    quotedAmountOut?: string;
     /** The address to send the "out" tokens to. Used only when the swap type is `CrosschainFromWallet`. */
     toAddress?: string;
     payinAddress?: string;
@@ -1013,8 +1031,6 @@ export type GlobalState = {
     dapp: StoredDappConnection;
     permissions?: ApiDappPermissions;
     proof?: TonConnectProof;
-    proofSignatures?: string[];
-    mfaRequestHash?: string;
     error?: string;
     multichainResolution?: 'switched-account' | 'needs-new-wallet';
   };
@@ -1024,6 +1040,7 @@ export type GlobalState = {
     isLoading?: boolean;
     isUnstaking?: boolean;
     amount?: bigint;
+    initialAmount?: bigint | 'all';
     tokenAmount?: bigint;
     fee?: bigint;
     error?: string;
@@ -1425,6 +1442,12 @@ export interface ActionPayloads {
     isCollection: boolean;
   };
   closeHideNftModal: undefined;
+  openReportNftModal: {
+    chain: ApiChain;
+    address: ApiNft['address'];
+  };
+  closeReportNftModal: undefined;
+  hideNft: { shouldReport?: true } | undefined;
   openNftAttributesModal: { nft: ApiNft; withOwner?: true };
   closeNftAttributesModal: undefined;
 
@@ -1479,7 +1502,11 @@ export interface ActionPayloads {
   handleQrCode: { data: string };
 
   // Staking
-  startStaking: { tokenSlug: string } | undefined;
+  startStaking: {
+    stakingId?: string;
+    tokenSlug?: string;
+    initialAmount?: bigint | 'all';
+  } | undefined;
   startUnstaking: { stakingId: string } | undefined;
   setStakingScreen: { state: StakingState };
   submitStakingInitial: { amount?: bigint; isUnstaking?: boolean } | undefined;
@@ -1606,7 +1633,6 @@ export interface ActionPayloads {
   loadExploreSites: { isLandscape: boolean; langCode: LangCode | undefined };
   updateDappLastOpenedAt: { url: string };
   updateDappMfaRequestStatus: undefined;
-  updateDappConnectMfaRequestStatus: undefined;
 
   addSiteToBrowserHistory: { url: string };
   removeSiteFromBrowserHistory: { url: string };

@@ -1,6 +1,6 @@
 import { Address, Cell } from '@ton/core';
 
-import type { MetadataMap } from './toncenter/types';
+import type { JettonMasterMetadata, MetadataMap } from './toncenter/types';
 import type { JettonMetadata, TonTransferParams } from './types';
 import {
   type ApiBalanceBySlug,
@@ -11,13 +11,16 @@ import {
 } from '../../types';
 
 import { UNKNOWN_TOKEN } from '../../../config';
+import { raceWithAbortSignal, throwIfAborted } from '../../../util/abortSignal';
 import { getToncoinAmountForTransfer } from '../../../util/fee/getTonOperationFees';
-import { fetchJsonWithProxy, fixIpfsUrl } from '../../../util/fetch';
+import { fetchJsonWithProxy } from '../../../util/fetch';
 import { logDebugError } from '../../../util/logs';
 import withCacheAsync from '../../../util/withCacheAsync';
 import { fetchJettonMetadata, fixBase64ImageData, parsePayloadBase64 } from './util/metadata';
 import {
   buildTokenTransferBody,
+  fetchTokenAddress,
+  fetchTokenWalletAddress,
   getTokenBalance,
   getTonClient,
   resolveTokenAddress,
@@ -25,10 +28,11 @@ import {
   toBase64Address, toRawAddress,
 } from './util/tonCore';
 import { buildTokenSlug, getTokenByAddress, updateTokens } from '../../common/tokens';
-import { callToncenterV3 } from './toncenter/other';
+import { extractMetadata, getProxiedImage } from './toncenter/metadata';
+import { callToncenterV3, fetchMetadata } from './toncenter/other';
 import { DEFAULT_DECIMALS, TOKEN_TRANSFER_FORWARD_AMOUNT } from './constants';
 import { updateTokenHashes } from './priceless';
-import { isActiveSmartContract } from './wallet';
+import { fetchIsActiveSmartContract, isActiveSmartContract } from './wallet';
 
 export type TokenBalanceParsed = {
   slug: string;
@@ -50,17 +54,22 @@ type JettonWalletsResponse = {
   metadata?: MetadataMap;
 };
 
-async function getTokenBalances(network: ApiNetwork, address: string) {
-  const { jettonWallets, metadata } = await fetchJettonWallets(network, address);
+async function getTokenBalances(network: ApiNetwork, address: string, signal?: AbortSignal) {
+  const { jettonWallets, metadata } = await fetchJettonWallets(network, address, undefined, signal);
   const parsed = await Promise.all(
-    jettonWallets.map((wallet) => parseTokenBalance(network, wallet, metadata)),
+    jettonWallets.map((wallet) => parseTokenBalance(network, wallet, metadata, signal)),
   );
   return parsed.filter(Boolean);
 }
 
 const JETTON_WALLETS_LIMIT = 1000;
 
-export async function fetchJettonWallets(network: ApiNetwork, address: string, maxLimit?: number) {
+export async function fetchJettonWallets(
+  network: ApiNetwork,
+  address: string,
+  maxLimit?: number,
+  signal?: AbortSignal,
+) {
   const jettonWallets: ToncenterJettonWallet[] = [];
   let metadata: MetadataMap = {};
   let offset = 0;
@@ -76,7 +85,7 @@ export async function fetchJettonWallets(network: ApiNetwork, address: string, m
       exclude_zero_balance: false,
       limit: requestLimit,
       offset,
-    });
+    }, signal);
     jettonWallets.push(...newJettonWallets);
     metadata = { ...metadata, ...newMetadata };
 
@@ -100,17 +109,20 @@ async function parseTokenBalance(
   network: ApiNetwork,
   wallet: ToncenterJettonWallet,
   metadata: MetadataMap,
+  signal?: AbortSignal,
 ): Promise<TokenBalanceParsed | undefined> {
   try {
     const tokenAddress = toBase64Address(wallet.jetton, true, network);
-    const jettonMetadata = getJettonMetadataFromMap(wallet.jetton, metadata)
-      ?? await fetchJettonMetadata(network, tokenAddress).catch((error) => {
+    const tokenMetadata = getJettonMetadataFromMap(wallet.jetton, metadata);
+    const jettonMetadata = (tokenMetadata && toJettonMetadata(tokenMetadata))
+      ?? await fetchJettonMetadata(network, tokenAddress, signal).catch((error) => {
+        throwIfAborted(signal);
         logDebugError('fetchJettonMetadata', error);
         return undefined;
       });
     if (!jettonMetadata || ('error' in jettonMetadata)) return undefined;
 
-    const token = buildTokenByMetadata(tokenAddress, jettonMetadata);
+    const token = buildTokenByMetadata(tokenAddress, jettonMetadata, getProxiedImage(tokenMetadata));
 
     return {
       slug: token.slug,
@@ -119,23 +131,23 @@ async function parseTokenBalance(
       jettonWallet: toBase64Address(wallet.address, undefined, network),
     };
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('parseTokenBalance', err);
     return undefined;
   }
 }
 
-function getJettonMetadataFromMap(rawAddress: string, metadata: MetadataMap): JettonMetadata | undefined {
-  const tokenMetadata = metadata?.[rawAddress]?.token_info?.find((token) => token.type === 'jetton_masters');
+/** Unlike `extractMetadata`, tolerates an unindexed jetton, to avoid an extra fetch on every balance poll */
+function getJettonMetadataFromMap(rawAddress: string, metadata: MetadataMap) {
+  return metadata[rawAddress]?.token_info
+    ?.find((token): token is JettonMasterMetadata => token.type === 'jetton_masters');
+}
 
-  if (!tokenMetadata) {
-    return undefined;
-  }
-
+function toJettonMetadata(tokenMetadata: JettonMasterMetadata): JettonMetadata {
   return {
     name: tokenMetadata.name ?? UNKNOWN_TOKEN.symbol,
     symbol: tokenMetadata.symbol ?? tokenMetadata.name ?? UNKNOWN_TOKEN.symbol,
     description: tokenMetadata.description,
-    image: tokenMetadata.image,
     decimals: tokenMetadata.extra?.decimals ?? DEFAULT_DECIMALS,
   };
 }
@@ -202,6 +214,7 @@ export async function buildTokenTransfer(options: {
   shouldSkipMintless?: boolean;
   forwardAmount?: bigint;
   isLedger?: boolean;
+  signal?: AbortSignal;
 }) {
   const {
     network,
@@ -212,24 +225,31 @@ export async function buildTokenTransfer(options: {
     shouldSkipMintless,
     forwardAmount = TOKEN_TRANSFER_FORWARD_AMOUNT,
     isLedger,
+    signal,
   } = options;
   let { payload } = options;
 
-  const tokenWalletAddress = await resolveTokenWalletAddress(network, fromAddress, tokenAddress);
+  const tokenWalletAddress = signal
+    ? await fetchTokenWalletAddress(network, fromAddress, tokenAddress, signal)
+    : await resolveTokenWalletAddress(network, fromAddress, tokenAddress);
   const token = getTokenByAddress(tokenAddress)!;
 
   const {
-    isTokenWalletDeployed = !!(await isActiveSmartContract(network, tokenWalletAddress)),
+    isTokenWalletDeployed = !!(await (signal
+      ? fetchIsActiveSmartContract(network, tokenWalletAddress, signal)
+      : isActiveSmartContract(network, tokenWalletAddress))),
     isMintlessClaimed,
     mintlessTokenBalance,
     customPayload,
     stateInit,
   } = await getMintlessParams({
-    network, fromAddress, token, tokenWalletAddress, shouldSkipMintless,
+    network, fromAddress, token, tokenWalletAddress, shouldSkipMintless, signal,
   });
 
   if (isTokenWalletDeployed) {
-    const realTokenAddress = await resolveTokenAddress(network, tokenWalletAddress);
+    const realTokenAddress = signal
+      ? await fetchTokenAddress(network, tokenWalletAddress, signal)
+      : await resolveTokenAddress(network, tokenWalletAddress);
     if (tokenAddress !== realTokenAddress) {
       throw new Error('Invalid contract');
     }
@@ -287,10 +307,11 @@ export async function calculateTokenBalanceWithMintless(
   tokenWalletAddress: string,
   isTokenWalletDeployed?: boolean,
   mintlessTokenBalance = 0n,
+  signal?: AbortSignal,
 ) {
   let balance = 0n;
   if (isTokenWalletDeployed) {
-    balance += await getTokenBalance(network, tokenWalletAddress);
+    balance += await raceWithAbortSignal(() => getTokenBalance(network, tokenWalletAddress), signal);
   }
   if (mintlessTokenBalance) {
     balance += mintlessTokenBalance;
@@ -304,9 +325,10 @@ async function getMintlessParams(options: {
   token: ApiToken;
   tokenWalletAddress: string;
   shouldSkipMintless?: boolean;
+  signal?: AbortSignal;
 }) {
   const {
-    network, fromAddress, token, tokenWalletAddress, shouldSkipMintless,
+    network, fromAddress, token, tokenWalletAddress, shouldSkipMintless, signal,
   } = options;
 
   const isMintlessToken = !!token.customPayloadApiUrl;
@@ -318,11 +340,14 @@ async function getMintlessParams(options: {
   let mintlessTokenBalance: bigint | undefined;
 
   if (isMintlessToken && !shouldSkipMintless) {
-    isTokenWalletDeployed = !!(await isActiveSmartContract(network, tokenWalletAddress));
-    isMintlessClaimed = isTokenWalletDeployed && await checkMintlessTokenWalletIsClaimed(network, tokenWalletAddress);
+    isTokenWalletDeployed = !!(await (signal
+      ? fetchIsActiveSmartContract(network, tokenWalletAddress, signal)
+      : isActiveSmartContract(network, tokenWalletAddress)));
+    isMintlessClaimed = isTokenWalletDeployed
+      && await checkMintlessTokenWalletIsClaimed(network, tokenWalletAddress, signal);
 
     if (!isMintlessClaimed) {
-      const data = await fetchMintlessTokenWalletData(token.customPayloadApiUrl!, fromAddress);
+      const data = await fetchMintlessTokenWalletData(token.customPayloadApiUrl!, fromAddress, signal);
       const isExpired = data
         ? Date.now() > new Date(Number(data.compressed_info.expired_at) * 1000).getTime()
         : true;
@@ -347,16 +372,33 @@ async function getMintlessParams(options: {
   };
 }
 
-export async function checkMintlessTokenWalletIsClaimed(network: ApiNetwork, tokenWalletAddress: string) {
-  const res = await getTonClient(network)
-    .runMethod(Address.parse(tokenWalletAddress), 'is_claimed');
+export async function checkMintlessTokenWalletIsClaimed(
+  network: ApiNetwork,
+  tokenWalletAddress: string,
+  signal?: AbortSignal,
+) {
+  const res = await raceWithAbortSignal(
+    () => getTonClient(network).runMethod(Address.parse(tokenWalletAddress), 'is_claimed'),
+    signal,
+  );
   return res.stack.readBoolean();
 }
 
-async function fetchMintlessTokenWalletData(customPayloadApiUrl: string, address: string) {
+async function fetchMintlessTokenWalletData(
+  customPayloadApiUrl: string,
+  address: string,
+  signal?: AbortSignal,
+) {
   const rawAddress = toRawAddress(address);
 
-  return (await fetchJsonWithProxy(`${customPayloadApiUrl}/wallet/${rawAddress}`).catch(() => undefined)) as {
+  return (await fetchJsonWithProxy(
+    `${customPayloadApiUrl}/wallet/${rawAddress}`,
+    undefined,
+    { signal },
+  ).catch(() => {
+    throwIfAborted(signal);
+    return undefined;
+  })) as {
     custom_payload: string;
     state_init: string;
     compressed_info: {
@@ -368,17 +410,27 @@ async function fetchMintlessTokenWalletData(customPayloadApiUrl: string, address
 }
 
 export async function fetchToken(network: ApiNetwork, address: string) {
-  const metadata = await fetchJettonMetadata(network, address);
+  const [metadata, toncenterMetadata] = await Promise.all([
+    fetchJettonMetadata(network, address),
+    // The image is the only thing taken from here, so a failure must not fail the import
+    fetchMetadata(network, [address]).catch((error) => {
+      logDebugError('fetchMetadata', error);
+      return {};
+    }),
+  ]);
   if ('error' in metadata) return metadata;
 
-  return buildTokenByMetadata(address, metadata);
+  const tokenMetadata = extractMetadata<JettonMasterMetadata>(
+    toRawAddress(address), toncenterMetadata, 'jetton_masters',
+  );
+
+  return buildTokenByMetadata(address, metadata, getProxiedImage(tokenMetadata));
 }
 
-function buildTokenByMetadata(address: string, metadata: JettonMetadata): ApiToken {
+function buildTokenByMetadata(address: string, metadata: JettonMetadata, imageUrl?: string): ApiToken {
   const {
     name,
     symbol,
-    image,
     image_data: imageData,
     decimals,
     custom_payload_api_uri: customPayloadApiUrl,
@@ -391,7 +443,7 @@ function buildTokenByMetadata(address: string, metadata: JettonMetadata): ApiTok
     decimals: decimals === undefined ? DEFAULT_DECIMALS : Number(decimals),
     chain: 'ton',
     tokenAddress: address,
-    image: (image && fixIpfsUrl(image)) || (imageData && fixBase64ImageData(imageData)) || undefined,
+    image: imageUrl || (imageData && fixBase64ImageData(imageData)) || undefined,
     customPayloadApiUrl,
   };
 }
@@ -429,15 +481,17 @@ export async function loadTokenBalances(
   network: ApiNetwork,
   address: string,
   sendUpdateTokens: NoneToVoidFunction,
+  signal?: AbortSignal,
 ): Promise<ApiBalanceBySlug> {
-  const tokenBalances = await getTokenBalances(network, address);
+  const tokenBalances = await getTokenBalances(network, address, signal);
+  throwIfAborted(signal);
   const tokens: ApiTokenWithMaybePrice[] = tokenBalances.map(({ token }) => ({
     ...token,
     priceUsd: undefined,
     percentChange24h: undefined,
   }));
   await updateTokens(tokens, sendUpdateTokens);
-  await updateTokenHashes(network, tokens.map((token) => token.slug), sendUpdateTokens);
+  await updateTokenHashes(network, tokens.map((token) => token.slug), sendUpdateTokens, signal);
 
   return Object.fromEntries(tokenBalances.map(({ slug, balance }) => [slug, balance]));
 }

@@ -177,6 +177,7 @@ function TransferModal({
             <TransactionBanner
               tokenIn={selectedToken}
               imageUrl={nfts?.[0]?.thumbnail}
+              withNftPlaceholder={isNftTransfer}
               withChainIcon
               text={isNftTransfer
                 ? (nfts.length > 1 ? lang('%amount% NFTs', nfts.length, 'i') : nfts[0]?.name || 'NFT')
@@ -237,6 +238,7 @@ function TransferModal({
             <TransactionBanner
               tokenIn={selectedToken}
               imageUrl={nfts?.[0]?.thumbnail}
+              withNftPlaceholder={isNftTransfer}
               withChainIcon
               text={isNftTransfer
                 ? (nfts.length > 1 ? lang('%amount% NFTs', nfts.length, 'i') : nfts[0]?.name || 'NFT')

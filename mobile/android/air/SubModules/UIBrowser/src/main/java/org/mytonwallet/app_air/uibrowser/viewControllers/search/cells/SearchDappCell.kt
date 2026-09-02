@@ -107,9 +107,11 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
 
     var site: IDapp? = null
     var isLastItem = false
-    fun configure(site: IDapp, isLastItem: Boolean) {
+    private var hasOpaqueBackground = true
+    fun configure(site: IDapp, isLastItem: Boolean, hasOpaqueBackground: Boolean = true) {
         this.site = site
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         dappImageView.set(Content.ofUrl(site.iconUrl ?: ""))
         titleLabel.text = site.name
         titleLabel.isSelected = false
@@ -157,7 +159,11 @@ class SearchDappCell(context: Context, private val onTap: (site: IDapp) -> Unit)
         }
         val currentRipple = if (isLastItem) rippleLastItem else ripple
         background = currentRipple
-        currentRipple.backgroundColor = WColor.Background.color
+        currentRipple.backgroundColor = if (hasOpaqueBackground) {
+            WColor.Background.color
+        } else {
+            WColor.Transparent.color
+        }
         currentRipple.rippleColor = WColor.BackgroundRipple.color
     }
 }

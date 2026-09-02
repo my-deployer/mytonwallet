@@ -51,6 +51,7 @@ function ContentSlide({
           key={`custom:${currentCollection.address}`}
           isActive={isActive}
           collection={currentCollection}
+          scrollContainerSelector={scrollContainerSelector}
         />
       </Transition>
     );
@@ -89,7 +90,12 @@ function ContentSlide({
           className={styles.nftsContainer}
           onScroll={onScroll}
         >
-          <Nfts key={currentCollection?.address || 'all'} isActive={isActive} collection={currentCollection} />
+          <Nfts
+            key={currentCollection?.address || 'all'}
+            isActive={isActive}
+            collection={currentCollection}
+            scrollContainerSelector={scrollContainerSelector}
+          />
         </Transition>
       );
     default:

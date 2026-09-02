@@ -71,39 +71,35 @@ private struct NftRenewDomainWarningStatesPreview: View {
             title: "Single expiring today",
             content: .init(
                 addresses: ["preview-single-today"],
-                text: lang("$domain_expire", arg1: "soon.ton", arg2: langRelativeDays(0))
+                text: L10n.domainExpire(domain: "soon.ton", days: langRelativeDays(0))
             )
         ),
         .init(
             title: "Single expiring tomorrow",
             content: .init(
                 addresses: ["preview-single-tomorrow"],
-                text: lang(
-                    "$domain_expire",
-                    arg1: "a-very-long-domain-name-for-preview.ton",
-                    arg2: langRelativeDays(1)
-                )
+                text: L10n.domainExpire(domain: "a-very-long-domain-name-for-preview.ton", days: langRelativeDays(1))
             )
         ),
         .init(
             title: "Single expired",
             content: .init(
                 addresses: ["preview-single-expired"],
-                text: lang("$domain_was_expired", arg1: "expired.ton")
+                text: L10n.domainWasExpired(domain: "expired.ton")
             )
         ),
         .init(
             title: "Multiple expiring",
             content: .init(
                 addresses: ["preview-multiple-expiring-1", "preview-multiple-expiring-2"],
-                text: lang("$domains_expire", arg1: langRelativeDays(5), arg2: 2)
+                text: L10n.domainsExpire(days: langRelativeDays(5), domain: 2)
             )
         ),
         .init(
             title: "Multiple expired",
             content: .init(
                 addresses: ["preview-multiple-expired-1", "preview-multiple-expired-2", "preview-multiple-expired-3"],
-                text: lang("$domains_was_expired", arg1: 3)
+                text: L10n.domainsWasExpired(domain: 3)
             )
         ),
     ]

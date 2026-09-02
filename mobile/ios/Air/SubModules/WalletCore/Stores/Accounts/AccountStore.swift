@@ -19,6 +19,15 @@ import WalletCoreTypes
 private let log = Log("AccountStore")
 private let _popularWalletVersionTitles: Set<String> = ["v3R1", "v3R2", "v4R2", "W5"]
 
+/// Sends account activation to the SDK: redirects polling and updates the SDK-side current account
+private func sendSdkActivation(accountId: String) async throws {
+    let timestamps = await ActivityStore.getNewestActivityTimestamps(accountId: accountId)
+    if timestamps?.nilIfEmpty == nil {
+        Log.api.info("No newestTransactionsBySlug for \(accountId, .public), loading will be slow")
+    }
+    try await Api.activateAccount(accountId: accountId, newestActivityTimestamps: timestamps)
+}
+
 public var AccountStore: _AccountStore { _AccountStore.shared }
 
 @Perceptible
@@ -31,9 +40,13 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
     private var _accountsById: UnfairLock<[String: MAccount]> = .init(initialState: [:])
     private let _accountId: UnfairLock<String?> = .init(initialState: nil)
     private let _walletVersionsData: UnfairLock<MWalletVersionsData?> = .init(initialState: nil)
-    private let _updatingActivities: UnfairLock<Bool> = .init(initialState: false)
-    private let _updatingBalance: UnfairLock<Bool> = .init(initialState: false)
+    private let _updatingActivitiesAccountIds: UnfairLock<Set<String>> = .init(initialState: [])
+    private let _updatingBalanceAccountIds: UnfairLock<Set<String>> = .init(initialState: [])
     private let _orderedAccountIds: UnfairLock<OrderedSet<String>> = .init(initialState: [])
+    private let sdkActivationRelay = SdkActivationRelay { accountId in
+        try await sendSdkActivation(accountId: accountId)
+    }
+    private let interactiveCommitDebouncer = Debouncer(delay: .seconds(0.45))
     
     public var activeNetwork: ApiNetwork {
         if let account {
@@ -185,7 +198,10 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
         } else if let currentAccountId, let resolvedAccountId, currentAccountId != resolvedAccountId {
             log.fault("current_account_id is invalid, using fallback account \(resolvedAccountId, .public) instead of \(currentAccountId, .public)")
         }
-        self.accountId = resolvedAccountId
+        // The observation also echoes values `activateAccount` just wrote; skipping same-value sets keeps observers from re-firing
+        if self.accountId != resolvedAccountId {
+            self.accountId = resolvedAccountId
+        }
     }
 
     private func updateFromDb(accounts: [MAccount]) {
@@ -194,7 +210,10 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
             accountsById[account.id] = account
         }
         let accountIds = accountsById.compactMap { $1.isTemporaryView ? nil : $0 }
-        self.accountsById = accountsById
+        // The observation also echoes values this store just wrote; skipping same-value sets keeps observers from re-firing
+        if accountsById != self.accountsById {
+            self.accountsById = accountsById
+        }
 
         let orderedAccountIds = orderedAccountIds.intersection(accountIds).union(accountIds)
         if orderedAccountIds != self.orderedAccountIds {
@@ -258,38 +277,77 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
     
     // MARK: - Current account
 
+    /// Makes the account current, persists the choice, and notifies observers without waiting for
+    /// the SDK. The SDK-side activation — which redirects polling and the SDK's own current account —
+    /// is forwarded through `sdkActivationRelay` in the background and retried on failure, so the
+    /// switch itself never waits on the bridge and can only fail locally.
     @discardableResult
-    public func activateAccount(accountId: String, isNew: Bool = false, updateCurrentAccountId: Bool = true) async throws -> MAccount {
+    public func activateAccount(accountId: String, isNew: Bool = false) async throws -> MAccount {
         displayLog("activateAccount \(accountId)")
-        let timestamps = await ActivityStore.getNewestActivityTimestamps(accountId: accountId)
-        if timestamps?.nilIfEmpty == nil {
-            Log.api.info("No newestTransactionsBySlug for \(accountId, .public), loading will be slow")
-        }
-        try await Api.activateAccount(accountId: accountId, newestActivityTimestamps: timestamps)
-
-        guard let account = AccountStore.accountsById[accountId] else {
-            throw SdkError.unexpected(message: "Activated account is missing from account store", context: ["accountId": accountId])
+        guard let account = accountsById[accountId] else {
+            throw SdkError.unexpected(message: "Account to activate is missing from account store", context: ["accountId": accountId])
         }
 
-        if updateCurrentAccountId {
-            self.accountId = accountId
+        interactiveCommitDebouncer.cancel()
+        let previousAccountId = self.accountId
+        self.accountId = accountId
+        sdkActivationRelay.requestActivation(accountId: accountId)
+        do {
             try await db.write { db in
                 try db.execute(sql: "UPDATE common SET current_account_id = ?", arguments: [accountId])
             }
-            
-            Task.detached {
-                WalletCoreData.notifyAccountChanged(to: account, isNew: isNew)
+        } catch {
+            // Roll back the unpersisted switch so observers, the SDK, and persistence agree on the
+            // previous account again — unless a newer switch already took over
+            if self.accountId == accountId {
+                self.accountId = previousAccountId
+                if let previousAccountId {
+                    sdkActivationRelay.requestActivation(accountId: previousAccountId)
+                }
             }
+            throw error
         }
-        
+        Task.detached {
+            WalletCoreData.notifyAccountChanged(to: account, isNew: isNew)
+        }
         return account
     }
-    
+
+    /// Immediately makes the account current in memory — Perception observers of `currentAccountId`
+    /// update right away — and commits the switch (persistence, `.accountChanged`, SDK activation)
+    /// after a short debounce, so a swipe passing several accounts commits only the one it settles
+    /// on. A direct `activateAccount` call supersedes a pending commit.
+    public func activateAccountInteractively(accountId: String) {
+        displayLog("activateAccountInteractively \(accountId)")
+        guard accountsById[accountId] != nil else {
+            log.error("cannot interactively activate missing account \(accountId, .public)")
+            return
+        }
+        self.accountId = accountId
+        interactiveCommitDebouncer.schedule { [weak self] in
+            await self?.commitInteractiveActivation(accountId: accountId)
+        }
+    }
+
+    private func commitInteractiveActivation(accountId: String) async {
+        guard self.accountId == accountId, let account = accountsById[accountId] else { return }
+        sdkActivationRelay.requestActivation(accountId: accountId)
+        do {
+            try await db.write { db in
+                try db.execute(sql: "UPDATE common SET current_account_id = ?", arguments: [accountId])
+            }
+        } catch {
+            log.error("failed to persist current_account_id: \(error, .public)")
+        }
+        Task.detached {
+            WalletCoreData.notifyAccountChanged(to: account, isNew: false)
+        }
+    }
+
     public func reactivateCurrentAccount() async throws {
         if let accountId = self.accountId {
-            let timestamps = await ActivityStore.getNewestActivityTimestamps(accountId: accountId)
-            log.info("reactivateCurrentAccount: \(accountId, .public) timestamps#=\(timestamps?.count as Any, .public)")
-            try await Api.activateAccount(accountId: accountId, newestActivityTimestamps: timestamps)
+            log.info("reactivateCurrentAccount: \(accountId, .public)")
+            sdkActivationRelay.requestActivation(accountId: accountId)
         }
     }
     
@@ -852,7 +910,9 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
     
     public func importTemporaryViewAccountOrActivateFirstMatching(network: ApiNetwork, addressOrDomainByChain: [String: String]) async throws -> MAccount {
         if let account = firstAccountContainingChainAddresses(addressOrDomainByChain, network: network) {
-            try await activateAccount(accountId: account.id, updateCurrentAccountId: false)
+            // Points SDK polling at the account without making it current in the app; going through
+            // the relay keeps it serialized with pending switch activations and their retries
+            sdkActivationRelay.requestActivation(accountId: account.id)
             return account
         } else {
             return try await importTemporaryViewAccount(network: network, addressOrDomainByChain: addressOrDomainByChain)
@@ -927,14 +987,15 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
     @MainActor
     public func resetAccounts() async throws {
         log.info("resetAccounts")
+        interactiveCommitDebouncer.cancel()
+        sdkActivationRelay.cancel()
         try await Api.resetAccounts()
         await AuthSupportImpl.clearAllAuth()
         accountId = nil
         accountsById = [:]
         orderedAccountIds = []
         walletVersionsData = nil
-        updatingActivities = false
-        updatingBalance = false
+        clearUpdatingStatuses()
         try await db.write { db in
             _ = try MAccount.deleteAll(db)
             try db.execute(sql: "UPDATE common SET current_account_id = NULL")
@@ -965,6 +1026,8 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
         let timestamps = await ActivityStore.getNewestActivityTimestamps(accountId: nextAccountId)
         try await Api.removeAccount(accountId: accountId, nextAccountId: nextAccountId, newestActivityTimestamps: timestamps)
         await cleanupAuthAfterRemovingAccount(accountId: accountId, removedAccount: removedAccount)
+        setUpdatingActivities(accountId: accountId, isUpdating: false)
+        setUpdatingBalance(accountId: accountId, isUpdating: false)
         try await db.write { db in
             _ = try MAccount.deleteOne(db, key: accountId)
         }
@@ -1306,17 +1369,40 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
 
     // MARK: - Misc
     
-    public internal(set) var updatingActivities: Bool {
-        get { _updatingActivities.withLock { $0 } }
-        set { _updatingActivities.withLock { $0 = newValue } }
+    /// Whether activities are being updated for the current account
+    public var updatingActivities: Bool {
+        accountId.map { accountId in
+            _updatingActivitiesAccountIds.withLock { $0.contains(accountId) }
+        } ?? false
     }
 
-    public internal(set) var updatingBalance: Bool {
-        get { _updatingBalance.withLock { $0 } }
-        set { _updatingBalance.withLock { $0 = newValue } }
+    /// Whether balances are being updated for the current account
+    public var updatingBalance: Bool {
+        accountId.map { accountId in
+            _updatingBalanceAccountIds.withLock { $0.contains(accountId) }
+        } ?? false
+    }
+
+    func setUpdatingActivities(accountId: String, isUpdating: Bool) {
+        _updatingActivitiesAccountIds.withLock {
+            if isUpdating { $0.insert(accountId) } else { $0.remove(accountId) }
+        }
+    }
+
+    func setUpdatingBalance(accountId: String, isUpdating: Bool) {
+        _updatingBalanceAccountIds.withLock {
+            if isUpdating { $0.insert(accountId) } else { $0.remove(accountId) }
+        }
+    }
+
+    private func clearUpdatingStatuses() {
+        _updatingActivitiesAccountIds.withLock { $0 = [] }
+        _updatingBalanceAccountIds.withLock { $0 = [] }
     }
 
     public func clean() {
+        interactiveCommitDebouncer.cancel()
+        sdkActivationRelay.cancel()
         currentAccountIdObservation?.cancel()
         currentAccountIdObservation = nil
         accountsObservation?.cancel()
@@ -1326,8 +1412,7 @@ public final class _AccountStore: @unchecked Sendable, WalletCoreData.EventsObse
         accountsById = [:]
         orderedAccountIds = []
         self.walletVersionsData = nil
-        self.updatingActivities = false
-        self.updatingBalance = false
+        clearUpdatingStatuses()
     }
 }
 

@@ -3,25 +3,16 @@ import WalletContext
 
 enum SendWarningContent {
     static var domainScamMarkdown: String {
-        lang(
-            "$domain_like_scam_warning",
-            arg1: "[\(lang("$help_center_prepositional"))](\(domainScamHelpUrl.absoluteString))"
-        )
+        L10n.domainLikeScamWarning(helpCenterLink: "[\(lang("$help_center_prepositional"))](\(domainScamHelpUrl.absoluteString))")
     }
 
     static var domainScamPlainText: String {
-        lang(
-            "$domain_like_scam_warning",
-            arg1: lang("$help_center_prepositional")
-        )
+        L10n.domainLikeScamWarning(helpCenterLink: lang("$help_center_prepositional"))
         .replacingOccurrences(of: "**", with: "")
     }
 
     static var seedPhraseScamMarkdown: String {
-        lang(
-            "$seed_phrase_scam_warning",
-            arg1: "[\(lang("$help_center_prepositional"))](\(seedPhraseScamHelpUrl.absoluteString))"
-        )
+        L10n.seedPhraseScamWarning(helpCenterLink: "[\(lang("$help_center_prepositional"))](\(seedPhraseScamHelpUrl.absoluteString))")
     }
 
     static var seedPhraseScamHelpUrl: URL {

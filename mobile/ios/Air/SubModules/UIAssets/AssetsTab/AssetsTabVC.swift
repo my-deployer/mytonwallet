@@ -15,6 +15,7 @@ public class AssetsTabVC: WViewController, WalletCoreData.EventsObserver {
 
     private var segmentedController: WSegmentedController!
     private let defaultTab: DisplayAssetTab
+    private var initialPosition: AssetListInitialPosition?
     private let tabsViewModel: WalletAssetsViewModel
     private let nftsVCManager: NftsVCManager
     private var tabViewControllers: [DisplayAssetTab: any WSegmentedControllerContent] = [:]
@@ -35,10 +36,15 @@ public class AssetsTabVC: WViewController, WalletCoreData.EventsObserver {
         includesTokenLimitActions: false
     )
 
-    public init(accountSource: AccountSource, defaultTab: DisplayAssetTab) {
+    public init(
+        accountSource: AccountSource,
+        defaultTab: DisplayAssetTab,
+        initialPosition: AssetListInitialPosition? = nil
+    ) {
         let tabsViewModel = WalletAssetsViewModel(accountSource: accountSource)
         self.accountIdProvider = AccountIdProvider(source: accountSource)
         self.defaultTab = defaultTab
+        self.initialPosition = initialPosition
         self.tabsViewModel = tabsViewModel
         self.nftsVCManager = NftsVCManager(tabsViewModel: tabsViewModel)
         super.init(nibName: nil, bundle: nil)
@@ -55,14 +61,21 @@ public class AssetsTabVC: WViewController, WalletCoreData.EventsObserver {
     }
 
     @discardableResult
-    public func show(accountSource: AccountSource, tab: DisplayAssetTab, animated: Bool) -> Bool {
+    public func show(
+        accountSource: AccountSource,
+        tab: DisplayAssetTab,
+        initialPosition: AssetListInitialPosition? = nil,
+        animated: Bool
+    ) -> Bool {
         guard canShow(accountSource: accountSource, tab: tab) else { return false }
+        self.initialPosition = initialPosition
         loadViewIfNeeded()
         guard let segmentedController,
               let index = segmentedController.model.getItemIndexById(itemId: tab.segmentedControlItemId) else {
             return false
         }
         segmentedController.setSelectedIndex(to: index, animated: animated)
+        applyInitialPosition(to: tab, animated: false)
         return true
     }
 
@@ -196,17 +209,47 @@ public class AssetsTabVC: WViewController, WalletCoreData.EventsObserver {
         let viewController: any WSegmentedControllerContent
         switch tab {
         case .tokens:
-            viewController = WalletTokensVC(accountSource: accountSource, mode: .expanded)
+            viewController = WalletTokensVC(
+                accountSource: accountSource,
+                mode: .expanded,
+                initialTokenID: initialPosition?.tokenID
+            )
         case .nfts:
-            viewController = NftsVC(accountSource: accountSource, manager: nftsVCManager, layoutMode: .regular, filter: .none)
+            viewController = NftsVC(
+                accountSource: accountSource,
+                manager: nftsVCManager,
+                layoutMode: .regular,
+                filter: .none,
+                initialNftID: initialPosition?.nftID
+            )
         case let .nftCollectionFilter(filter):
-            viewController = NftsVC(accountSource: accountSource, manager: nftsVCManager, layoutMode: .regular, filter: filter)
+            viewController = NftsVC(
+                accountSource: accountSource,
+                manager: nftsVCManager,
+                layoutMode: .regular,
+                filter: filter,
+                initialNftID: initialPosition?.nftID
+            )
         }
 
         addChild(viewController)
         tabViewControllers[tab] = viewController
         viewController.didMove(toParent: self)
         return viewController
+    }
+
+    private func applyInitialPosition(to tab: DisplayAssetTab, animated: Bool) {
+        guard let initialPosition, let viewController = tabViewControllers[tab] else { return }
+        switch (initialPosition, viewController) {
+        case let (.token(tokenID), tokensVC as WalletTokensVC):
+            tokensVC.scrollToToken(tokenID, animated: animated)
+            self.initialPosition = nil
+        case let (.nft(nftID), nftsVC as NftsVC):
+            nftsVC.scrollToNft(nftID, animated: animated)
+            self.initialPosition = nil
+        default:
+            break
+        }
     }
 
     private func displayTabsChanged(force: Bool) {

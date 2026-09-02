@@ -1,7 +1,7 @@
 
 import WalletContext
 
-struct PoisoningCache {
+struct PoisoningCache: Sendable {
     
     private struct Entry: Sendable {
         let address: String

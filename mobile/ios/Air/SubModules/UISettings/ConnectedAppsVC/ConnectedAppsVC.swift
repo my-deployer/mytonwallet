@@ -86,7 +86,7 @@ public class ConnectedAppsVC: SettingsBaseVC, UICollectionViewDelegate {
     private func configureDataSource() {
         let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewCell>(elementKind: UICollectionView.elementKindSectionHeader) { supplementaryView, _, _ in
             var content = UIListContentConfiguration.groupedHeader()
-            content.text = lang("Logged in with %app_name%", arg1: APP_NAME)
+            content.text = L10n.loggedInWithAppName(appName: APP_NAME)
             content.applyTextStyle(.sectionHeader, scaling: .dynamic)
             supplementaryView.contentConfiguration = content
         }

@@ -214,10 +214,10 @@ fi
 # --- 2. Build in the dev checkout (the source that carries the Gram combo) ----
 #
 # Build here, NOT inside the target clone: the target's own source tree is a
-# frozen public-mirror snapshot and does not contain the Gram combo profile.
+# frozen public-mirror snapshot and does not contain the Gram profile.
 
-log "Building (npm run tonorg:build:production)..."
-( cd "$DEV_REPO_ROOT" && npm run tonorg:build:production )
+log "Building (npm run gram:build:production)..."
+( cd "$DEV_REPO_ROOT" && npm run gram:build:production )
 
 DIST_DIR="$DEV_REPO_ROOT/dist"
 [ -d "$DIST_DIR" ] || fail "Build did not produce $DIST_DIR."
@@ -225,9 +225,9 @@ DIST_DIR="$DEV_REPO_ROOT/dist"
 # --- 3. Artifact gates: fail fast before touching the target -----------------
 #
 # These gates -- not git lineage -- are what guarantee the artifact is the
-# right combo build (Gram branding, Core behavior) built against the right
-# environment (production endpoints only). They hold regardless of which ref
-# or machine the artifact came from.
+# right Gram build (Gram branding over the inherited wallet.ton.org storage
+# keys) built against the right environment (production endpoints only).
+# They hold regardless of which ref or machine the artifact came from.
 
 log "Verifying build output before publishing..."
 
@@ -238,17 +238,17 @@ grep -q "Gram Wallet" "$DIST_DIR/index.html" \
   || fail "$DIST_DIR/index.html does not contain 'Gram Wallet' -- wrong branding. Aborting."
 
 ! grep -q "TON Wallet" "$DIST_DIR/index.html" \
-  || fail "$DIST_DIR/index.html contains 'TON Wallet' -- Core branding leaked into the Gram build. Aborting."
+  || fail "$DIST_DIR/index.html contains 'TON Wallet' -- legacy branding leaked into the Gram build. Aborting."
 
 MAIN_JS_FILES=("$DIST_DIR"/main.*.js)
 if [ ! -e "${MAIN_JS_FILES[0]}" ]; then
   MAIN_JS_FILES=("$DIST_DIR"/*.js)
 fi
 grep -rq "tonwallet-global-state" "${MAIN_JS_FILES[@]}" \
-  || fail "'tonwallet-global-state' storage key not found in the bundle -- Core storage behavior missing. Aborting."
+  || fail "'tonwallet-global-state' storage key not found in the bundle -- the build would orphan the wallet.ton.org users' state. Aborting."
 
 [ -f "$DIST_DIR/gramWallet/site.webmanifest" ] \
-  || fail "$DIST_DIR/gramWallet/site.webmanifest is missing -- manifest not laid out for the combo profile. Aborting."
+  || fail "$DIST_DIR/gramWallet/site.webmanifest is missing -- manifest not laid out for the Gram profile. Aborting."
 
 # Environment gate (positive): every connect-src token must be on the
 # production allowlist. webpack assembles connect-src from ALL env-configurable

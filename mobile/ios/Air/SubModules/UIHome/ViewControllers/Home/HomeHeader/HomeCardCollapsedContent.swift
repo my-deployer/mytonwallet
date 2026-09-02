@@ -39,7 +39,7 @@ struct HomeCardCollapsedContent: View {
                 .animation(.default, value: accountContext.balance)
 
                 if headerViewModel.rootNavigationStyle.usesNavigationBarTopTabs {
-                    _BalanceChange(accountContext: accountContext)
+                    _BalanceChange(accountContext: accountContext, style: .plainBackground)
                 } else {
                     _CollapsedDisplayName(accountContext: accountContext)
                         .scaleEffect(subtitleScale, anchor: .top)
@@ -60,14 +60,30 @@ private struct _CollapsedBalanceView: View {
     
     let accountContext: AccountContext
     let usesNavigationBarTopTabs: Bool
+    @Dependency(\.sensitiveData.isHidden) private var isSensitiveDataHidden
     
     var body: some View {
         WithPerceptionTracking {
+            let style: MtwCardBalanceView.Style = usesNavigationBarTopTabs
+                ? .homeNavigationBarCollapsed
+                : .homeCollaped
             MtwCardBalanceView(
                 balance: accountContext.balance,
-                style: usesNavigationBarTopTabs ? .homeNavigationBarCollapsed : .homeCollaped
+                style: style,
+                onSensitiveDataReveal: {
+                    AppActions.setSensitiveDataIsHidden(false)
+                }
             )
-                .contextMenuSource(configuration: makeBaseCurrencyMenuConfig(accountId: accountContext.accountId))
+                .overlay {
+                    HomeCardBalanceRevealHint(
+                        style: style,
+                        isVisible: isSensitiveDataHidden
+                    )
+                }
+                .homeCardBalanceInteractions(
+                    accountId: accountContext.accountId,
+                    isSensitiveDataHidden: isSensitiveDataHidden
+                )
         }
     }
 }

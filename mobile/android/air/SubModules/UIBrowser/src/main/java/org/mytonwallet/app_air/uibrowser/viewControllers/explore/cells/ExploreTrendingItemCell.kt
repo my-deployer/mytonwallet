@@ -35,7 +35,7 @@ class ExploreTrendingItemCell(
     context,
     LayoutParams(
         if (site.extendedIcon.isNotBlank()) cellWidth * 2 else cellWidth,
-        if (site.extendedIcon.isNotBlank()) cellWidth + 14.dp else cellWidth + 6.dp
+        if (site.extendedIcon.isNotBlank()) cellWidth + 15.dp else cellWidth + 7.dp
     )
 ),
     WThemedView {
@@ -157,7 +157,7 @@ class ExploreTrendingItemCell(
             addView(badgeLabel, LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
         }
         setConstraints {
-            toTop(contentView, 6f)
+            toTop(contentView, 4f)
             toBottom(contentView)
             toStart(contentView)
             toEnd(contentView, 6f)

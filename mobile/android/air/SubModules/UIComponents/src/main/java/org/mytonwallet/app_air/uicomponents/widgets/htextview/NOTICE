@@ -4,12 +4,13 @@ HTextView — Animation effects with custom font support to TextView
 Copyright (c) 2015 Hanks (https://github.com/hanks-zyh)
 Licensed under the Apache License, Version 2.0.
 
-Modifications made by MyTonWallet team:
+Modifications made by MyWallet team:
 - Changed Android package names
 - Removed unnecessary files
 - Modified by implementing `stopAnimator` method to make `setProgress` work even if animating
 - Modified HText to fix text width measurement & kerning issues
 - Modified to allow setting text with no animations
 - Modified EvaporateText and ScaleText drawFrame to use a reusable char[] buffer instead of per-character String concatenation, avoiding OOM under frequent redraws
+- Added a resize anchor to EvaporateText/EvaporateTextView so the old glyphs keep their position when a text change resizes a wrap-content view anchored at its end or center
 
 A copy of the original Apache License, Version 2.0 is included in this distribution (see `LICENSE`).

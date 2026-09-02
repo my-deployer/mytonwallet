@@ -889,11 +889,7 @@ private struct SubwalletAddressView: View {
 }
 
 private func subwalletsFoundText(_ count: Int) -> String {
-    let localized = lang("$subwallets_found")
-    guard !localized.isEmpty, localized != "$subwallets_found" else {
-        return "Found: \(localizedIntegerString(count))"
-    }
-    return formatLocalizedString(localized, arguments: [count])
+    L10n.subwalletsFound(count: count)
 }
 
 private struct SubwalletsBottomActions: View {

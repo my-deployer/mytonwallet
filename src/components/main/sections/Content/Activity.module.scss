@@ -89,13 +89,6 @@ $subheaderReleaseHeight: 1.25rem;
   }
 }
 
-.itemHiding {
-  pointer-events: none;
-  opacity: 0;
-
-  @include mixins.transition(opacity 200ms ease-out);
-}
-
 .icon {
   $desktopIconScale: math.div(22, 24);
   $fontSize: 1.5rem;
@@ -393,6 +386,22 @@ $subheaderReleaseHeight: 1.25rem;
 
   object-fit: cover;
   background-color: var(--color-background-second);
+}
+
+.nftImageNoData {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--color-background-second);
+
+  :global(html.theme-dark) & {
+    background-color: #131314;
+  }
+}
+
+.nftNoImageIcon {
+  width: 1.75rem;
+  opacity: 0.5;
 }
 
 .nftData {

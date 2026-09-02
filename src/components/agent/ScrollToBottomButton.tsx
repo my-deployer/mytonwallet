@@ -1,5 +1,7 @@
 import React, { memo } from '../../lib/teact/teact';
 
+import buildClassName from '../../util/buildClassName';
+
 import useLang from '../../hooks/useLang';
 import useShowTransition from '../../hooks/useShowTransition';
 
@@ -7,10 +9,11 @@ import styles from './ScrollToBottomButton.module.scss';
 
 interface OwnProps {
   isVisible: boolean;
+  className?: string;
   onClick: NoneToVoidFunction;
 }
 
-function ScrollToBottomButton({ isVisible, onClick }: OwnProps) {
+function ScrollToBottomButton({ isVisible, className, onClick }: OwnProps) {
   const lang = useLang();
   const { ref, shouldRender } = useShowTransition<HTMLButtonElement>({
     isOpen: isVisible,
@@ -23,7 +26,7 @@ function ScrollToBottomButton({ isVisible, onClick }: OwnProps) {
     <button
       ref={ref}
       type="button"
-      className={styles.button}
+      className={buildClassName(styles.button, className)}
       aria-label={lang('Scroll To Bottom')}
       onClick={onClick}
     >

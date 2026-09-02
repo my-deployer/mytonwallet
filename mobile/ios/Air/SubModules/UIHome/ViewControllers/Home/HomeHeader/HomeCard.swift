@@ -35,6 +35,7 @@ final class HomeCard: UICollectionViewCell {
     var cardContent: UIView!
     var collapsedContent: UIView!
     var miniatureContent: UIView!
+    private let miniatureTapButton = UIButton(type: .custom)
     private var widthConstraint: NSLayoutConstraint!
     private var heightConstraint: NSLayoutConstraint!
 
@@ -140,6 +141,11 @@ final class HomeCard: UICollectionViewCell {
             miniatureContent.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
         ])
 
+        miniatureTapButton.accessibilityLabel = lang("Expand")
+        miniatureTapButton.isHidden = true
+        miniatureTapButton.addTarget(self, action: #selector(expandFromMiniature), for: .touchUpInside)
+        contentView.addSubview(miniatureTapButton)
+
         cardContentMaskingContainer.mask = cardContentMask
 //        cardBackground.alpha = 0.1
     }
@@ -171,12 +177,17 @@ final class HomeCard: UICollectionViewCell {
 
     private func applyTransform(headerViewModel: HomeHeaderViewModel) {
         let layout = container.layout
+        let usesNavigationBarTopTabs = headerViewModel.rootNavigationStyle.usesNavigationBarTopTabs
+        let miniatureCardWidth: CGFloat = usesNavigationBarTopTabs ? 40.5 : 34
+        let miniatureCardVerticalOffset: CGFloat = usesNavigationBarTopTabs
+            ? -126
+            : (IOS_26_MODE_ENABLED ? -124 : -126)
         // background
         let ofs: CGFloat =
             layout.itemHeight/2 -
-            17*CARD_RATIO +
-            (IOS_26_MODE_ENABLED ? -124 : -126)
-        let scale: CGFloat = 34/layout.itemWidth
+            miniatureCardWidth/2*CARD_RATIO +
+            miniatureCardVerticalOffset
+        let scale: CGFloat = miniatureCardWidth/layout.itemWidth
         // card content
         let collapsedBalanceFontSize: CGFloat =
             headerViewModel.rootNavigationStyle.usesNavigationBarTopTabs
@@ -209,6 +220,7 @@ final class HomeCard: UICollectionViewCell {
                 .scaledBy(x: 1/r, y: 1/r)
             self.collapsedContent.transform = .identity
         }
+        updateMiniatureTapButtonFrame()
     }
 
     override func prepareForReuse() {
@@ -220,6 +232,7 @@ final class HomeCard: UICollectionViewCell {
     override func layoutSubviews() {
         super.layoutSubviews()
         updateCardContentMask(container.layout)
+        updateMiniatureTapButtonFrame()
     }
 
     private func updateLayout(_ layout: HomeCardLayoutMetrics) {
@@ -260,13 +273,27 @@ final class HomeCard: UICollectionViewCell {
         cardContentMask.center = CGPoint(x: layout.itemWidth/2, y: layout.itemHeight/2)
     }
 
+    private func updateMiniatureTapButtonFrame() {
+        let miniatureFrame = miniatureContent.convert(miniatureContent.bounds, to: contentView)
+        miniatureTapButton.bounds.size = CGSize(
+            width: max(44, miniatureFrame.width),
+            height: max(44, miniatureFrame.height)
+        )
+        miniatureTapButton.center = CGPoint(x: miniatureFrame.midX, y: miniatureFrame.midY)
+    }
+
+    @objc private func expandFromMiniature() {
+        container.headerViewModel?.onExpand()
+    }
+
     private func updateAccessibilityState(headerViewModel: HomeHeaderViewModel) {
         let isCollapsed = headerViewModel.isCollapsed
         let isHidden = headerViewModel.isCardHidden
         cardContentMaskingContainer.isUserInteractionEnabled = !isCollapsed && !isHidden
-        collapsedContent.isUserInteractionEnabled = isCollapsed && !isHidden
+        collapsedContent.isUserInteractionEnabled = isCollapsed
+        miniatureTapButton.isHidden = !isCollapsed || isHidden
         cardContent.accessibilityElementsHidden = isCollapsed || isHidden
-        collapsedContent.accessibilityElementsHidden = !isCollapsed || isHidden
+        collapsedContent.accessibilityElementsHidden = !isCollapsed
     }
 }
 

@@ -39,6 +39,8 @@ class WAgentHintView(
     title: CharSequence,
     contentVerticalPadding: Int = 10.dp,
     animatePressAlpha: Boolean = true,
+    showsIcon: Boolean = true,
+    titleMaxLines: Int = 2,
     onTap: () -> Unit
 ) : WFrameLayout(context) {
 
@@ -80,8 +82,8 @@ class WAgentHintView(
 
     init {
         titleLabel.setStyle(16f, WFont.Medium)
-        titleLabel.isSingleLine = false
-        titleLabel.maxLines = 2
+        titleLabel.isSingleLine = titleMaxLines == 1
+        titleLabel.maxLines = titleMaxLines
         titleLabel.ellipsize = TextUtils.TruncateAt.END
         titleLabel.useCustomEmoji = true
         titleLabel.text = title
@@ -106,11 +108,13 @@ class WAgentHintView(
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPaddingRelative(16.dp, contentVerticalPadding, 16.dp, contentVerticalPadding)
-            addView(iconView, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            if (showsIcon) {
+                addView(iconView, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT))
+            }
             addView(
                 titleLabel,
                 LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply {
-                    marginStart = 6.dp
+                    if (showsIcon) marginStart = 6.dp
                 }
             )
         }

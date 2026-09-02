@@ -3,6 +3,7 @@ import type {
   DappConnectionResult,
   DappMethodResult,
   DappProtocolType,
+  DappSessionChain,
   DappSignDataRequest,
   DappTransactionRequest,
 } from '../../api/dappProtocols';
@@ -45,94 +46,16 @@ class SolanaConnect implements SolanaStandardWallet {
       version: '1.0.0',
       connect: async (input?: { silent: boolean }): Promise<{ accounts: StandardWalletAddress[] }> => {
         try {
-          const id = ++this.lastGeneratedId;
           if (input?.silent) {
-            const response = await this.request.bind(this)(
-              'reconnect',
-              [id],
-            ) as DappConnectionResult<DappProtocolType.WalletConnect>;
+            return this.connectSilent();
+          }
 
-            if (!response.success) {
-              return { accounts: [] };
-            }
-            const standardWalletAddresses = response.session.chains.map((e) => ({
-              address: e.address,
-              publicKey: new Uint8Array(uint8ArrayFromBase58(e.address)),
-              chains: [`${e.chain}:${e.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
-              features: Object.keys(this.features),
-            }));
-
-            this.accounts = standardWalletAddresses;
-
+          if (this.accounts.length) {
             return { accounts: this.accounts };
           }
 
-          const metadata = {
-            url: window.origin,
-            name: (document.querySelector<HTMLMetaElement>('meta[property*="og:title"]'))?.content
-              || document.title,
-            description: '',
-            icons: [(document.querySelector<HTMLLinkElement>('link[rel*="icon"]'))?.href
-              || `${window.location.origin}/favicon.ico` || ''],
-          };
-
-          // We dont need much info about `DappProtocolType`, but need to follow connector struct
-          const payload: WalletConnectSessionProposal = {
-            id,
-            params: {
-              id,
-              expiryTimestamp: 0,
-              relays: [],
-              proposer: {
-                publicKey: '',
-                metadata,
-              },
-              requiredNamespaces: {},
-              optionalNamespaces: {
-                solana: {
-                  methods: [],
-                  events: [],
-                },
-              },
-              pairingTopic: '',
-            },
-          };
-
-          const unifiedPayload: DappConnectionRequest<DappProtocolType.WalletConnect> = {
-            protocolType: 'walletConnect',
-            transport: 'extension',
-            protocolData: payload,
-            // We will rewrite permissions in connect method after parsing payload anyway
-            permissions: {
-              isPasswordRequired: false,
-              isAddressRequired: false,
-            },
-            requestedChains: [{
-              chain: 'solana',
-              network: 'mainnet', // We have no info about network from the dapp, so mock this :(
-            }],
-          };
-
-          const response = await this.request.bind(this)(
-            'connect',
-            [unifiedPayload],
-          ) as DappConnectionResult<DappProtocolType.WalletConnect>;
-
-          if (!response.success) {
-            return { accounts: [] };
-          }
-          const standardWalletAddresses = response.session.chains.map((e) => ({
-            address: e.address,
-            publicKey: new Uint8Array(uint8ArrayFromBase58(e.address)),
-            chains: [`${e.chain}:${e.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
-            features: Object.keys(this.features),
-          }));
-
-          this.accounts = standardWalletAddresses;
-
-          return { accounts: this.accounts };
+          return this.connectWithModal();
         } catch (err) {
-          // We dont have access to `logDebugError` in pageScript, so just log an error
           // eslint-disable-next-line no-console
           console.error('SolanaConnector:standard:connect', err);
 
@@ -261,11 +184,101 @@ class SolanaConnect implements SolanaStandardWallet {
       try {
         listener(data);
       } catch (err) {
-        // We dont have access to `logDebugError` in pageScript, so just log an error
         // eslint-disable-next-line no-console
         console.error('SolanaConnector:emit', err);
       }
     });
+  }
+
+  private mapSessionChainsToAccounts(chains: DappSessionChain[]): StandardWalletAddress[] {
+    return chains.filter((chain) => chain.chain === 'solana').map((chain) => ({
+      address: chain.address,
+      publicKey: new Uint8Array(uint8ArrayFromBase58(chain.address)),
+      chains: [`${chain.chain}:${chain.network === 'mainnet' ? 'mainnet' : 'devnet'}`],
+      features: Object.keys(this.features),
+    }));
+  }
+
+  private async connectSilent(): Promise<{ accounts: StandardWalletAddress[] }> {
+    const id = ++this.lastGeneratedId;
+
+    const response = await this.request.bind(this)(
+      'reconnect',
+      [id],
+    ) as DappConnectionResult<DappProtocolType.WalletConnect>;
+
+    if (!response.success) {
+      return { accounts: [] };
+    }
+
+    const standardWalletAddresses = this.mapSessionChainsToAccounts(response.session.chains);
+
+    this.accounts = standardWalletAddresses;
+
+    return { accounts: this.accounts };
+  }
+
+  private async connectWithModal(): Promise<{ accounts: StandardWalletAddress[] }> {
+    const id = ++this.lastGeneratedId;
+
+    const metadata = {
+      url: window.origin,
+      name: (document.querySelector<HTMLMetaElement>('meta[property*="og:title"]'))?.content
+        || document.title,
+      description: '',
+      icons: [(document.querySelector<HTMLLinkElement>('link[rel*="icon"]'))?.href
+        || `${window.location.origin}/favicon.ico` || ''],
+    };
+
+    const payload: WalletConnectSessionProposal = {
+      id,
+      params: {
+        id,
+        expiryTimestamp: 0,
+        relays: [],
+        proposer: {
+          publicKey: '',
+          metadata,
+        },
+        requiredNamespaces: {},
+        optionalNamespaces: {
+          solana: {
+            methods: [],
+            events: [],
+          },
+        },
+        pairingTopic: '',
+      },
+    };
+
+    const unifiedPayload: DappConnectionRequest<DappProtocolType.WalletConnect> = {
+      protocolType: 'walletConnect',
+      transport: 'extension',
+      protocolData: payload,
+      permissions: {
+        isPasswordRequired: false,
+        isAddressRequired: false,
+      },
+      requestedChains: [{
+        chain: 'solana',
+        network: 'mainnet',
+      }],
+    };
+
+    const response = await this.request.bind(this)(
+      'connect',
+      [unifiedPayload],
+    ) as DappConnectionResult<DappProtocolType.WalletConnect>;
+
+    if (!response.success) {
+      return { accounts: [] };
+    }
+
+    const standardWalletAddresses = this.mapSessionChainsToAccounts(response.session.chains);
+
+    this.accounts = standardWalletAddresses;
+
+    return { accounts: this.accounts };
   }
 
   private request(name: SolanaRequestMethods, args: any[] = []) {

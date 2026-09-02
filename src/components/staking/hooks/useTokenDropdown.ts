@@ -4,7 +4,11 @@ import type { ApiBaseCurrency, ApiCurrencyRates, ApiStakingState, ApiTokenWithPr
 import type { AmountInputToken } from '../../ui/AmountInput';
 
 import { calculateTokenPrice } from '../../../util/calculatePrice';
-import { getIsActiveStakingState, getIsNewStakeAllowed } from '../../../util/staking';
+import {
+  filterStakingStatesByTonStrategy,
+  getIsActiveStakingState,
+  getIsNewStakeAllowed,
+} from '../../../util/staking';
 
 interface Options {
   tokenBySlug?: Record<string, ApiTokenWithPrice>;
@@ -62,18 +66,7 @@ export function getStakingTokens(
   selectedStakingId?: string,
   shouldKeepActiveBlockedStates?: boolean,
 ) {
-  const hasNominatorsStake = states.some((state) => state.type === 'nominators' && getIsActiveStakingState(state));
-  const hasLiquidStake = states.some((state) => state.type === 'liquid' && getIsActiveStakingState(state));
-
-  if (shouldUseNominators && !hasLiquidStake) {
-    states = states.filter((state) => state.type !== 'liquid');
-  }
-
-  if (!shouldUseNominators && !hasNominatorsStake) {
-    states = states.filter((state) => state.type !== 'nominators');
-  }
-
-  return states
+  return filterStakingStatesByTonStrategy(states, shouldUseNominators)
     .filter((state) => tokenBySlug[state.tokenSlug]
       && (getIsNewStakeAllowed(state.tokenSlug)
         || state.id === selectedStakingId

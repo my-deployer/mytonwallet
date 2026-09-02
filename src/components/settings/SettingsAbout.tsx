@@ -8,9 +8,7 @@ import {
   APP_VERSION,
   APP_WEBSITE_HOST,
   IS_EXTENSION,
-  IS_FEATURE_LIMITED,
   IS_GRAM_WALLET,
-  IS_MY_WALLET_BRAND,
 } from '../../config';
 import { getHelpCenterUrl } from '../../global/helpers/getHelpCenterUrl';
 import renderText from '../../global/helpers/renderText';
@@ -76,11 +74,9 @@ function SettingsAbout({
         <img src={LOGO_PATH} alt={lang('Logo')} className={styles.logo} />
         <h2 ref={headerRef} className={styles.title}>
           {APP_NAME} {APP_VERSION} {APP_ENV_MARKER}
-          {!IS_FEATURE_LIMITED && (
-            <a href={APP_PROMO_URL} target="_blank" className={styles.titleLink} rel="noreferrer">
-              {APP_WEBSITE_HOST}
-            </a>
-          )}
+          <a href={APP_PROMO_URL} target="_blank" className={styles.titleLink} rel="noreferrer">
+            {APP_WEBSITE_HOST}
+          </a>
         </h2>
         <div className={buildClassName(styles.settingsBlock, styles.settingsBlock_text)}>
           <p className={styles.text}>
@@ -93,21 +89,18 @@ function SettingsAbout({
 
         <p className={styles.blockTitle}>{lang('%app_name% Resources', { app_name: APP_NAME })}</p>
         <div className={styles.settingsBlock}>
-          {/* The tips channel is a My Wallet channel; Air hides this row on the Gram brand too */}
-          {IS_MY_WALLET_BRAND && (
-            <a
-              href={getTelegramTipsChannelUrl(lang.code!)}
-              target="_blank"
-              rel="noreferrer"
-              className={styles.item}
-              onClick={handleUrlClick}
-            >
-              <img className={styles.menuIcon} src={videoImg} alt={lang('Watch Video about Features')} />
-              <span className={styles.itemTitle}>{lang('Watch Video about Features')}</span>
+          <a
+            href={getTelegramTipsChannelUrl(lang.code!)}
+            target="_blank"
+            rel="noreferrer"
+            className={styles.item}
+            onClick={handleUrlClick}
+          >
+            <img className={styles.menuIcon} src={videoImg} alt={lang('Watch Video about Features')} />
+            <span className={styles.itemTitle}>{lang('Watch Video about Features')}</span>
 
-              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-            </a>
-          )}
+            <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+          </a>
           <a
             href={getBlogUrl(lang.code!)}
             target="_blank"

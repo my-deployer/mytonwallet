@@ -9,6 +9,7 @@ import {
 } from '../config';
 import { getIsNegVerdictCacheEnabled } from '../api/common/cache';
 import { ApiServerError } from '../api/errors';
+import { pauseWithAbortSignal, throwIfAborted } from './abortSignal';
 import {
   bucketKey as defaultBucketKey,
   CircuitBreaker,
@@ -16,7 +17,6 @@ import {
 } from './circuit-breaker';
 import { logDebug } from './logs';
 import { NegativeVerdictCache } from './negativeVerdictCache';
-import { pause } from './schedulers';
 
 import {
   fetchWithThrottledProvider,
@@ -92,6 +92,7 @@ export async function fetchJson<T extends AnyLiteral>(
 }
 
 export async function fetchWithRetry(url: string | URL, init?: RequestInit, options?: FetchOptions) {
+  throwIfAborted(init?.signal);
   const providerRetryPolicy = getProviderFetchRetryPolicy(url);
   const {
     retries = providerRetryPolicy?.retries ?? DEFAULT_RETRIES,
@@ -105,7 +106,10 @@ export async function fetchWithRetry(url: string | URL, init?: RequestInit, opti
 
   // A GET to evmapi whose deterministic 4xx we already saw is replayed locally, before touching
   // the breaker: a replay is not a host contact, so it must produce no breaker or probe signal.
-  const isNegVerdictCacheable = method === 'GET' && getIsNegVerdictCacheEnabled() && isEvmApiOrigin(urlString);
+  const isNegVerdictCacheable = !init?.signal
+    && method === 'GET'
+    && getIsNegVerdictCacheEnabled()
+    && isEvmApiOrigin(urlString);
   if (isNegVerdictCacheable) {
     const cached = negativeVerdictCache.get(urlString);
     if (cached) {
@@ -160,6 +164,7 @@ export async function fetchWithRetry(url: string | URL, init?: RequestInit, opti
         settled = true;
         return response;
       } catch (err: any) {
+        throwIfAborted(init?.signal);
         message = typeof err === 'string' ? err : err.message ?? message;
         const retryAfterMs = typeof err === 'string'
           ? undefined
@@ -183,11 +188,15 @@ export async function fetchWithRetry(url: string | URL, init?: RequestInit, opti
 
         if (i < retries) {
           const backoffMs = computeRetryBackoffMs(i);
-          await pause(retryAfterMs !== undefined ? Math.max(retryAfterMs, backoffMs) : backoffMs);
+          await pauseWithAbortSignal(
+            retryAfterMs !== undefined ? Math.max(retryAfterMs, backoffMs) : backoffMs,
+            init?.signal,
+          );
         }
       }
     }
 
+    throwIfAborted(init?.signal);
     // Same verdict as the in-loop branch: only a terminal 4xx proves the host alive.
     if (isBreakerHealthy4xx(statusCode)) {
       slot.recordSuccess();
@@ -215,20 +224,8 @@ function buildFetchErrorMessage(
   return parts.join(' | ');
 }
 
-export async function fetchWithTimeout(url: string | URL, init?: RequestInit, timeout = DEFAULT_TIMEOUT) {
-  const controller = new AbortController();
-  const id = setTimeout(() => {
-    controller.abort();
-  }, timeout);
-
-  try {
-    return await fetchWithThrottledProvider(url, {
-      ...init,
-      signal: controller.signal,
-    }, timeout);
-  } finally {
-    clearTimeout(id);
-  }
+export function fetchWithTimeout(url: string | URL, init?: RequestInit, timeout = DEFAULT_TIMEOUT) {
+  return fetchWithThrottledProvider(url, init, timeout);
 }
 
 export async function handleFetchErrors(response: Response, ignoreHttpCodes?: number[]) {

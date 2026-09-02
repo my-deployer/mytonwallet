@@ -7,7 +7,7 @@ import type {
   ApiTransactionType,
 } from '../../api/types';
 import type { LangFn } from '../langProvider';
-import { SwapType } from '../../global/types';
+import { SwapType } from '../swap/types';
 
 import { ALL_STAKING_POOLS, BURN_ADDRESS } from '../../config';
 import { unique } from '../iteratees';
@@ -127,6 +127,42 @@ export function getIsActivitySuitableForFetchingTimestamp(activity: ApiActivity 
     && !getIsTxIdLocal(activity.id)
     && !getIsBackendSwapId(activity.id)
     && !getIsActivityPending(activity);
+}
+
+/**
+ * Where the next history page should continue from, given the activities already in hand
+ * (oldest last). Every caller that pages backwards must ask this, and only this: the question
+ * "from which moment do I continue" has one answer, and two call sites answering it differently
+ * is what let the history loop.
+ *
+ * A local, pending or backend-swap activity is preferred against because its timestamp need not
+ * sit where the chain would put it, so paging from it can step over real history. But when a page
+ * holds nothing else - a wallet whose whole slice is swaps merged from our backend - the choice is
+ * between an approximate cursor and no cursor at all. No cursor means the caller re-requests the
+ * first page forever, so the oldest activity is used instead: it can only overlap what is already
+ * held, and overlap is deduplicated while a missing cursor is not recoverable.
+ */
+export function getActivityContinuationTimestamp<T>(
+  items: readonly T[],
+  getActivity: (item: T) => ApiActivity | undefined,
+) {
+  let oldest: ApiActivity | undefined;
+
+  // Walk from the oldest end so the first suitable activity found is the one to continue from.
+  // The scan reads through `getActivity` rather than over a materialized array, because the
+  // caller holding ids would otherwise rebuild the whole history on every read.
+  for (let i = items.length - 1; i >= 0; i--) {
+    const activity = getActivity(items[i]);
+    if (!activity) continue;
+
+    if (getIsActivitySuitableForFetchingTimestamp(activity)) {
+      return activity.timestamp;
+    }
+
+    oldest ??= activity;
+  }
+
+  return oldest?.timestamp;
 }
 
 export function getTransactionTitle(

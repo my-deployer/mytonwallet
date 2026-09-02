@@ -3,8 +3,8 @@ import SwiftUI
 import WalletCore
 import WalletContext
 
-let viewBadgeCornerRadius: CGFloat = 5
-let viewBadgeVerticalPadding: CGFloat = 3
+public let viewBadgeCornerRadius: CGFloat = 5
+public let viewBadgeVerticalPadding: CGFloat = 3
 
 public struct AccountTypeBadge: View {
     

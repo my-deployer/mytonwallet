@@ -216,6 +216,8 @@ data class ApiNft(
     val isTelegramGift: Boolean? = null,
     val isScam: Boolean? = null,
     val isUnverified: Boolean? = null,
+    // The indexer already serves blurred images for these, so this flag is informational
+    val isNsfw: Boolean? = null,
     val metadata: ApiNftMetadata? = null,
     val `interface`: ApiNftInterface? = null,
     val compression: ApiNftCompression? = null

@@ -95,6 +95,10 @@ object NftActionHelpers {
     }
 
     private fun WWindow?.presentingViewController() = this?.topViewController?.let { top ->
-        (top as? ITabsVC)?.activeNavigationController?.viewControllers?.lastOrNull() ?: top
+        if (!this.isWideLayout) {
+            (top as? ITabsVC)?.mainNavigationController?.viewControllers?.firstOrNull() ?: top
+        } else {
+            (top as? ITabsVC)?.activeNavigationController?.viewControllers?.lastOrNull() ?: top
+        }
     }
 }

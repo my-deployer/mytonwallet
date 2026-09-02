@@ -7,11 +7,11 @@ jest.mock('../storages', () => ({
   },
 }));
 
-// Force the combo flavor (Core identity, features unlocked) so `purgeCoreTwins` runs its purge instead of gating out.
+// Force the Gram web flavor so `purgeCoreTwins` runs its purge instead of gating out.
 jest.mock('../../config', () => ({
   ...jest.requireActual('../../config'),
-  IS_CORE_WALLET: true,
-  IS_FEATURE_LIMITED: false,
+  IS_GRAM_WALLET: true,
+  IS_AIR_APP: false,
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports

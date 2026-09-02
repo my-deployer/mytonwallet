@@ -51,7 +51,7 @@ public extension StakingConfig {
         explainTitle: lang("Why this is safe"),
         explainContent: [
             lang("$safe_staking_description1"),
-            lang("$safe_staking_description2", arg1: ApiChain.ton.title),
+            L10n.safeStakingDescription2(chain: ApiChain.ton.title),
             lang("$safe_staking_description3"),
         ],
     )
@@ -63,7 +63,7 @@ public extension StakingConfig {
         displayTitle: "MY",
         explainTitle: lang("Why this is safe"),
         explainContent: [
-            lang("$safe_staking_description_jetton1", arg1: "[JVault](\(JVAULT_URL))"),
+            L10n.safeStakingDescriptionJetton1(jvaultLink: "[JVault](\(JVAULT_URL))"),
             lang("$safe_staking_description_jetton2"),
         ],
     )

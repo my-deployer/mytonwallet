@@ -207,7 +207,7 @@ public class SendDappVC: WViewController, UISheetPresentationControllerDelegate 
         } else {
             nil
         }
-        errorLabel.text = insufficientTokens.map { lang("Not Enough %symbol%", arg1: $0) }
+        errorLabel.text = insufficientTokens.map { L10n.notEnoughSymbol(symbol: $0) }
         errorLabel.isHidden = insufficientTokens == nil
 
         let isEnabled = if let request {

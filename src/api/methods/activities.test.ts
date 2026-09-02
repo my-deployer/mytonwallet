@@ -142,6 +142,75 @@ describe('fetchPastActivities', () => {
       { incompleteTonTraceIds: ['boundary-trace'] },
     );
   });
+
+  it('passes the caller signal through chain and swap-history I/O', async () => {
+    fetchStoredAccount.mockResolvedValue({
+      type: 'mnemonic',
+      byChain: { ton: { address: 'EQ-test', publicKey: '00' } },
+    });
+    chains.ton.fetchActivitySlice.mockResolvedValue([]);
+    const controller = new AbortController();
+
+    await fetchPastActivities('0-mainnet', 50, undefined, undefined, { signal: controller.signal });
+
+    expect(chains.ton.fetchActivitySlice).toHaveBeenCalledWith(expect.objectContaining({
+      signal: controller.signal,
+    }));
+    expect(swapReplaceActivities).toHaveBeenCalledWith(
+      '0-mainnet',
+      [],
+      undefined,
+      undefined,
+      expect.objectContaining({ signal: controller.signal }),
+    );
+  });
+
+  it('uses the cross-chain activity source for account-wide EVM history', async () => {
+    fetchStoredAccount.mockResolvedValue({
+      type: 'mnemonic',
+      byChain: { ethereum: { address: '0x-test', publicKey: '00' } },
+    });
+
+    await fetchPastActivities('0-mainnet', 50);
+
+    expect(chains.ethereum.crosschain.fetchCrossChainActivitySlice).toHaveBeenCalledWith({
+      accountId: '0-mainnet',
+      limit: 50,
+      toTimestamp: undefined,
+    });
+    expect(chains.ethereum.fetchActivitySlice).not.toHaveBeenCalled();
+  });
+
+  it('uses the chain-specific activity source for token history', async () => {
+    await fetchPastActivities('0-mainnet', 50, 'toncoin');
+
+    expect(chains.ton.fetchActivitySlice).toHaveBeenCalledWith({
+      accountId: '0-mainnet',
+      limit: 50,
+      tokenSlug: 'toncoin',
+      toTimestamp: undefined,
+    });
+    expect(chains.ton.crosschain.fetchCrossChainActivitySlice).not.toHaveBeenCalled();
+  });
+
+  it('suppresses source failures for signalled callers unless requested', async () => {
+    const error = new TypeError('fetch failed');
+    fetchStoredAccount.mockRejectedValue(error);
+
+    await expect(fetchPastActivities('0-mainnet', 50, undefined, undefined, {
+      signal: new AbortController().signal,
+    })).resolves.toBeUndefined();
+  });
+
+  it('surfaces source failures when requested', async () => {
+    const error = new TypeError('fetch failed');
+    fetchStoredAccount.mockRejectedValue(error);
+
+    await expect(fetchPastActivities('0-mainnet', 50, undefined, undefined, {
+      signal: new AbortController().signal,
+      shouldThrowOnError: true,
+    })).rejects.toBe(error);
+  });
 });
 
 describe('reconcileActivityUpdate', () => {

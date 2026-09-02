@@ -6,6 +6,8 @@ import React from '../../../../lib/teact/teact';
 import TeactDOM from '../../../../lib/teact/teact-dom';
 import { addActionHandler, getActions, getGlobal, setGlobal } from '../../../../global';
 
+import type { ApiNft } from '../../../../api/types';
+
 import { MAIN_ACCOUNT_ID } from '../../../../config';
 import { INITIAL_STATE } from '../../../../global/initialState';
 import { cloneDeep } from '../../../../util/iteratees';
@@ -14,6 +16,18 @@ import { pause } from '../../../../util/schedulers';
 import Nfts from './Nfts';
 
 const COLLECTION = { address: 'EQCollectionAddress', chain: 'ton' } as const;
+const PROXIED_IMAGE_URL = 'https://imgproxy.toncenter.com/signature/pr:medium/encoded';
+
+const NFT_WITHOUT_IMAGE: ApiNft = {
+  chain: 'ton',
+  interface: 'default',
+  index: 0,
+  name: 'Unpreviewed NFT',
+  address: 'EQNftWithoutImage',
+  collectionAddress: COLLECTION.address,
+  isOnSale: false,
+  metadata: {},
+};
 
 // The `updateNfts` handler triggers this API-layer action; the tests don't need its effects
 addActionHandler('checkCardNftOwnership', () => {});
@@ -26,6 +40,9 @@ let root: HTMLDivElement;
 
 beforeEach(() => {
   root = document.createElement('div');
+  // The widget always lives inside an `OverviewCell` body, and `InfiniteScroll` looks the scroll
+  // host up by this class
+  root.className = 'overview-cell-body';
   document.body.appendChild(root);
 
   let global = cloneDeep(INITIAL_STATE);
@@ -71,6 +88,16 @@ function emitTerminalNftUpdate() {
     nfts: [],
     isFullLoading: false,
   });
+}
+
+function emitNfts(nfts: ApiNft[]) {
+  getActions().apiUpdate({
+    type: 'updateNfts', accountId: MAIN_ACCOUNT_ID, chain: 'ton', nfts, isFullLoading: false,
+  });
+}
+
+function getRenderedImageUrls() {
+  return Array.from(root.querySelectorAll('img')).map((image) => image.getAttribute('src'));
 }
 
 describe('Nfts landscape widget', () => {
@@ -160,5 +187,26 @@ describe('Nfts landscape widget', () => {
     const { nfts } = getGlobal().byAccountId[MAIN_ACCOUNT_ID];
     expect(nfts?.orderedAddresses).toEqual([]);
     expect(getIsSpinnerShown()).toBe(false);
+  });
+});
+
+describe('Nfts without a proxied preview', () => {
+  it('shows the placeholder instead of an empty image', async () => {
+    renderWidget();
+    emitNfts([NFT_WITHOUT_IMAGE]);
+    await flushUpdates();
+
+    expect(root.textContent).toContain('No Image');
+    const imageUrls = getRenderedImageUrls();
+    expect(imageUrls.length).toBeGreaterThan(0);
+    expect(imageUrls.every(Boolean)).toBe(true);
+  });
+
+  it('shows the image once a proxied preview arrives', async () => {
+    renderWidget();
+    emitNfts([{ ...NFT_WITHOUT_IMAGE, thumbnail: PROXIED_IMAGE_URL, image: PROXIED_IMAGE_URL }]);
+    await flushUpdates();
+
+    expect(getRenderedImageUrls()).toContain(PROXIED_IMAGE_URL);
   });
 });

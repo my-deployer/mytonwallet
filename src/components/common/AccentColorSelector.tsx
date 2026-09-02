@@ -4,7 +4,6 @@ import { getActions } from '../../global';
 import type { ApiNft } from '../../api/types';
 import type { Theme } from '../../global/types';
 
-import { IS_MY_WALLET_BRAND } from '../../config';
 import { ACCENT_COLORS } from '../../util/accentColor/constants';
 import buildClassName from '../../util/buildClassName';
 import getAccentColorsFromNfts from '../../util/getAccentColorsFromNfts';
@@ -48,8 +47,6 @@ function AccentColorSelector({
   const appTheme = useAppTheme(theme);
 
   useEffect(() => {
-    if (!IS_MY_WALLET_BRAND) return;
-
     void (async () => {
       setIsAvailableAccentLoading(true);
       const result = await getAccentColorsFromNfts(nftAddresses, nftsByAddress);
@@ -110,7 +107,7 @@ function AccentColorSelector({
     );
   }
 
-  if (!IS_MY_WALLET_BRAND || isNftBuyingDisabled) {
+  if (isNftBuyingDisabled) {
     return undefined;
   }
 

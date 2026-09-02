@@ -81,9 +81,13 @@ class RenewVC(context: Context, val nft: ApiNft) : WViewController(context) {
 
         setNavTitle(LocaleController.getString("Renew Domain"))
         setNavSubtitle(
-            LocaleController.getString("Until %date%").replace(
-                "%date%",
-                Date(System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000).formatDateAndTime()
+            LocaleController.getStringWithKeyValues(
+                "\$until_date_capitalized",
+                listOf(
+                    "%date%" to Date(
+                        System.currentTimeMillis() + 365L * 24 * 60 * 60 * 1000
+                    ).formatDateAndTime()
+                )
             )
         )
         setupNavBar(true)

@@ -14,12 +14,9 @@ import {
   APP_VERSION,
   IS_EXPLORER,
   IS_EXTENSION,
-  IS_FEATURE_LIMITED,
-  IS_MY_WALLET_BRAND,
   LANG_LIST,
   MW_CARDS_WEBSITE,
   PROXY_HOSTS,
-  SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY,
   SUPPORT_USERNAME,
   TONCOIN,
 } from '../../config';
@@ -99,7 +96,6 @@ import installAppImg from '../../assets/settings/settings_install-app.svg';
 import installMobileImg from '../../assets/settings/settings_install-mobile.svg';
 import languageImg from '../../assets/settings/settings_language.svg';
 import mwCardsImg from '../../assets/settings/settings_mw-cards.svg';
-import upgradeImg from '../../assets/settings/settings_mywallet.png';
 import notifications from '../../assets/settings/settings_notifications.svg';
 import portfolioImg from '../../assets/settings/settings_portfolio.svg';
 import securityImg from '../../assets/settings/settings_security.svg';
@@ -194,6 +190,7 @@ function Settings({
   const { isScrolled, handleScroll: handleContentScroll } = useScrolledState();
 
   const activeLang = useMemo(() => LANG_LIST.find((l) => l.langCode === langCode), [langCode]);
+  const featuresTitle = lang('%app_name% Features', { app_name: APP_NAME }) as string;
 
   const shortBaseSymbol = getShortCurrencySymbol(baseCurrency);
 
@@ -241,10 +238,6 @@ function Settings({
 
   const handlCloseDeveloperModal = useLastCallback(() => {
     closeDeveloperModal();
-
-    if (IS_FEATURE_LIMITED) {
-      handleCloseSettings();
-    }
   });
 
   const handleConnectedDappsOpen = useLastCallback(() => {
@@ -441,17 +434,7 @@ function Settings({
           onScroll={isPortrait ? handleContentScroll : undefined}
         >
 
-          {IS_FEATURE_LIMITED && (
-            <div className={styles.block}>
-              <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallApp}>
-                <img className={styles.menuIcon} src={upgradeImg} alt={lang('Upgrade to My Wallet')} />
-                <span className={styles.itemTitle}>{lang('Upgrade to My Wallet')}</span>
-
-                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-              </div>
-            </div>
-          )}
-          {!IS_FEATURE_LIMITED && IS_WEB && (
+          {IS_WEB && (
             <div className={styles.block}>
               <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallApp}>
                 <img className={styles.menuIcon} src={installAppImg} alt={lang('Install App')} />
@@ -498,11 +481,9 @@ function Settings({
             </div>
           )}
 
-          {!IS_FEATURE_LIMITED && (
-            <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>
-              {lang('Settings')}
-            </p>
-          )}
+          <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>
+            {lang('Settings')}
+          </p>
 
           <div className={styles.block}>
             <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleAppearanceOpen}>
@@ -530,17 +511,15 @@ function Settings({
                 <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
               </div>
             )}
-            {!SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY && (
-              <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleAssetsOpen}>
-                <img className={styles.menuIcon} src={assetsActivityImg} alt={lang('Assets & Activity')} />
-                <div className={styles.itemContent}>
-                  <span className={styles.itemTitle}>{lang('Assets & Activity')}</span>
-                  <span className={styles.itemSubtitle}>{lang('Base Currency, Token Order, Hidden NFTs')}</span>
-                </div>
-
-                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleAssetsOpen}>
+              <img className={styles.menuIcon} src={assetsActivityImg} alt={lang('Assets & Activity')} />
+              <div className={styles.itemContent}>
+                <span className={styles.itemTitle}>{lang('Assets & Activity')}</span>
+                <span className={styles.itemSubtitle}>{lang('Base Currency, Token Order, Hidden NFTs')}</span>
               </div>
-            )}
+
+              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            </div>
             {accountType === 'mnemonic' && isMultichain && (
               <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleOpenWalletVersion}>
                 <img className={styles.menuIcon} src={walletVersionImg} alt={lang('Subwallets')} />
@@ -563,7 +542,7 @@ function Settings({
                 <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
               </div>
             )}
-            {!IS_FEATURE_LIMITED && IS_DAPP_SUPPORTED && !isViewMode && dapps.length > 0 && (
+            {IS_DAPP_SUPPORTED && !isViewMode && dapps.length > 0 && (
               <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleConnectedDappsOpen}>
                 <img className={styles.menuIcon} src={connectedDappsImg} alt={lang('Apps')} />
                 <div className={styles.itemContent}>
@@ -588,69 +567,59 @@ function Settings({
               </div>
               <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
             </div>
-            {!IS_FEATURE_LIMITED && (
-              <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleLanguageOpen}>
-                <img className={styles.menuIcon} src={languageImg} alt={lang('Language')} />
-                <div className={styles.itemContent}>
-                  <span className={styles.itemTitle}>{lang('Language')}</span>
-                  <span className={styles.itemSubtitle}>{activeLang?.name}</span>
-                </div>
-                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleLanguageOpen}>
+              <img className={styles.menuIcon} src={languageImg} alt={lang('Language')} />
+              <div className={styles.itemContent}>
+                <span className={styles.itemTitle}>{lang('Language')}</span>
+                <span className={styles.itemSubtitle}>{activeLang?.name}</span>
               </div>
-            )}
+              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            </div>
           </div>
 
-          {!IS_FEATURE_LIMITED && (
-            <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>
-              {lang('Help')}
-            </p>
-          )}
+          <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>
+            {lang('Help')}
+          </p>
 
           <div className={styles.block}>
-            {!IS_FEATURE_LIMITED && (
-              <>
-                {supportAccountsCount > 0 && (
-                  <a
-                    href={`https://t.me/${SUPPORT_USERNAME}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buildClassName(styles.item, styles.itemMenu)}
-                  >
-                    <img className={styles.menuIcon} src={supportImg} alt={lang('Ask a Question')} />
-                    <span className={styles.itemTitle}>{lang('Ask a Question')}</span>
+            {supportAccountsCount > 0 && (
+              <a
+                href={`https://t.me/${SUPPORT_USERNAME}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buildClassName(styles.item, styles.itemMenu)}
+              >
+                <img className={styles.menuIcon} src={supportImg} alt={lang('Ask a Question')} />
+                <span className={styles.itemTitle}>{lang('Ask a Question')}</span>
 
-                    <div className={styles.itemInfo}>
-                      @{SUPPORT_USERNAME}
-                      <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                    </div>
-                  </a>
-                )}
-                <a
-                  href={getHelpCenterUrl(langCode, 'home')}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={buildClassName(styles.item, styles.itemMenu)}
-                >
-                  <img className={styles.menuIcon} src={helpcenterImg} alt={lang('Help Center')} />
-                  <span className={styles.itemTitle}>{lang('Help Center')}</span>
-
+                <div className={styles.itemInfo}>
+                  @{SUPPORT_USERNAME}
                   <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                </a>
-                {IS_MY_WALLET_BRAND && (
-                  <a
-                    href={getTelegramTipsChannelUrl(langCode)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buildClassName(styles.item, styles.itemMenu)}
-                  >
-                    <img className={styles.menuIcon} src={tipsImg} alt={lang('My Wallet Features')} />
-                    <span className={styles.itemTitle}>{lang('My Wallet Features')}</span>
-
-                    <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                  </a>
-                )}
-              </>
+                </div>
+              </a>
             )}
+            <a
+              href={getHelpCenterUrl(langCode, 'home')}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buildClassName(styles.item, styles.itemMenu)}
+            >
+              <img className={styles.menuIcon} src={helpcenterImg} alt={lang('Help Center')} />
+              <span className={styles.itemTitle}>{lang('Help Center')}</span>
+
+              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            </a>
+            <a
+              href={getTelegramTipsChannelUrl(langCode)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buildClassName(styles.item, styles.itemMenu)}
+            >
+              <img className={styles.menuIcon} src={tipsImg} alt={featuresTitle} />
+              <span className={styles.itemTitle}>{featuresTitle}</span>
+
+              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            </a>
             <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleDisclaimerOpen}>
               <img className={styles.menuIcon} src={disclaimerImg} alt={lang('Use Responsibly')} />
               <span className={styles.itemTitle}>{lang('Use Responsibly')}</span>
@@ -659,48 +628,44 @@ function Settings({
             </div>
           </div>
 
-          {!IS_FEATURE_LIMITED && (
-            <>
-              <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>{lang('About')}</p>
-              <div className={styles.block}>
-                {IS_MY_WALLET_BRAND && !isNftBuyingDisabled && (
-                  <a
-                    href={MW_CARDS_WEBSITE}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={buildClassName(styles.item, styles.itemMenu)}
-                  >
-                    <img className={styles.menuIcon} src={mwCardsImg} alt={lang('My Wallet Cards NFT')} />
-                    <span className={styles.itemTitle}>{lang('My Wallet Cards NFT')}</span>
+          <p className={buildClassName(styles.blockTitle, styles.blockTitleSmall)}>{lang('About')}</p>
+          <div className={styles.block}>
+            {!isNftBuyingDisabled && (
+              <a
+                href={MW_CARDS_WEBSITE}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buildClassName(styles.item, styles.itemMenu)}
+              >
+                <img className={styles.menuIcon} src={mwCardsImg} alt={lang('My Wallet Cards NFT')} />
+                <span className={styles.itemTitle}>{lang('My Wallet Cards NFT')}</span>
 
-                    <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                  </a>
-                )}
-                {IS_EXTENSION && (
-                  <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallApp}>
-                    <img className={styles.menuIcon} src={installAppImg} alt={lang('Install App')} />
-                    <span className={styles.itemTitle}>{lang('Install App')}</span>
+                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+              </a>
+            )}
+            {IS_EXTENSION && (
+              <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallApp}>
+                <img className={styles.menuIcon} src={installAppImg} alt={lang('Install App')} />
+                <span className={styles.itemTitle}>{lang('Install App')}</span>
 
-                    <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                  </div>
-                )}
-                {IS_ELECTRON && (
-                  <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallOnMobile}>
-                    <img className={styles.menuIcon} src={installMobileImg} alt={lang('Install on Mobile')} />
-                    <span className={styles.itemTitle}>{lang('Install on Mobile')}</span>
-
-                    <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                  </div>
-                )}
-                <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleAboutOpen}>
-                  <img className={styles.menuIcon} src={aboutImg} alt="" />
-                  <span className={styles.itemTitle}>{lang('About %app_name%', { app_name: APP_NAME })}</span>
-
-                  <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
-                </div>
+                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
               </div>
-            </>
-          )}
+            )}
+            {IS_ELECTRON && (
+              <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleClickInstallOnMobile}>
+                <img className={styles.menuIcon} src={installMobileImg} alt={lang('Install on Mobile')} />
+                <span className={styles.itemTitle}>{lang('Install on Mobile')}</span>
+
+                <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+              </div>
+            )}
+            <div className={buildClassName(styles.item, styles.itemMenu)} onClick={handleAboutOpen}>
+              <img className={styles.menuIcon} src={aboutImg} alt="" />
+              <span className={styles.itemTitle}>{lang('About %app_name%', { app_name: APP_NAME })}</span>
+
+              <i className={buildClassName(styles.iconChevronRight, 'icon-chevron-right')} aria-hidden />
+            </div>
+          </div>
 
           {!isPortrait && (
             <div className={styles.block}>

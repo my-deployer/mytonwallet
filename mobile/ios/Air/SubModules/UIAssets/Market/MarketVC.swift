@@ -5,6 +5,7 @@ import WalletContext
 import WalletCore
 
 public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sendable {
+    private let showsLargeTitle: Bool
     private let usesTopTabsChrome: Bool
     private let model = MarketScreenModel()
     private let navigationHeader = NavigationHeader2()
@@ -12,8 +13,11 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
     private var navigationBarBlurView: UIView?
     private var lastScrollOffset: CGFloat = 0
     private var isLargeTitleVisible: Bool?
+    private var isNavigationTitleVisible: Bool?
+    private var didCompleteInitialAppearance = false
 
-    public init(usesTopTabsChrome: Bool = false) {
+    public init(showsLargeTitle: Bool = true, usesTopTabsChrome: Bool = false) {
+        self.showsLargeTitle = showsLargeTitle
         self.usesTopTabsChrome = usesTopTabsChrome
         super.init(nibName: nil, bundle: nil)
     }
@@ -26,11 +30,11 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
     public override func viewDidLoad() {
         super.viewDidLoad()
         WalletCoreData.add(eventObserver: self)
+        model.start()
         view.backgroundColor = .air.groupedBackground
 
         let screen = MarketScreen(
             model: model,
-            showsInlineTitle: usesTopTabsChrome,
             onScrollOffsetChange: { [weak self] offset in
                 self?.scrollOffsetDidChange(offset)
             },
@@ -56,6 +60,16 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
         syncNavigationHeader(animated: false)
     }
 
+    public override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        let isFirstAppearance = !didCompleteInitialAppearance
+        didCompleteInitialAppearance = true
+        if isFirstAppearance {
+            lastScrollOffset = 0
+        }
+        syncNavigationHeader(animated: false)
+    }
+
     public override func scrollToTop(animated: Bool) {
         model.scrollToTop()
     }
@@ -77,11 +91,6 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
         navigationBarBlurView = addCustomNavigationBarBackground(color: .air.groupedBackground)
         navigationBarBlurView?.alpha = 0
 
-        guard !usesTopTabsChrome else {
-            syncNavigationHeader(animated: false)
-            return
-        }
-
         largeTitleLabel.text = lang("Market")
         largeTitleLabel.applyTextStyle(.largeTitle, scaling: .dynamic)
         largeTitleLabel.textColor = .label
@@ -97,32 +106,43 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
 
     private func scrollOffsetDidChange(_ offset: CGFloat) {
         lastScrollOffset = offset
+        guard didCompleteInitialAppearance else { return }
         syncNavigationHeader()
     }
 
     private func syncNavigationHeader(animated: Bool = true) {
-        let progress = calculateNavigationBarProgressiveBlurProgress(lastScrollOffset)
-        navigationBarBlurView?.alpha = progress
-
         let showsLargeTitle: Bool
-        if isLargeTitleVisible == true {
-            showsLargeTitle = progress <= 0.7
+        let showsNavigationTitle: Bool
+
+        if !self.showsLargeTitle {
+            showsLargeTitle = false
+            showsNavigationTitle = true
+            navigationBarBlurView?.alpha = usesTopTabsChrome ? 1 : 0
         } else {
-            showsLargeTitle = progress <= 0.1
+            let progress = calculateNavigationBarProgressiveBlurProgress(lastScrollOffset)
+            navigationBarBlurView?.alpha = progress
+            if isLargeTitleVisible == true {
+                showsLargeTitle = progress <= 0.7
+            } else {
+                showsLargeTitle = progress <= 0.1
+            }
+            showsNavigationTitle = true
         }
-        guard isLargeTitleVisible != showsLargeTitle else { return }
+
+        applyNavigationAccessibility(
+            showsLargeTitle: showsLargeTitle,
+            showsNavigationTitle: showsNavigationTitle
+        )
+
+        guard isLargeTitleVisible != showsLargeTitle
+                || isNavigationTitleVisible != showsNavigationTitle else { return }
         isLargeTitleVisible = showsLargeTitle
+        isNavigationTitleVisible = showsNavigationTitle
 
-        largeTitleLabel.isAccessibilityElement = !usesTopTabsChrome && showsLargeTitle
-        navigationHeader.accessibilityElementsHidden = showsLargeTitle
-        if let titleLabel = navigationHeader.contentView as? UILabel {
-            titleLabel.isAccessibilityElement = !showsLargeTitle
-            titleLabel.accessibilityTraits = .header
-        }
-
+        let compactTitleAlpha: CGFloat = showsNavigationTitle ? (showsLargeTitle ? 0 : 1) : 0
         let changes = {
             self.largeTitleLabel.alpha = showsLargeTitle ? 1 : 0
-            self.navigationHeader.visibilityAlpha = showsLargeTitle ? 0 : 1
+            self.navigationHeader.visibilityAlpha = compactTitleAlpha
         }
         if animated {
             UIView.animate(withDuration: 0.2, animations: changes)
@@ -131,8 +151,21 @@ public final class MarketVC: WViewController, WalletCoreData.EventsObserver, Sen
         }
     }
 
+    private func applyNavigationAccessibility(
+        showsLargeTitle: Bool,
+        showsNavigationTitle: Bool
+    ) {
+        largeTitleLabel.isAccessibilityElement = showsLargeTitle
+        let showsCompactTitle = showsNavigationTitle && !showsLargeTitle
+        navigationHeader.accessibilityElementsHidden = !showsCompactTitle
+        if let titleLabel = navigationHeader.contentView as? UILabel {
+            titleLabel.isAccessibilityElement = showsCompactTitle
+            titleLabel.accessibilityTraits = .header
+        }
+    }
+
     private func showAllTokens(in section: MarketSection) {
-        let viewController = MarketTokenListVC(title: lang(section.title), tokens: section.tokens)
+        let viewController = MarketTokenListVC(title: section.title, tokens: section.tokens)
         navigationController?.pushViewController(viewController, animated: true)
     }
 }

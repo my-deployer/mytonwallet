@@ -9,6 +9,7 @@ import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatImageView
+import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.doOnPreDraw
 import androidx.dynamicanimation.animation.FloatValueHolder
 import androidx.dynamicanimation.animation.SpringAnimation
@@ -63,6 +64,7 @@ class AgentHintsCell(context: Context) :
     private var collapseEnd: (() -> Unit)? = null
     private var expandSpring: SpringAnimation? = null
     private var expandEnd: (() -> Unit)? = null
+    private var revealPreDrawListener: OneShotPreDrawListener? = null
 
     val isCollapsing: Boolean
         get() = collapseEnd != null
@@ -123,6 +125,8 @@ class AgentHintsCell(context: Context) :
             // Mid-animation rebind (e.g. reloadData); let the running collapse/expand finish.
             return
         }
+        // Stop callbacks that still reference the current children before replacing them.
+        cancelAnimations()
         if (hints != renderedHints || shouldShowEmptyStateIcon != isEmptyStateIconRendered) {
             renderedHints = hints
             isEmptyStateIconRendered = shouldShowEmptyStateIcon
@@ -148,7 +152,6 @@ class AgentHintsCell(context: Context) :
         } else {
             updateTheme()
         }
-        cancelAnimations()
         if (animate && WGlobalStorage.getAreAnimationsActive()) {
             startReveal()
         } else {
@@ -275,9 +278,15 @@ class AgentHintsCell(context: Context) :
     }
 
     private fun cancelAnimations() {
+        // Hand back the pending completions before dropping them: callers such as the hints
+        // dismissal own state that is only released by these callbacks.
+        val pendingCollapseEnd = collapseEnd
+        val pendingExpandEnd = expandEnd
         collapseEnd = null
         expandEnd = null
         setListClipping(true)
+        revealPreDrawListener?.removeListener()
+        revealPreDrawListener = null
         revealSpring?.cancel()
         revealSpring = null
         collapseSpring?.cancel()
@@ -286,6 +295,14 @@ class AgentHintsCell(context: Context) :
         expandSpring = null
         for (i in 0 until column.childCount) {
             column.getChildAt(i).animate().cancel()
+        }
+        if (pendingCollapseEnd != null || pendingExpandEnd != null) {
+            // Deferred: cancelAnimations() runs during configure(), and these callbacks mutate
+            // the adapter, which is illegal while the cell is being bound.
+            post {
+                pendingCollapseEnd?.invoke()
+                pendingExpandEnd?.invoke()
+            }
         }
     }
 
@@ -307,7 +324,8 @@ class AgentHintsCell(context: Context) :
             }
         }
         setAnimatedHeight(1)
-        doOnPreDraw {
+        revealPreDrawListener = doOnPreDraw {
+            revealPreDrawListener = null
             measure(
                 MeasureSpec.makeMeasureSpec((parent as? View)?.width ?: width, MeasureSpec.EXACTLY),
                 MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
@@ -320,7 +338,8 @@ class AgentHintsCell(context: Context) :
                 return@doOnPreDraw
             }
             setListClipping(false)
-            val count = column.childCount
+            val revealedViews = (0 until column.childCount).mapNotNull { column.getChildAt(it) }
+            val count = revealedViews.size
             val totalMs = (
                 (count - 1).coerceAtLeast(0) * cardStagger +
                     AnimationConstants.VERY_QUICK_ANIMATION
@@ -339,7 +358,7 @@ class AgentHintsCell(context: Context) :
                     val progress = (newHeight - 1f) / (targetHeight - 1).coerceAtLeast(1)
                     for (i in 0 until count) {
                         val local = ((progress - i * stagger) / window).coerceIn(0f, 1f)
-                        column.getChildAt(i).apply {
+                        revealedViews[i].apply {
                             alpha = local
                             translationY = 8f.dp * (1f - local)
                         }

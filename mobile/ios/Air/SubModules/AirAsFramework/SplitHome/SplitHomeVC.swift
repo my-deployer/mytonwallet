@@ -24,7 +24,7 @@ final class SplitHomeVC: ActivityListViewController, WSensitiveDataProtocol, Act
 
     override var hideBottomBar: Bool { false }
     override var headerPlaceholderHeight: CGFloat { 0 }
-    override var customSections: [CustomSectionDescriptor] {
+    override var customSections: [any CustomSectionDataProvider] {
         [actionsCustomSectionDescriptor, assetsCustomSectionDescriptor].compactMap { $0 }
     }
 

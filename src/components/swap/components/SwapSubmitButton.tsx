@@ -91,7 +91,7 @@ function SwapSubmitButton({
       } else if (dieselStatus === 'pending-previous') {
         text = lang('Awaiting Previous Fee');
       } else if (dieselStatus === 'not-authorized') {
-        text = lang('Authorize %token% Fee', { token: tokenIn?.symbol }) as string;
+        text = lang('$authorize_token_fee_capitalized', { token: tokenIn?.symbol }) as string;
       }
     }
   }

@@ -10,6 +10,7 @@ import WalletCore
 import WalletContext
 
 private let additionalSpacingToNavigationBar: CGFloat = 6
+private let topTabsAdditionalSpacingToNavigationBar: CGFloat = 4
 private let standardCollapsedHeight: CGFloat = 102.0
 
 @MainActor protocol BalanceHeaderViewDelegate: AnyObject {
@@ -41,11 +42,14 @@ final class BalanceHeaderView: WTouchPassView, Sendable {
     
     var calculatedHeight: CGFloat {
         if headerViewModel.state == .expanded {
-            cardLayoutMetrics.itemHeight - expansionInset + additionalSpacingToNavigationBar
+            let navigationBarSpacing = headerViewModel.rootNavigationStyle.usesNavigationBarTopTabs
+                ? topTabsAdditionalSpacingToNavigationBar
+                : additionalSpacingToNavigationBar
+            return cardLayoutMetrics.itemHeight - expansionInset + navigationBarSpacing
         } else if headerViewModel.rootNavigationStyle.usesNavigationBarTopTabs {
-            headerViewModel.collapsedHeight
+            return headerViewModel.collapsedHeight
         } else {
-            standardCollapsedHeight + (IOS_26_MODE_ENABLED ? 0.0 : 12.0)
+            return standardCollapsedHeight + (IOS_26_MODE_ENABLED ? 0.0 : 12.0)
         }
     }
     
@@ -64,6 +68,7 @@ final class BalanceHeaderView: WTouchPassView, Sendable {
         self.updateStatusAccountContext = AccountContext(source: accountSource)
         self.delegate = delegate
         super.init(frame: .zero)
+        prevWalletCardViewState = headerViewModel.state
         setupViews()
         prepareTransitionGenerator()
     }

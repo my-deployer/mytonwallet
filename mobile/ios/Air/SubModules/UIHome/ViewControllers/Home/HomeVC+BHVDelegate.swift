@@ -30,15 +30,24 @@ extension HomeVC: BalanceHeaderViewDelegate, WalletAssetsDelegate {
         updateTableViewHeaderFrame(animated: animated)
         view.setNeedsLayout()
     }
+
+    public func walletAssetDidChangeDisplayTabs(animated: Bool) {
+        applySnapshot(makeSnapshot(), animatingDifferences: animated)
+        walletAssetDidChangeHeight(animated: animated)
+    }
     
     public func expandHeader() {
         isExpandingProgrammatically = true
+        headerViewModel.state = .expanded
+        collectionView.contentInset.top = expansionInset
         UIView.animate(withDuration: 0.2) { [weak self] in
-            guard let self else {return}
-            collectionView.contentOffset = .init(x: 0, y: -expansionOffset)
-            collectionView.contentInset.top = expansionInset
+            guard let self else { return }
+            collectionView.contentOffset = .init(x: 0, y: -collectionView.adjustedContentInset.top)
+            scrollViewDidScroll(collectionView)
         } completion: { [weak self] _ in
-            guard let self else {return}
+            guard let self else { return }
+            collectionView.contentOffset = .init(x: 0, y: -collectionView.adjustedContentInset.top)
+            scrollViewDidScroll(collectionView)
             isExpandingProgrammatically = false
         }
     }

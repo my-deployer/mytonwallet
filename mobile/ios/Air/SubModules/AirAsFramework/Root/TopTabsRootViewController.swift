@@ -3,19 +3,35 @@ import SwiftUI
 import SwiftNavigation
 import UIKit
 import UIBrowser
+import UIAgent
 import UIAssets
 import UIComponents
 import UIHome
 import UISettings
+import UIUniversalSearch
+import UniversalSearchFeature
 import WalletContext
 import WalletCore
 
 private let topTabsNavigationBarHeight: CGFloat = 44
+private let topTabsSegmentedControlHeight: CGFloat = 40
 private let topTabsNavigationBarSpacing: CGFloat = 10
+private let topTabsAccountAvatarSize: CGFloat = 36
 private let topTabsBottomChromeHeight: CGFloat = 64
 private let topTabsBottomGradientHeight: CGFloat = 84
-private let topTabsActionMenuWidth: CGFloat = 244
-private let topTabsActionMenuRowHeight: CGFloat = 56
+private let topTabsActionMenuWidth: CGFloat = 386
+private let topTabsActionMenuMaximumCompactWidth: CGFloat = 424
+private let topTabsActionMenuItemHeight: CGFloat = 124
+private let topTabsActionMenuItemOrder: [SplitHomeActionItem] = [
+    .buy,
+    .deposit,
+    .swap,
+    .sell,
+    .send,
+    .earn,
+    .scan,
+]
+private let topTabsSearchAnimationDuration: TimeInterval = 0.42
 
 @MainActor
 final class TopTabsRootViewController: WViewController, VisibleContentProviding {
@@ -23,22 +39,16 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         case wallet
         case market
         case explore
+    }
 
-        var title: String {
-            switch self {
-            case .wallet:
-                lang("Wallet")
-            case .market:
-                lang("Market")
-            case .explore:
-                lang("Explore")
+    private(set) var homeVC: HomeVC {
+        didSet {
+            oldValue.onWalletAssetsEditingStateChange = nil
+            if isViewLoaded {
+                observeHomeWalletAssetsEditingState()
             }
         }
     }
-
-    private(set) var homeVC: HomeVC
-
-    private let settingsNavigationController: WNavigationController
 
     private let walletPage: TopTabsPageViewController
     private let marketPage: TopTabsPageViewController
@@ -49,24 +59,52 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
     private var navigationBarTitleWidthConstraint: NSLayoutConstraint?
     private let accountSwitcherButton = TopTabsAccountButton()
     private let bottomGradientView = TopTabsBottomGradientView()
-    private let bottomBar = UIStackView()
-    private let searchButton = TopTabsSearchButton()
-    private let actionsButton = TopTabsActionsButton()
+    private let searchToolbar = UniversalSearchFieldView(configuration: .init(
+        placeholder: lang("Search or Ask"),
+        showsMicrophone: false
+    ))
+    private var searchToolbarLeadingConstraint: NSLayoutConstraint?
+    private var searchToolbarTrailingConstraint: NSLayoutConstraint?
     private var bottomBarBottomConstraint: NSLayoutConstraint?
+    private var searchToolbarHostConstraints: [NSLayoutConstraint] = []
+    private weak var searchOverlayHost: AdaptiveRootViewController?
+    private var accountSwitcherMenuInteraction: ContextMenuInteraction?
     private var actionsMenuInteraction: ContextMenuInteraction?
+    private var universalSearchViewController: UniversalSearchScreenViewController?
+    private var universalSearchSession: UniversalSearchFeatureSession?
+    private var searchTransitionAnimator: UIViewPropertyAnimator?
+    private var searchOriginPresentation: UniversalSearchFieldPresentation = .homeToolbar
+    private weak var activeSharedBottomToolbarProvider: (any SharedBottomToolbarContentProviding)?
+    private var isClosingSearch = false
+    private var searchCloseCompletions: [() -> Void] = []
     private var baseAdditionalSafeAreaInsets: [ObjectIdentifier: UIEdgeInsets] = [:]
     private var accountObservation: ObserveToken?
     private var sharedNavigationPaths: [Page: [UIViewController]] = [:]
     private var activePage: Page = .wallet
-    private let settingsDetailViewControllers = NSHashTable<UIViewController>.weakObjects()
+    private var standardSettingsRootViewController: SettingsVC?
+    private var pendingStandardSettingsStack: [UIViewController]?
+    private var detachedStandardSettingsStackForMigration: [UIViewController]?
+    private var didPrepareStandardNavigationMigration = false
 
     private var sharedMainNavigationController: WNavigationController? {
         return navigationController as? WNavigationController
     }
 
+    private var searchToolbarHostView: UIView {
+        searchToolbar.superview ?? sharedMainNavigationController?.view ?? view
+    }
+
+    private var homeToolbarBottomInset: CGFloat {
+        homeToolbarBottomInset(in: searchToolbarHostView)
+    }
+
+    private func homeToolbarBottomInset(in hostView: UIView) -> CGFloat {
+        hostView.safeAreaInsets.bottom > 0 ? 2 : -16
+    }
+
     var visibleContentProviderViewController: UIViewController {
-        if drawerContainerViewController?.isDrawerOpen == true {
-            return resolvedSettingsNavigationController
+        if let universalSearchViewController {
+            return universalSearchViewController
         }
         if let visibleViewController = sharedMainNavigationController?.visibleViewController,
            visibleViewController !== self {
@@ -76,12 +114,13 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
     }
 
     var currentTabId: AppTabId {
-        if drawerContainerViewController?.isDrawerOpen == true {
+        if isShowingStandardSettings {
             return .settings
         }
         return switch selectedPage {
         case .explore: .explore
-        case .wallet, .market: .wallet
+        case .market: .market
+        case .wallet: .wallet
         }
     }
 
@@ -95,34 +134,15 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         Page(rawValue: segmentedController?.selectedIndex ?? Page.wallet.rawValue) ?? .wallet
     }
 
-    private var shouldUseFullWidthDrawerOpeningGesture: Bool {
-        guard selectedPage == .wallet,
-              let navigationController = navigationController(for: selectedPage) else {
-            return false
-        }
-        if isSettingsDetail(navigationController.topViewController) {
-            return true
-        }
-        return navigationController.viewControllers.count <= 1
-    }
-
-    var drawerOpeningGesturePriorityRegions: [DrawerOpeningGesturePriorityRegion] {
-        guard selectedPage == .wallet,
-              sharedMainNavigationController?.topViewController === self else {
-            return []
-        }
-        return homeVC.drawerOpeningGesturePriorityRegions
-    }
-
-    var drawerSettingsViewController: UIViewController {
-        resolvedSettingsNavigationController
-    }
-
     init() {
-        let homeVC = HomeVC(rootNavigationStyle: .topTabsNavigationBar)
-        let settingsNavigationController = AppTabManager.shared.makeNavigationController(for: .settings, layout: .tab)
-            ?? AppTabLazyNavigationController { SettingsVC() }
-        let marketViewController = MarketVC(usesTopTabsChrome: true)
+        let homeVC = HomeVC(
+            rootNavigationStyle: .topTabsNavigationBar,
+            showsActionsRow: WalletActionButtonsSettings.showsActionButtonsRow
+        )
+        let marketViewController = MarketVC(
+            showsLargeTitle: false,
+            usesTopTabsChrome: true
+        )
         let exploreViewController = ExploreTabVC(
             showsSearchBar: false,
             showsLargeTitle: false,
@@ -130,7 +150,6 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         )
 
         self.homeVC = homeVC
-        self.settingsNavigationController = settingsNavigationController
         self.walletPage = TopTabsPageViewController(contentViewController: homeVC)
         self.marketPage = TopTabsPageViewController(contentViewController: marketViewController)
         self.explorePage = TopTabsPageViewController(contentViewController: exploreViewController)
@@ -145,14 +164,7 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .air.background
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(drawerCloseControlExperimentDidChange),
-            name: DrawerCloseControlExperiment.didChangeNotification,
-            object: nil
-        )
+        view.backgroundColor = .air.groupedBackground
 
         let pages = [walletPage, marketPage, explorePage]
         pages.forEach {
@@ -164,6 +176,7 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         pages.map(\.contentViewController).forEach(applyChromeInsets)
         configurePager()
         configureBottomBar()
+        observeHomeWalletAssetsEditingState()
         observeAccountSwitcher()
     }
 
@@ -177,116 +190,108 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
 
     override func viewSafeAreaInsetsDidChange() {
         super.viewSafeAreaInsetsDidChange()
-        bottomBarBottomConstraint?.constant = view.safeAreaInsets.bottom > 0 ? 2 : -16
+        if universalSearchViewController == nil {
+            bottomBarBottomConstraint?.constant = homeToolbarBottomInset
+        }
+    }
+
+    func attachSearchOverlayHost(_ host: AdaptiveRootViewController) {
+        searchOverlayHost = host
+    }
+
+    func detachSearchOverlayHost() {
+        universalSearchSession?.stop()
+        universalSearchSession = nil
+        searchTransitionAnimator?.stopAnimation(true)
+        searchTransitionAnimator = nil
+        if let searchViewController = universalSearchViewController {
+            searchOverlayHost?.removeSearchOverlay(searchViewController)
+            universalSearchViewController = nil
+        }
+        if searchToolbar.superview === searchOverlayHost?.view {
+            NSLayoutConstraint.deactivate(searchToolbarHostConstraints)
+            searchToolbarHostConstraints = []
+            searchToolbar.removeFromSuperview()
+        }
+        searchOverlayHost = nil
+        searchCloseCompletions.removeAll()
     }
 
     func applyTabConfiguration(_ orderedIds: [AppTabId]) {
-        // Top Tabs intentionally follows the experimental fixed order from the design.
+        // Top Tabs follows the fixed order from the design.
     }
 
     func takeNavigationStack(for id: AppTabId, keepingRoot: Bool) -> [UIViewController]? {
-        if id != .settings {
-            guard let page = page(for: id), let pageValue = pageValue(for: id) else { return nil }
-            if pageValue == activePage, let sharedMainNavigationController {
-                sharedNavigationPaths[pageValue] = Array(
-                    sharedMainNavigationController.viewControllers.dropFirst()
-                )
-                sharedMainNavigationController.setViewControllers([self], animated: false)
-            }
-            let stack = [page.contentViewController] + (sharedNavigationPaths[pageValue] ?? [])
-            stack.forEach(removeChrome)
-            return stack
+        prepareStandardNavigationMigrationIfNeeded()
+        if id == .settings {
+            return detachedStandardSettingsStackForMigration
         }
-        guard let navigationController = navigationController(for: id) else { return nil }
-        if navigationController.viewControllers.isEmpty,
-           currentTabId == id,
-           let lazyNavigationController = navigationController as? AppTabLazyNavigationController {
-            lazyNavigationController.ensureRootViewControllerInstalled()
+        guard let page = page(for: id), let pageValue = pageValue(for: id) else { return nil }
+        if pageValue == activePage, let sharedMainNavigationController {
+            sharedNavigationPaths[pageValue] = Array(
+                sharedMainNavigationController.viewControllers.dropFirst()
+            )
+            sharedMainNavigationController.setViewControllers([self], animated: false)
         }
-        let stack = navigationController.viewControllers
-        guard !stack.isEmpty else { return nil }
+        let stack = [page.contentViewController] + (sharedNavigationPaths[pageValue] ?? [])
         stack.forEach(removeChrome)
-        if keepingRoot, let rootViewController = stack.first {
-            navigationController.setViewControllers([rootViewController], animated: false)
-        } else {
-            navigationController.setViewControllers([Self.makeNavigationStackPlaceholder()], animated: false)
-        }
         return stack
     }
 
     func setNavigationStack(_ stack: [UIViewController], for id: AppTabId) {
-        if id != .settings {
-            guard !stack.isEmpty,
-                  let page = page(for: id),
-                  let pageValue = pageValue(for: id) else {
-                return
-            }
-            let rootViewController = stack[0]
-            page.setContentViewController(rootViewController)
-            if id == .wallet, let homeVC = rootViewController as? HomeVC {
-                self.homeVC = homeVC
-            }
-            sharedNavigationPaths[pageValue] = Array(stack.dropFirst())
-            stack.forEach(applyChromeInsets)
-            if pageValue == activePage {
-                installSharedNavigationPath(for: pageValue)
-            }
-            updateRootChromeVisibilityForSelectedPage()
+        if id == .settings {
+            setPendingStandardSettingsStack(stack)
             return
         }
-        guard !stack.isEmpty, let navigationController = navigationController(for: id) else { return }
-        if id == .wallet, let homeVC = stack.first as? HomeVC {
+        guard !stack.isEmpty,
+              let page = page(for: id),
+              let pageValue = pageValue(for: id) else {
+            return
+        }
+        let rootViewController = stack[0]
+        page.setContentViewController(rootViewController)
+        if id == .wallet, let homeVC = rootViewController as? HomeVC {
             self.homeVC = homeVC
         }
-        if let lazyNavigationController = navigationController as? AppTabLazyNavigationController {
-            lazyNavigationController.setPreservedViewControllers(stack)
-        } else {
-            navigationController.setViewControllers(stack, animated: false)
-        }
+        sharedNavigationPaths[pageValue] = Array(stack.dropFirst())
         stack.forEach(applyChromeInsets)
+        if pageValue == activePage {
+            installSharedNavigationPath(for: pageValue)
+        }
         updateRootChromeVisibilityForSelectedPage()
     }
 
     func setNavigationPath(_ path: [UIViewController], for id: AppTabId) {
-        if id != .settings {
-            guard let pageValue = pageValue(for: id) else { return }
-            sharedNavigationPaths[pageValue] = path
-            path.forEach(applyChromeInsets)
-            if pageValue == activePage {
-                installSharedNavigationPath(for: pageValue)
-            }
-            updateRootChromeVisibilityForSelectedPage()
+        if id == .settings {
+            setPendingStandardSettingsStack([SettingsVC()] + path)
             return
         }
-        guard let navigationController = navigationController(for: id) else { return }
-        if let lazyNavigationController = navigationController as? AppTabLazyNavigationController {
-            lazyNavigationController.ensureRootViewControllerInstalled()
+        guard let pageValue = pageValue(for: id) else { return }
+        sharedNavigationPaths[pageValue] = path
+        path.forEach(applyChromeInsets)
+        if pageValue == activePage {
+            installSharedNavigationPath(for: pageValue)
         }
-        guard let rootViewController = navigationController.viewControllers.first else { return }
-        let stack = [rootViewController] + path
-        navigationController.setViewControllers(stack, animated: false)
-        stack.forEach(applyChromeInsets)
         updateRootChromeVisibilityForSelectedPage()
     }
 
     @discardableResult
     func selectTab(_ id: AppTabId, popToRoot: Bool = false) -> Bool {
         if id == .settings {
-            let navigationController = resolvedSettingsNavigationController
-            if popToRoot {
-                navigationController.popToRootViewController(animated: true)
-            }
-            drawerContainerViewController?.setDrawerOpen(true, animated: true)
-            return true
+            return showStandardSettings(
+                path: nil,
+                popToRoot: popToRoot,
+                animated: true
+            )
         }
 
         let page: Page
         switch id {
         case .wallet: page = .wallet
+        case .market: page = .market
         case .explore: page = .explore
         default: return false
         }
-        drawerContainerViewController?.setDrawerOpen(false, animated: true)
         if page != activePage {
             captureSharedNavigationPath(for: activePage)
             sharedMainNavigationController?.setViewControllers([self], animated: false)
@@ -308,34 +313,31 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         }
     }
 
+    func debugOnly_resetAgentRoot() {
+        guard let sharedMainNavigationController else { return }
+        AgentEntryPoint.resetRootViewControllerForDebug(in: sharedMainNavigationController)
+    }
+
     func switchToSettings(path: [UIViewController]) {
-        if !path.isEmpty, pushSettingsPathIntoMainArea(path, animated: true) {
-            return
-        }
-        let navigationController = resolvedSettingsNavigationController
-        guard let rootViewController = navigationController.viewControllers.first else { return }
-        navigationController.setViewControllers([rootViewController] + path, animated: false)
-        path.forEach(applyChromeInsets)
-        guard selectTab(.settings) else { return }
-        updateRootChromeVisibilityForSelectedPage()
+        _ = showStandardSettings(
+            path: path,
+            popToRoot: false,
+            animated: true
+        )
     }
 
     @discardableResult
     func pushOnSettingsRoot(_ viewController: UIViewController, animated: Bool = true) -> Bool {
-        if pushSettingsDetailIntoMainArea(viewController, animated: animated) {
-            return true
+        guard showStandardSettings(path: nil, popToRoot: false, animated: false),
+              let sharedMainNavigationController else {
+            return false
         }
-        let navigationController = resolvedSettingsNavigationController
         applyChromeInsets(to: viewController)
-        navigationController.pushViewController(viewController, animated: animated)
-        drawerContainerViewController?.setDrawerOpen(true, animated: true)
+        sharedMainNavigationController.pushViewController(viewController, animated: animated)
         return true
     }
 
     func scrollToTop() {
-        if drawerContainerViewController?.isDrawerOpen == true {
-            return
-        }
         page(for: selectedPage).scrollToTop(animated: true)
     }
 
@@ -348,7 +350,7 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
                 viewController: walletPage
             ),
             SegmentedControlItem(
-                id: "market",
+                id: AppTabId.market.rawValue,
                 title: lang("Market"),
                 isDeletable: false,
                 viewController: marketPage
@@ -370,30 +372,11 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
             animationSpeed: .fast,
             primaryTextColor: .tintColor,
             capsuleFillColor: .air.thumbBackground,
+            isGlassInteractive: true,
             style: .compactRootHeader,
             delegate: self
         )
         self.segmentedController = segmentedController
-        if let drawerContainerViewController {
-            drawerContainerViewController.shouldBeginOpeningGesture = { [weak self] in
-                guard let self,
-                      selectedPage == .wallet,
-                      let navigationController = navigationController(for: selectedPage) else {
-                    return false
-                }
-                return navigationController.viewControllers.count <= 1
-                    || isSettingsDetail(navigationController.topViewController)
-            }
-            drawerContainerViewController.shouldUseFullWidthOpeningGesture = { [weak self] in
-                self?.shouldUseFullWidthDrawerOpeningGesture == true
-            }
-            drawerContainerViewController.onWillOpen = { [weak self] in
-                self?.configureSettingsDrawerNavigation()
-            }
-            segmentedController.scrollView.panGestureRecognizer.require(
-                toFail: drawerContainerViewController.openingGestureRecognizer
-            )
-        }
         view.addSubview(segmentedController)
         NSLayoutConstraint.activate([
             segmentedController.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -417,10 +400,35 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
 
         accountSwitcherButton.configure(account: AccountStore.account)
         accountSwitcherButton.addTarget(self, action: #selector(openSettings), for: .touchUpInside)
+        let accountSwitcherMenuInteraction = ContextMenuInteraction(
+            triggers: [.longPress],
+            configurationProvider: { _ in
+                SwitchAccountMenu.makeConfiguration()
+            }
+        )
+        accountSwitcherMenuInteraction.attach(to: accountSwitcherButton)
+        self.accountSwitcherMenuInteraction = accountSwitcherMenuInteraction
         tabControlContainer.backgroundColor = .clear
         tabControlContainer.translatesAutoresizingMaskIntoConstraints = false
-        tabControlContainer.addSubview(accountSwitcherButton)
-        tabControlContainer.addSubview(segmentedControl)
+        let contentView: UIView
+        if #available(iOS 26, iOSApplicationExtension 26, *) {
+            let effect = UIGlassContainerEffect()
+            effect.spacing = topTabsNavigationBarSpacing
+            let glassContainerView = UIVisualEffectView(effect: effect)
+            glassContainerView.translatesAutoresizingMaskIntoConstraints = false
+            tabControlContainer.addSubview(glassContainerView)
+            NSLayoutConstraint.activate([
+                glassContainerView.leadingAnchor.constraint(equalTo: tabControlContainer.leadingAnchor),
+                glassContainerView.trailingAnchor.constraint(equalTo: tabControlContainer.trailingAnchor),
+                glassContainerView.topAnchor.constraint(equalTo: tabControlContainer.topAnchor),
+                glassContainerView.bottomAnchor.constraint(equalTo: tabControlContainer.bottomAnchor),
+            ])
+            contentView = glassContainerView.contentView
+        } else {
+            contentView = tabControlContainer
+        }
+        contentView.addSubview(accountSwitcherButton)
+        contentView.addSubview(segmentedControl)
         navigationItem.titleView = tabControlContainer
 
         let titleWidthConstraint = tabControlContainer.widthAnchor.constraint(
@@ -432,32 +440,30 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
             titleWidthConstraint,
             tabControlContainer.heightAnchor.constraint(equalToConstant: topTabsNavigationBarHeight),
 
-            accountSwitcherButton.leadingAnchor.constraint(equalTo: tabControlContainer.leadingAnchor),
-            accountSwitcherButton.topAnchor.constraint(equalTo: tabControlContainer.topAnchor),
+            accountSwitcherButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            accountSwitcherButton.topAnchor.constraint(equalTo: contentView.topAnchor),
             accountSwitcherButton.widthAnchor.constraint(equalToConstant: topTabsNavigationBarHeight),
             accountSwitcherButton.heightAnchor.constraint(equalToConstant: topTabsNavigationBarHeight),
 
-            segmentedControl.leadingAnchor.constraint(
-                equalTo: accountSwitcherButton.trailingAnchor,
-                constant: topTabsNavigationBarSpacing
+            segmentedControl.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            segmentedControl.trailingAnchor.constraint(
+                equalTo: accountSwitcherButton.leadingAnchor,
+                constant: -topTabsNavigationBarSpacing
             ),
-            segmentedControl.trailingAnchor.constraint(equalTo: tabControlContainer.trailingAnchor),
-            segmentedControl.topAnchor.constraint(equalTo: tabControlContainer.topAnchor),
-            segmentedControl.heightAnchor.constraint(equalToConstant: topTabsNavigationBarHeight),
+            segmentedControl.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            segmentedControl.heightAnchor.constraint(equalToConstant: topTabsSegmentedControlHeight),
         ])
     }
 
     private func observeAccountSwitcher() {
         accountObservation = observe { [weak self] in
             guard let self else { return }
-            accountSwitcherButton.configure(account: AccountStore.account)
+            let currentAccountId = AccountStore.currentAccountId
+            accountSwitcherButton.configure(account: AccountStore.accountsById[currentAccountId])
         }
     }
 
     private func configureNavigationControllers() {
-        settingsNavigationController.pushViewControllerInterceptor = { [weak self] viewController, animated in
-            self?.pushSettingsDetailIntoMainArea(viewController, animated: animated) == true
-        }
         sharedMainNavigationController?.onWillShowViewController = { [weak self] viewController in
             guard let self, let sharedMainNavigationController else { return }
             applyChromeInsets(to: viewController)
@@ -466,22 +472,6 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
                 showing: viewController
             )
         }
-        sharedMainNavigationController?.navigationTransitionAnimationController = nil
-        sharedMainNavigationController?.navigationTransitionInteractionController = nil
-        sharedMainNavigationController?.popViewControllerInterceptor = { [weak self] animated in
-            guard let self,
-                  let sharedMainNavigationController,
-                  isSettingsDetail(sharedMainNavigationController.topViewController),
-                  let drawerContainerViewController else {
-                return false
-            }
-            drawerContainerViewController.setDrawerOpen(true, animated: animated)
-            return true
-        }
-        settingsNavigationController.onWillShowViewController = { [weak self] viewController in
-            self?.applyChromeInsets(to: viewController)
-        }
-        settingsNavigationController.viewControllers.forEach(applyChromeInsets)
     }
 
     private func updateRootChromeVisibility(
@@ -492,8 +482,25 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
             return
         }
         let isShowingRoot = navigationController.viewControllers.first === viewController
-        bottomGradientView.isHidden = !isShowingRoot
-        bottomBar.isHidden = !isShowingRoot
+        guard universalSearchViewController == nil else { return }
+        if isShowingRoot, installHomeNftSelectionToolbarIfNeeded(in: navigationController) {
+            return
+        }
+        let provider = viewController as? any SharedBottomToolbarContentProviding
+        let showsToolbar = isShowingRoot || provider != nil
+        guard showsToolbar else {
+            bottomGradientView.isHidden = true
+            searchToolbar.isHidden = true
+            return
+        }
+
+        bottomGradientView.isHidden = false
+        searchToolbar.isHidden = false
+        updateSharedBottomToolbar(
+            provider: provider,
+            in: navigationController,
+            coordinator: navigationController.transitionCoordinator
+        )
     }
 
     private func updateRootChromeVisibilityForSelectedPage() {
@@ -504,6 +511,184 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         updateRootChromeVisibility(for: navigationController, showing: viewController)
     }
 
+    private func updateSharedBottomToolbar(
+        provider: (any SharedBottomToolbarContentProviding)?,
+        in navigationController: WNavigationController,
+        coordinator: (any UIViewControllerTransitionCoordinator)?
+    ) {
+        let targetPresentation: UniversalSearchFieldPresentation = provider == nil
+            ? .homeToolbar
+            : .compactToolbar
+
+        if let provider {
+            bindSharedBottomToolbarProvider(provider)
+            searchToolbar.setCompactActions(provider.sharedBottomToolbarActions, animated: false)
+        }
+
+        guard searchToolbar.presentation != targetPresentation else {
+            if targetPresentation == .homeToolbar {
+                finishSharedBottomToolbarPresentation(provider: nil)
+            }
+            return
+        }
+
+        if targetPresentation != .homeToolbar {
+            actionsMenuInteraction?.detach()
+        }
+        navigationController.view.layoutIfNeeded()
+
+        guard let coordinator else {
+            searchToolbar.setPresentation(targetPresentation, animated: false)
+            navigationController.view.layoutIfNeeded()
+            finishSharedBottomToolbarPresentation(provider: provider)
+            return
+        }
+
+        let accepted = coordinator.animate { [weak self, weak navigationController] _ in
+            guard let self, let navigationController else { return }
+            searchToolbar.setPresentation(targetPresentation, animated: false)
+            navigationController.view.layoutIfNeeded()
+        } completion: { [weak self, weak navigationController] _ in
+            guard let self, let navigationController,
+                  universalSearchViewController == nil,
+                  let visibleViewController = navigationController.visibleViewController else {
+                return
+            }
+            synchronizeSharedBottomToolbar(
+                for: visibleViewController,
+                in: navigationController
+            )
+        }
+
+        if !accepted {
+            searchToolbar.setPresentation(targetPresentation, animated: false)
+            navigationController.view.layoutIfNeeded()
+            finishSharedBottomToolbarPresentation(provider: provider)
+        }
+    }
+
+    private func synchronizeSharedBottomToolbar(
+        for viewController: UIViewController,
+        in navigationController: WNavigationController
+    ) {
+        let isShowingRoot = navigationController.viewControllers.first === viewController
+        if isShowingRoot, installHomeNftSelectionToolbarIfNeeded(in: navigationController) {
+            return
+        }
+        let provider = viewController as? any SharedBottomToolbarContentProviding
+        guard isShowingRoot || provider != nil else {
+            bottomGradientView.isHidden = true
+            searchToolbar.isHidden = true
+            return
+        }
+
+        bottomGradientView.isHidden = false
+        searchToolbar.isHidden = false
+        if let provider {
+            bindSharedBottomToolbarProvider(provider)
+            searchToolbar.setCompactActions(provider.sharedBottomToolbarActions, animated: false)
+            searchToolbar.setPresentation(.compactToolbar, animated: false)
+        } else {
+            searchToolbar.setPresentation(.homeToolbar, animated: false)
+        }
+        navigationController.view.layoutIfNeeded()
+        finishSharedBottomToolbarPresentation(provider: provider)
+    }
+
+    @discardableResult
+    private func installHomeNftSelectionToolbarIfNeeded(
+        in navigationController: WNavigationController
+    ) -> Bool {
+        guard selectedPage == .wallet,
+              let navigator = homeVC.walletAssetsEditingNavigator,
+              navigator.state.editingState == .selection else {
+            return false
+        }
+        bottomGradientView.isHidden = false
+        searchToolbar.isHidden = true
+        navigator.installToolbar(into: navigationController.view)
+        return true
+    }
+
+    private func observeHomeWalletAssetsEditingState() {
+        homeVC.onWalletAssetsEditingStateChange = { [weak self] in
+            self?.homeWalletAssetsEditingStateDidChange()
+        }
+        homeWalletAssetsEditingStateDidChange()
+    }
+
+    private func homeWalletAssetsEditingStateDidChange() {
+        updateHomeWalletAssetsNavigationChrome()
+        guard universalSearchViewController == nil,
+              selectedPage == .wallet,
+              let navigationController = sharedMainNavigationController,
+              navigationController.visibleViewController === self else {
+            return
+        }
+        updateRootChromeVisibility(for: navigationController, showing: self)
+    }
+
+    private func updateHomeWalletAssetsNavigationChrome() {
+        let isShowingWalletRoot = selectedPage == .wallet
+            && sharedMainNavigationController?.visibleViewController === self
+        let navigator = isShowingWalletRoot ? homeVC.walletAssetsEditingNavigator : nil
+        let editingState = navigator?.state.editingState
+
+        segmentedController?.scrollView.isScrollEnabled = editingState == nil
+        navigationItem.titleView = editingState == nil ? tabControlContainer : nil
+
+        switch editingState {
+        case .reordering:
+            navigationItem.leadingItemGroups = (navigator?.cancelEditingBarButtonItem
+                .asSingleItemGroup()).map { [$0] } ?? []
+            navigationItem.trailingItemGroups = (navigator?.commitEditingBarButtonItem
+                .asSingleItemGroup()).map { [$0] } ?? []
+        case .selection:
+            navigationItem.leadingItemGroups = (navigator?.selectAllBarButtonItem
+                .asSingleItemGroup()).map { [$0] } ?? []
+            navigationItem.trailingItemGroups = (navigator?.cancelXEditingBarButtonItem
+                .asSingleItemGroup()).map { [$0] } ?? []
+        case nil:
+            navigationItem.leadingItemGroups = []
+            navigationItem.trailingItemGroups = []
+        }
+    }
+
+    private func bindSharedBottomToolbarProvider(
+        _ provider: any SharedBottomToolbarContentProviding
+    ) {
+        if let activeSharedBottomToolbarProvider,
+           (activeSharedBottomToolbarProvider as AnyObject) !== (provider as AnyObject) {
+            activeSharedBottomToolbarProvider.onSharedBottomToolbarActionsChange = nil
+            activeSharedBottomToolbarProvider.setSharedBottomToolbarHosted(false)
+        }
+        activeSharedBottomToolbarProvider = provider
+        provider.setSharedBottomToolbarHosted(true)
+        provider.onSharedBottomToolbarActionsChange = { [weak self, weak provider] in
+            guard let self, let provider,
+                  (activeSharedBottomToolbarProvider as AnyObject?) === (provider as AnyObject),
+                  universalSearchViewController == nil,
+                  searchToolbar.presentation == .compactToolbar else {
+                return
+            }
+            searchToolbar.setCompactActions(provider.sharedBottomToolbarActions, animated: true)
+        }
+    }
+
+    private func finishSharedBottomToolbarPresentation(
+        provider: (any SharedBottomToolbarContentProviding)?
+    ) {
+        if provider == nil {
+            activeSharedBottomToolbarProvider?.onSharedBottomToolbarActionsChange = nil
+            activeSharedBottomToolbarProvider?.setSharedBottomToolbarHosted(false)
+            activeSharedBottomToolbarProvider = nil
+            searchToolbar.setCompactActions([], animated: false)
+            actionsMenuInteraction?.attach(to: searchToolbar.trailingButtonView)
+        } else {
+            actionsMenuInteraction?.detach()
+        }
+    }
+
     private func applyChromeInsets(to viewController: UIViewController) {
         let identifier = ObjectIdentifier(viewController)
         let baseInsets = baseAdditionalSafeAreaInsets[identifier] ?? viewController.additionalSafeAreaInsets
@@ -511,15 +696,23 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         let isRootViewController = [walletPage, marketPage, explorePage].contains {
             $0.contentViewController === viewController
         }
+        let usesSharedBottomToolbar = viewController is any SharedBottomToolbarContentProviding
         viewController.additionalSafeAreaInsets = UIEdgeInsets(
             top: baseInsets.top,
             left: baseInsets.left,
-            bottom: baseInsets.bottom + (isRootViewController ? topTabsBottomChromeHeight : 0),
+            bottom: baseInsets.bottom + (isRootViewController || usesSharedBottomToolbar
+                ? topTabsBottomChromeHeight
+                : 0),
             right: baseInsets.right
         )
     }
 
     private func removeChrome(from viewController: UIViewController) {
+        if let provider = viewController as? any SharedBottomToolbarContentProviding,
+           (activeSharedBottomToolbarProvider as AnyObject?) === (provider as AnyObject) {
+            finishSharedBottomToolbarPresentation(provider: nil)
+        }
+
         let identifier = ObjectIdentifier(viewController)
         if let baseInsets = baseAdditionalSafeAreaInsets.removeValue(forKey: identifier) {
             viewController.additionalSafeAreaInsets = baseInsets
@@ -527,329 +720,522 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
     }
 
     private func configureBottomBar() {
-        searchButton.addGestureRecognizer(
-            UITapGestureRecognizer(target: self, action: #selector(openSearch))
-        )
+        searchToolbar.actionsAccessibilityLabel = lang("Actions")
+        searchToolbar.closeAccessibilityLabel = lang("Close")
+        searchToolbar.setPresentation(.homeToolbar, animated: false)
+        searchToolbar.onActivate = { [weak self] in
+            self?.openSearch()
+        }
+        searchToolbar.onCloseTap = { [weak self] in
+            self?.closeSearch()
+        }
+        searchToolbar.onTextChange = { [weak self] text in
+            self?.universalSearchSession?.updateQuery(text)
+        }
+        searchToolbar.onReturn = { [weak self] _ in
+            self?.universalSearchViewController?.selectPreselectedItem()
+        }
+        searchToolbar.onToolbarActionTap = { [weak self] id in
+            self?.activeSharedBottomToolbarProvider?.performSharedBottomToolbarAction(id: id)
+        }
 
         bottomGradientView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomGradientView)
-
-        bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        bottomBar.axis = .horizontal
-        bottomBar.alignment = .fill
-        bottomBar.spacing = 12
-        bottomBar.addArrangedSubview(searchButton)
-        bottomBar.addArrangedSubview(actionsButton)
-        view.addSubview(bottomBar)
-
-        let bottomBarBottomConstraint = bottomBar.bottomAnchor.constraint(
-            equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-            constant: 2
+        let toolbarHostView = searchToolbarHostView
+        toolbarHostView.addSubview(bottomGradientView)
+        installSearchToolbar(
+            in: toolbarHostView,
+            leading: 28,
+            trailing: -28,
+            bottom: homeToolbarBottomInset
         )
-        self.bottomBarBottomConstraint = bottomBarBottomConstraint
         NSLayoutConstraint.activate([
-            bottomGradientView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomGradientView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomGradientView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottomGradientView.leadingAnchor.constraint(equalTo: toolbarHostView.leadingAnchor),
+            bottomGradientView.trailingAnchor.constraint(equalTo: toolbarHostView.trailingAnchor),
+            bottomGradientView.bottomAnchor.constraint(equalTo: toolbarHostView.bottomAnchor),
             bottomGradientView.heightAnchor.constraint(equalToConstant: topTabsBottomGradientHeight),
-
-            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 28),
-            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -28),
-            bottomBarBottomConstraint,
-            bottomBar.heightAnchor.constraint(equalToConstant: 48),
-            actionsButton.widthAnchor.constraint(equalToConstant: 48),
         ])
 
         let interaction = ContextMenuInteraction(
             triggers: [.tap, .longPress],
+            presentationMode: .zoomSheetOrPopover,
+            longPressDuration: 0.25,
             sourcePortal: ContextMenuSourcePortal(
-                mask: .roundedAttachmentRect(cornerRadius: 24, cornerCurve: .continuous),
-                showsBackdropCutout: true
-            )
+                mask: .roundedAttachmentRect(cornerRadius: 24, cornerCurve: .continuous)
+            ),
+            activationViewProvider: { [weak searchToolbar] _ in
+                searchToolbar?.trailingButtonPresentationSourceView
+            }
         ) { [weak self] _ in
             self?.makeActionsMenuConfiguration()
         }
-        interaction.attach(to: actionsButton)
+        interaction.attach(to: searchToolbar.trailingButtonView)
         actionsMenuInteraction = interaction
+    }
+
+    private func installSearchToolbar(
+        in hostView: UIView,
+        leading: CGFloat,
+        trailing: CGFloat,
+        bottom: CGFloat
+    ) {
+        NSLayoutConstraint.deactivate(searchToolbarHostConstraints)
+        searchToolbar.removeFromSuperview()
+        searchToolbar.translatesAutoresizingMaskIntoConstraints = false
+        hostView.addSubview(searchToolbar)
+
+        let leadingConstraint = searchToolbar.leadingAnchor.constraint(
+            equalTo: hostView.leadingAnchor,
+            constant: leading
+        )
+        let trailingConstraint = searchToolbar.trailingAnchor.constraint(
+            equalTo: hostView.trailingAnchor,
+            constant: trailing
+        )
+        let bottomConstraint = searchToolbar.bottomAnchor.constraint(
+            equalTo: hostView.keyboardLayoutGuide.topAnchor,
+            constant: bottom
+        )
+        let constraints = [
+            leadingConstraint,
+            trailingConstraint,
+            bottomConstraint,
+            searchToolbar.heightAnchor.constraint(equalToConstant: 48),
+        ]
+        NSLayoutConstraint.activate(constraints)
+        searchToolbarHostConstraints = constraints
+        searchToolbarLeadingConstraint = leadingConstraint
+        searchToolbarTrailingConstraint = trailingConstraint
+        bottomBarBottomConstraint = bottomConstraint
     }
 
     private func makeActionsMenuConfiguration() -> ContextMenuConfiguration {
         guard let account = AccountStore.account else {
             return ContextMenuConfiguration(
                 rootPage: ContextMenuPage(items: []),
-                backdrop: .defaultBlurred()
+                backdrop: .none
             )
         }
         let accountContext = AccountContext(accountId: account.id)
-        var items: [ContextMenuItem] = [
-            actionMenuItem(
-                title: lang("Fund"),
-                iconName: "DepositIconLarge",
-                action: { AppActions.showReceive(accountContext: accountContext, chain: nil) }
-            ),
-        ]
-        if account.supportsSend {
-            items.append(actionMenuItem(
-                title: lang("Send"),
-                iconName: "SendIconLarge",
-                action: { AppActions.showSend(accountContext: accountContext, prefilledValues: .init()) }
-            ))
+        let maximumWidth = traitCollection.horizontalSizeClass == .compact
+            ? topTabsActionMenuMaximumCompactWidth
+            : topTabsActionMenuWidth
+        let availableItems = Set(SplitHomeActionItem.availableItems(for: account))
+        let items: [ContextMenuItem] = topTabsActionMenuItemOrder.compactMap { item in
+            guard availableItems.contains(item) else {
+                return nil
+            }
+            return actionMenuItem(item, accountContext: accountContext)
         }
-        if account.supportsSwap {
-            items.append(actionMenuItem(
-                title: lang("Swap"),
-                iconName: "SwapIconLarge",
-                action: {
-                    AppActions.showSwap(
-                        accountContext: accountContext,
-                        defaultSellingToken: nil,
-                        defaultBuyingToken: nil,
-                        defaultSellingAmount: nil,
-                        push: nil
-                    )
-                }
-            ))
-        }
-        if account.supportsEarn {
-            items.append(actionMenuItem(
-                title: lang("Earn"),
-                iconName: "EarnIconLarge",
-                action: { AppActions.showEarn(accountContext: accountContext, tokenSlug: nil) }
-            ))
-        }
-        items.append(actionMenuItem(
-            title: lang("Scan QR Code"),
-            iconName: "ScanIconLarge",
-            action: { AppActions.scanAndHandleQR(accountContext: accountContext) }
-        ))
 
         return ContextMenuConfiguration(
-            rootPage: ContextMenuPage(items: items),
-            backdrop: .defaultBlurred(),
+            rootPage: ContextMenuPage(
+                items: items,
+                layout: .grid(ContextMenuGridLayout(
+                    columns: 3,
+                    contentInsets: UIEdgeInsets(top: 48, left: 20, bottom: 20, right: 20),
+                    highlightInsets: UIEdgeInsets(top: -7, left: 4, bottom: 15, right: 4),
+                    highlightCornerRadius: 24
+                ))
+            ),
+            backdrop: .none,
             style: ContextMenuStyle(
                 minWidth: topTabsActionMenuWidth,
-                maxWidth: topTabsActionMenuWidth,
-                sourceSpacing: 10
+                maxWidth: maximumWidth,
+                verticalPlacementBehavior: .screenBottom,
+                panelCornerRadius: 54,
+                screenInsets: UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
             )
         )
     }
 
     private func actionMenuItem(
-        title: String,
-        iconName: String,
-        action: @escaping @MainActor () -> Void
+        _ item: SplitHomeActionItem,
+        accountContext: AccountContext
     ) -> ContextMenuItem {
         .custom(
             .swiftUI(
-                preferredWidth: topTabsActionMenuWidth,
-                sizing: .fixed(height: topTabsActionMenuRowHeight),
-                interaction: .selectable(handler: action)
+                sizing: .fixed(height: topTabsActionMenuItemHeight),
+                interaction: .selectable {
+                    item.perform(accountContext: accountContext)
+                }
             ) { _ in
-                TopTabsActionMenuRow(title: title, iconName: iconName)
+                ActionMenuItem(item: item)
             }
         )
     }
 
     @objc private func openSearch() {
-        let viewController = ExploreSearchOverlayVC()
-        viewController.modalPresentationStyle = .overFullScreen
-        viewController.modalTransitionStyle = .crossDissolve
-        present(viewController, animated: true)
+        guard universalSearchViewController == nil,
+              presentedViewController == nil,
+              let navigationController = sharedMainNavigationController,
+              let searchOverlayHost
+        else { return }
+
+        let searchViewController = UniversalSearchScreenViewController()
+        let searchSession = UniversalSearchFeatureSession(screen: searchViewController)
+        searchViewController.onClose = { [weak self] in
+            self?.closeSearch()
+        }
+        searchSession.onSelectRoute = { [weak self] route in
+            self?.handleUniversalSearchRoute(route)
+        }
+        searchSession.onAutocompleteChange = { [weak self] autocomplete in
+            guard let self else { return }
+            var configuration = searchToolbar.configuration
+            configuration.autocomplete = autocomplete
+            searchToolbar.configuration = configuration
+        }
+        searchOriginPresentation = searchToolbar.presentation
+        actionsMenuInteraction?.detach()
+
+        navigationController.view.layoutIfNeeded()
+        searchOverlayHost.view.layoutIfNeeded()
+        installSearchToolbar(
+            in: searchOverlayHost.view,
+            leading: 28,
+            trailing: -28,
+            bottom: homeToolbarBottomInset(in: searchOverlayHost.view)
+        )
+        searchOverlayHost.view.layoutIfNeeded()
+
+        universalSearchViewController = searchViewController
+        universalSearchSession = searchSession
+        searchViewController.view.alpha = 0
+        searchOverlayHost.installSearchOverlay(searchViewController, below: searchToolbar)
+        searchOverlayHost.view.layoutIfNeeded()
+        tabControlContainer.isUserInteractionEnabled = false
+        tabControlContainer.accessibilityElementsHidden = true
+        segmentedController.accessibilityElementsHidden = true
+        searchSession.start(initialQuery: searchToolbar.text)
+        beginSearchTransition(for: searchViewController)
+    }
+
+    private func beginSearchTransition(
+        for searchViewController: UniversalSearchScreenViewController
+    ) {
+        guard universalSearchViewController === searchViewController,
+              searchTransitionAnimator == nil,
+              let searchOverlayHost,
+              let leadingConstraint = searchToolbarLeadingConstraint,
+              let trailingConstraint = searchToolbarTrailingConstraint,
+              let bottomConstraint = bottomBarBottomConstraint else {
+            return
+        }
+
+        let animator = UIViewPropertyAnimator(
+            duration: topTabsSearchAnimationDuration,
+            curve: .easeInOut
+        )
+        searchToolbar.setPresentation(
+            .search,
+            animator: animator,
+            duration: topTabsSearchAnimationDuration
+        )
+        leadingConstraint.constant = 8
+        trailingConstraint.constant = -8
+        bottomConstraint.constant = -10
+        animator.addAnimations {
+            searchViewController.view.alpha = 1
+            self.tabControlContainer.alpha = 0
+            searchOverlayHost.view.layoutIfNeeded()
+        }
+        animator.isInterruptible = true
+        searchTransitionAnimator = animator
+        animator.addCompletion { [weak self, weak animator] _ in
+            guard let self, searchTransitionAnimator === animator else { return }
+            searchTransitionAnimator = nil
+        }
+        animator.startAnimation()
+        _ = searchToolbar.focus()
+    }
+
+    func closeSearch(completion: (() -> Void)? = nil) {
+        if let completion {
+            searchCloseCompletions.append(completion)
+        }
+        guard let searchViewController = universalSearchViewController else {
+            completePendingSearchCloseActions()
+            return
+        }
+        guard !isClosingSearch else { return }
+        isClosingSearch = true
+
+        universalSearchSession?.stop()
+        universalSearchSession = nil
+        searchTransitionAnimator?.stopAnimation(true)
+        searchTransitionAnimator = nil
+        var searchConfiguration = searchToolbar.configuration
+        searchConfiguration.text = ""
+        searchConfiguration.autocomplete = nil
+        searchToolbar.configuration = searchConfiguration
+
+        guard let searchOverlayHost,
+              let leadingConstraint = searchToolbarLeadingConstraint,
+              let trailingConstraint = searchToolbarTrailingConstraint,
+              let bottomConstraint = bottomBarBottomConstraint else {
+            finishClosingSearch(searchViewController)
+            return
+        }
+        searchOverlayHost.view.layoutIfNeeded()
+        searchOverlayHost.view.endEditing(true)
+        if searchOriginPresentation == .compactToolbar,
+           let activeSharedBottomToolbarProvider {
+            searchToolbar.setCompactActions(
+                activeSharedBottomToolbarProvider.sharedBottomToolbarActions,
+                animated: false
+            )
+        }
+
+        let animator = UIViewPropertyAnimator(
+            duration: topTabsSearchAnimationDuration,
+            curve: .easeInOut
+        )
+        searchToolbar.setPresentation(
+            searchOriginPresentation,
+            animator: animator,
+            duration: topTabsSearchAnimationDuration
+        )
+        leadingConstraint.constant = 28
+        trailingConstraint.constant = -28
+        bottomConstraint.constant = homeToolbarBottomInset(in: searchOverlayHost.view)
+        animator.addAnimations {
+            searchViewController.view.alpha = 0
+            self.tabControlContainer.alpha = 1
+            searchOverlayHost.view.layoutIfNeeded()
+        }
+        animator.isInterruptible = true
+        searchTransitionAnimator = animator
+        animator.addCompletion { [weak self, weak searchViewController] _ in
+            guard let self, let searchViewController else { return }
+            finishClosingSearch(searchViewController)
+        }
+        animator.startAnimation()
+    }
+
+    private func finishClosingSearch(
+        _ searchViewController: UniversalSearchScreenViewController
+    ) {
+        if universalSearchViewController === searchViewController {
+            searchOverlayHost?.removeSearchOverlay(searchViewController)
+            universalSearchViewController = nil
+        }
+        if let navigationController = sharedMainNavigationController {
+            installSearchToolbar(
+                in: navigationController.view,
+                leading: 28,
+                trailing: -28,
+                bottom: homeToolbarBottomInset(in: navigationController.view)
+            )
+            navigationController.view.layoutIfNeeded()
+        }
+        searchTransitionAnimator = nil
+        isClosingSearch = false
+        tabControlContainer.alpha = 1
+        tabControlContainer.isUserInteractionEnabled = true
+        tabControlContainer.accessibilityElementsHidden = false
+        segmentedController.accessibilityElementsHidden = false
+        if let navigationController = sharedMainNavigationController,
+           let visibleViewController = navigationController.visibleViewController {
+            synchronizeSharedBottomToolbar(
+                for: visibleViewController,
+                in: navigationController
+            )
+        } else {
+            actionsMenuInteraction?.attach(to: searchToolbar.trailingButtonView)
+        }
+        completePendingSearchCloseActions()
+    }
+
+    private func completePendingSearchCloseActions() {
+        let completions = searchCloseCompletions
+        searchCloseCompletions.removeAll()
+        completions.forEach { $0() }
+    }
+
+    private func handleUniversalSearchRoute(_ route: UniversalSearchFeatureRoute) {
+        closeSearch {
+            switch route {
+            case .token(let accountID, let token):
+                AppActions.showToken(
+                    accountSource: .accountId(accountID),
+                    token: token,
+                    isInModal: false
+                )
+
+            case .collectible(let accountID, let nft):
+                AppActions.showNft(
+                    accountContext: AccountContext(accountId: accountID),
+                    nft: nft,
+                    isExpanded: true
+                )
+
+            case .collection(let accountID, let collection):
+                let filter = NftCollectionFilter.collection(collection)
+                AppActions.showAssets(
+                    accountSource: .accountId(accountID),
+                    selectedTab: .nftCollectionFilter(filter),
+                    collectionsFilter: filter
+                )
+
+            case .application(let url, let title, let opensExternally):
+                if opensExternally {
+                    UIApplication.shared.open(url)
+                } else {
+                    AppActions.openInBrowser(
+                        url,
+                        title: title,
+                        injectDappConnect: true
+                    )
+                }
+
+            case .wallet(let account):
+                Task {
+                    do {
+                        _ = try await AccountStore.activateAccount(accountId: account.id)
+                        AppActions.showHome(popToRoot: true)
+                    } catch {
+                        AppActions.showError(error: error)
+                    }
+                }
+
+            case .externalWallet(let network, let addressOrDomainByChain):
+                AppActions.showTemporaryViewAccount(
+                    network: network,
+                    addressOrDomainByChain: addressOrDomainByChain
+                )
+
+            case .agent(let query):
+                AppActions.showAgent(query: query)
+
+            case .website(let url, let title):
+                AppActions.openInBrowser(
+                    url,
+                    title: title,
+                    injectDappConnect: true,
+                    historyTag: "explore"
+                )
+
+            case .google(let query):
+                guard let url = UniversalSearchWebIntent.googleSearchURL(for: query) else { return }
+                AppActions.openInBrowser(
+                    url,
+                    title: nil,
+                    injectDappConnect: false,
+                    historyTag: "explore"
+                )
+            }
+        }
     }
 
     @objc private func openSettings() {
         selectTab(.settings)
     }
 
-    @objc private func drawerCloseControlExperimentDidChange() {
-        configureSettingsDrawerNavigation()
+    private var isShowingStandardSettings: Bool {
+        guard let sharedMainNavigationController else { return false }
+        return standardSettingsIndex(in: sharedMainNavigationController.viewControllers) != nil
     }
 
-    private var resolvedSettingsNavigationController: WNavigationController {
-        if let lazyNavigationController = settingsNavigationController as? AppTabLazyNavigationController {
-            lazyNavigationController.ensureRootViewControllerInstalled()
-        }
-        configureSettingsDrawerNavigation()
-        settingsNavigationController.viewControllers.forEach(applyChromeInsets)
-        return settingsNavigationController
-    }
-
-    private func configureSettingsDrawerNavigation() {
-        guard let settingsViewController = settingsNavigationController.viewControllers.first as? SettingsVC else {
-            return
-        }
-        settingsViewController.presentationStyle = .drawer
-        settingsViewController.drawerCloseControl = switch DrawerCloseControlExperiment.variant {
-        case .closeButton:
-            .closeButton
-        case .currentTabTitle:
-            .mainTabTitle(selectedPage.title)
-        }
-        settingsViewController.onDrawerClose = { [weak self] in
-            self?.closeSettingsDrawerAndReturnToMainTab()
-        }
-    }
-
-    private func closeSettingsDrawerAndReturnToMainTab() {
-        guard let drawerContainerViewController else { return }
-        drawerContainerViewController.setDrawerOpen(false, animated: true)
-        removeSettingsDetailsFromMainArea(animated: true)
-    }
-
-    private func pushSettingsPathIntoMainArea(
-        _ path: [UIViewController],
+    @discardableResult
+    private func showStandardSettings(
+        path: [UIViewController]?,
+        popToRoot: Bool,
         animated: Bool
     ) -> Bool {
-        guard let firstViewController = path.first,
-              let navigationController = navigationController(for: selectedPage),
-              let drawerContainerViewController else {
-            return false
-        }
+        guard let sharedMainNavigationController else { return false }
 
-        if path.count == 1 {
-            return pushSettingsDetailIntoMainArea(firstViewController, animated: animated)
-        }
+        let currentStack = sharedMainNavigationController.viewControllers
+        let existingSettingsIndex = standardSettingsIndex(in: currentStack)
+        let baseStack = existingSettingsIndex.map { Array(currentStack[..<$0]) } ?? currentStack
 
-        path.forEach(applyChromeInsets)
-        let showSettingsPath = { [self] in
-            settingsDetailViewControllers.removeAllObjects()
-            markAsSettingsDetail(firstViewController)
-            navigationController.setViewControllers([self] + path, animated: false)
-        }
-        if animated, navigationController.viewIfLoaded?.window != nil {
-            drawerContainerViewController.setDrawerOpen(false, animated: true)
-            performSettingsCrossfade(in: navigationController, changes: showSettingsPath)
-        } else {
-            showSettingsPath()
-            drawerContainerViewController.setDrawerOpen(false, animated: false)
-        }
-        return true
-    }
-
-    private func pushSettingsDetailIntoMainArea(
-        _ viewController: UIViewController,
-        animated: Bool
-    ) -> Bool {
-        guard let navigationController = navigationController(for: selectedPage),
-              let drawerContainerViewController else {
-            return false
-        }
-        markAsSettingsDetail(viewController)
-        applyChromeInsets(to: viewController)
-
-        let previousSettingsDetail = navigationController.topViewController.flatMap { topViewController in
-            isSettingsDetail(topViewController) ? topViewController : nil
-        }
-        let pushSettingsDetail = {
-            navigationController.pushViewController(viewController, animated: false)
-        }
-        let replaceSettingsDetail = { [self] in
-            if let previousSettingsDetail {
-                settingsDetailViewControllers.remove(previousSettingsDetail)
-            }
-            navigationController.setViewControllers(
-                Array(navigationController.viewControllers.dropLast()) + [viewController],
-                animated: false
+        if let pendingStandardSettingsStack {
+            self.pendingStandardSettingsStack = nil
+            let settingsStack = popToRoot
+                ? Array(pendingStandardSettingsStack.prefix(1))
+                : pendingStandardSettingsStack
+            settingsStack.forEach(applyChromeInsets)
+            sharedMainNavigationController.setViewControllers(
+                baseStack + settingsStack,
+                animated: animated
             )
+            updateRootChromeVisibilityForSelectedPage()
+            return true
         }
-        if animated, navigationController.viewIfLoaded?.window != nil {
-            if let previousSettingsDetail {
-                var crossfadeFinished = false
-                var drawerCloseFinished = false
-                let finishReplacement = { [weak self, weak navigationController, weak previousSettingsDetail] in
-                    guard crossfadeFinished,
-                          drawerCloseFinished,
-                          let self,
-                          let navigationController,
-                          let previousSettingsDetail else {
-                        return
-                    }
-                    settingsDetailViewControllers.remove(previousSettingsDetail)
-                    navigationController.setViewControllers(
-                        navigationController.viewControllers.filter { $0 !== previousSettingsDetail },
-                        animated: false
-                    )
-                }
-                drawerContainerViewController.setDrawerOpen(false, animated: true) {
-                    drawerCloseFinished = true
-                    finishReplacement()
-                }
-                performSettingsCrossfade(
-                    in: navigationController,
-                    changes: pushSettingsDetail,
-                    completion: { _ in
-                        crossfadeFinished = true
-                        finishReplacement()
-                    }
-                )
-            } else {
-                drawerContainerViewController.setDrawerOpen(false, animated: true)
-                performSettingsCrossfade(in: navigationController, changes: pushSettingsDetail)
-            }
+
+        let settingsRoot: SettingsVC
+        if let existingSettingsIndex,
+           let existingRoot = currentStack[existingSettingsIndex] as? SettingsVC {
+            settingsRoot = existingRoot
+        } else if let standardSettingsRootViewController {
+            settingsRoot = standardSettingsRootViewController
         } else {
-            if previousSettingsDetail != nil {
-                replaceSettingsDetail()
-            } else {
-                pushSettingsDetail()
-            }
-            drawerContainerViewController.setDrawerOpen(false, animated: false)
+            settingsRoot = SettingsVC()
         }
+        standardSettingsRootViewController = settingsRoot
+        applyChromeInsets(to: settingsRoot)
+
+        if existingSettingsIndex == nil, path == nil, !popToRoot {
+            sharedMainNavigationController.pushViewController(settingsRoot, animated: animated)
+            return true
+        }
+
+        let settingsPath: [UIViewController]
+        if popToRoot {
+            settingsPath = []
+        } else if let path {
+            settingsPath = path
+        } else if let existingSettingsIndex {
+            settingsPath = Array(currentStack.dropFirst(existingSettingsIndex + 1))
+        } else {
+            settingsPath = []
+        }
+        settingsPath.forEach(applyChromeInsets)
+        sharedMainNavigationController.setViewControllers(
+            baseStack + [settingsRoot] + settingsPath,
+            animated: animated
+        )
+        updateRootChromeVisibilityForSelectedPage()
         return true
     }
 
-    private func markAsSettingsDetail(_ viewController: UIViewController) {
-        settingsDetailViewControllers.add(viewController)
+    private func standardSettingsIndex(in stack: [UIViewController]) -> Int? {
+        if let standardSettingsRootViewController,
+           let index = stack.firstIndex(where: { $0 === standardSettingsRootViewController }) {
+            return index
+        }
+        return stack.firstIndex { $0 is SettingsVC }
     }
 
-    private func isSettingsDetail(_ viewController: UIViewController?) -> Bool {
-        guard let viewController else { return false }
-        return settingsDetailViewControllers.allObjects.contains { $0 === viewController }
+    private func setPendingStandardSettingsStack(_ stack: [UIViewController]) {
+        guard let settingsRoot = stack.first as? SettingsVC else { return }
+        standardSettingsRootViewController = settingsRoot
+        pendingStandardSettingsStack = stack
+        stack.forEach(applyChromeInsets)
     }
 
-    private func removeSettingsDetailsFromMainArea(animated: Bool) {
-        guard let navigationController = sharedMainNavigationController else {
+    private func prepareStandardNavigationMigrationIfNeeded() {
+        guard !didPrepareStandardNavigationMigration else { return }
+        didPrepareStandardNavigationMigration = true
+
+        if let sharedMainNavigationController {
+            sharedNavigationPaths[activePage] = Array(
+                sharedMainNavigationController.viewControllers.dropFirst()
+            )
+            sharedMainNavigationController.setViewControllers([self], animated: false)
+        }
+
+        for page in [Page.wallet, .market, .explore] {
+            guard let path = sharedNavigationPaths[page],
+                  let settingsIndex = standardSettingsIndex(in: path) else {
+                continue
+            }
+            detachedStandardSettingsStackForMigration = Array(path[settingsIndex...])
+            sharedNavigationPaths[page] = Array(path[..<settingsIndex])
             return
         }
-        let removedViewControllers = Array(navigationController.viewControllers.dropFirst())
-        guard removedViewControllers.contains(where: isSettingsDetail) else {
-            sharedNavigationPaths[activePage] = []
-            settingsDetailViewControllers.removeAllObjects()
-            return
-        }
-        let popToSegmentedRoot = { [self] in
-            navigationController.setViewControllers([self], animated: false)
-            sharedNavigationPaths[activePage] = []
-            settingsDetailViewControllers.removeAllObjects()
-        }
-        if animated, navigationController.view.window != nil {
-            performSettingsCrossfade(in: navigationController, changes: popToSegmentedRoot)
-        } else {
-            popToSegmentedRoot()
-        }
-    }
 
-    private func performSettingsCrossfade(
-        in navigationController: WNavigationController,
-        changes: @escaping () -> Void,
-        completion: ((Bool) -> Void)? = nil
-    ) {
-        let configuration = drawerContainerViewController?.configuration
-        let slideDuration = max(
-            configuration?.minimumTransitionDuration ?? 0,
-            configuration?.transitionDuration ?? 0
-        )
-        UIView.transition(
-            with: navigationController.view,
-            duration: min(0.1, slideDuration / 4),
-            options: [
-                .transitionCrossDissolve,
-                .allowAnimatedContent,
-                .allowUserInteraction,
-                .beginFromCurrentState,
-            ],
-            animations: changes,
-            completion: completion
-        )
+        detachedStandardSettingsStackForMigration = pendingStandardSettingsStack
+        pendingStandardSettingsStack = nil
     }
 
     private func captureSharedNavigationPath(for page: Page) {
@@ -864,13 +1250,6 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         updateRootChromeVisibilityForSelectedPage()
     }
 
-    private func navigationController(for id: AppTabId) -> WNavigationController? {
-        if id != .settings {
-            return sharedMainNavigationController
-        }
-        return settingsNavigationController
-    }
-
     private func navigationController(for page: Page) -> WNavigationController? {
         sharedMainNavigationController
     }
@@ -878,6 +1257,7 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
     private func page(for id: AppTabId) -> TopTabsPageViewController? {
         return switch id {
         case .wallet: walletPage
+        case .market: marketPage
         case .explore: explorePage
         default: nil
         }
@@ -886,6 +1266,7 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
     private func pageValue(for id: AppTabId) -> Page? {
         return switch id {
         case .wallet: .wallet
+        case .market: .market
         case .explore: .explore
         default: nil
         }
@@ -899,11 +1280,6 @@ final class TopTabsRootViewController: WViewController, VisibleContentProviding 
         }
     }
 
-    private static func makeNavigationStackPlaceholder() -> UIViewController {
-        let viewController = UIViewController()
-        viewController.view.backgroundColor = .black
-        return viewController
-    }
 }
 
 extension TopTabsRootViewController: WSegmentedController.Delegate {
@@ -919,13 +1295,32 @@ extension TopTabsRootViewController: WSegmentedController.Delegate {
             installSharedNavigationPath(for: page)
         }
         navigationController(for: page)?.viewControllers.forEach(applyChromeInsets)
+        updateHomeWalletAssetsNavigationChrome()
         updateRootChromeVisibilityForSelectedPage()
     }
 }
 
 @MainActor
 private final class TopTabsAccountButton: UIControl {
-    private let iconView = IconView(size: topTabsNavigationBarHeight)
+    private let iconView = IconView(size: topTabsAccountAvatarSize)
+    private let glassView: UIVisualEffectView = {
+        let view: UIVisualEffectView
+        if #available(iOS 26, iOSApplicationExtension 26, *) {
+            let effect = UIGlassEffect(style: .regular)
+            effect.isInteractive = true
+            view = UIVisualEffectView(effect: effect)
+            view.cornerConfiguration = .corners(
+                radius: UICornerRadius(floatLiteral: topTabsNavigationBarHeight / 2)
+            )
+        } else {
+            view = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+            view.layer.cornerRadius = topTabsNavigationBarHeight / 2
+            view.layer.cornerCurve = .continuous
+            view.clipsToBounds = true
+            view.isUserInteractionEnabled = false
+        }
+        return view
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -933,15 +1328,30 @@ private final class TopTabsAccountButton: UIControl {
         isAccessibilityElement = true
         accessibilityTraits = .button
 
+        glassView.translatesAutoresizingMaskIntoConstraints = false
+        glassView.isAccessibilityElement = false
+        addSubview(glassView)
+
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.isUserInteractionEnabled = false
-        addSubview(iconView)
+        glassView.contentView.addSubview(iconView)
         NSLayoutConstraint.activate([
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            iconView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            iconView.topAnchor.constraint(equalTo: topAnchor),
-            iconView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            glassView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            glassView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            glassView.topAnchor.constraint(equalTo: topAnchor),
+            glassView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            iconView.centerXAnchor.constraint(equalTo: glassView.contentView.centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: glassView.contentView.centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: topTabsAccountAvatarSize),
+            iconView.heightAnchor.constraint(equalToConstant: topTabsAccountAvatarSize),
         ])
+
+        if #available(iOS 26, iOSApplicationExtension 26, *) {
+            glassView.addGestureRecognizer(
+                UITapGestureRecognizer(target: self, action: #selector(glassTapped))
+            )
+        }
     }
 
     @available(*, unavailable)
@@ -952,6 +1362,10 @@ private final class TopTabsAccountButton: UIControl {
     func configure(account: MAccount?) {
         iconView.config(with: account)
         accessibilityLabel = lang("Settings")
+    }
+
+    @objc private func glassTapped() {
+        sendActions(for: .touchUpInside)
     }
 }
 
@@ -1014,230 +1428,6 @@ private final class TopTabsPageViewController: UIViewController, WSegmentedContr
 
     func calculateHeight(isHosted: Bool) -> CGFloat {
         view.bounds.height
-    }
-}
-
-@MainActor
-private final class TopTabsSearchButton: UIControl {
-    private let effectView = UIVisualEffectView()
-    private let magnifyingGlass = UIImageView(image: UIImage(
-        systemName: "magnifyingglass",
-        withConfiguration: UIImage.SymbolConfiguration(
-            font: WTypography.uiFont(.supportingEmphasized, content: .technical)
-        )
-    ))
-    private let titleLabel = UILabel()
-    private let microphone = UIImageView(image: UIImage(
-        systemName: "microphone",
-        withConfiguration: UIImage.SymbolConfiguration(
-            font: WTypography.uiFont(.bodyEmphasized, content: .technical)
-        )
-    ))
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        translatesAutoresizingMaskIntoConstraints = false
-        accessibilityLabel = lang("Search or Ask")
-        accessibilityTraits = .button
-
-        if #available(iOS 26, iOSApplicationExtension 26, *) {
-            let effect = UIGlassEffect(style: .regular)
-            effect.isInteractive = true
-            effectView.effect = effect
-            effectView.cornerConfiguration = .corners(radius: 24)
-        } else {
-            effectView.effect = UIBlurEffect(style: .systemMaterial)
-        }
-        effectView.isUserInteractionEnabled = true
-        addSubview(effectView)
-
-        magnifyingGlass.tintColor = .label
-        magnifyingGlass.contentMode = .scaleAspectFit
-        titleLabel.text = lang("Search or Ask")
-        titleLabel.applyTextStyle(.body)
-        titleLabel.textColor = .tertiaryLabel
-        microphone.tintColor = .secondaryLabel
-        microphone.contentMode = .scaleAspectFit
-
-        let stackView = UIStackView(arrangedSubviews: [magnifyingGlass, titleLabel, microphone])
-        stackView.axis = .horizontal
-        stackView.alignment = .center
-        stackView.spacing = 10
-        stackView.isUserInteractionEnabled = false
-        addSubview(stackView)
-
-        effectView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            effectView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            effectView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            effectView.topAnchor.constraint(equalTo: topAnchor),
-            effectView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            magnifyingGlass.widthAnchor.constraint(equalToConstant: 20),
-            microphone.widthAnchor.constraint(equalToConstant: 20),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if #unavailable(iOS 26) {
-            effectView.layer.cornerRadius = bounds.height / 2
-            effectView.layer.cornerCurve = .continuous
-            effectView.clipsToBounds = true
-        }
-    }
-}
-
-@MainActor
-private final class TopTabsActionsButton: UIButton {
-    private let effectView = UIVisualEffectView()
-    private let tintView = UIView()
-    private let iconView = TopTabsActionsGlyphView()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        translatesAutoresizingMaskIntoConstraints = false
-        accessibilityLabel = lang("Actions")
-
-        if #available(iOS 26, iOSApplicationExtension 26, *) {
-            let effect = UIGlassEffect(style: .regular)
-            effect.isInteractive = true
-            effect.tintColor = AirTintColor
-            effectView.effect = effect
-            effectView.cornerConfiguration = .corners(radius: 24)
-        } else {
-            effectView.effect = UIBlurEffect(style: .systemMaterial)
-        }
-        effectView.isUserInteractionEnabled = true
-        effectView.translatesAutoresizingMaskIntoConstraints = false
-        insertSubview(effectView, at: 0)
-
-        tintView.backgroundColor = AirTintColor
-        tintView.isHidden = IOS_26_MODE_ENABLED
-        tintView.isUserInteractionEnabled = false
-        tintView.translatesAutoresizingMaskIntoConstraints = false
-        effectView.contentView.addSubview(tintView)
-
-        iconView.translatesAutoresizingMaskIntoConstraints = false
-        iconView.isUserInteractionEnabled = false
-        addSubview(iconView)
-
-        NSLayoutConstraint.activate([
-            effectView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            effectView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            effectView.topAnchor.constraint(equalTo: topAnchor),
-            effectView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            tintView.leadingAnchor.constraint(equalTo: effectView.contentView.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: effectView.contentView.trailingAnchor),
-            tintView.topAnchor.constraint(equalTo: effectView.contentView.topAnchor),
-            tintView.bottomAnchor.constraint(equalTo: effectView.contentView.bottomAnchor),
-
-            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: 36),
-            iconView.heightAnchor.constraint(equalToConstant: 36),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func tintColorDidChange() {
-        super.tintColorDidChange()
-        updateTintColor()
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        if #unavailable(iOS 26) {
-            effectView.layer.cornerRadius = bounds.height / 2
-            effectView.layer.cornerCurve = .continuous
-            effectView.clipsToBounds = true
-        }
-    }
-
-    private func updateTintColor() {
-        if #available(iOS 26, iOSApplicationExtension 26, *) {
-            let effect = UIGlassEffect(style: .regular)
-            effect.isInteractive = true
-            effect.tintColor = tintColor
-            effectView.effect = effect
-        }
-        tintView.backgroundColor = tintColor
-    }
-}
-
-private struct TopTabsActionMenuRow: View {
-    let title: String
-    let iconName: String
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(uiImage: .airBundle(iconName))
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 25, height: 25)
-                .foregroundStyle(Color.primary)
-
-            Text(title)
-                .textStyle(.bodyEmphasized)
-                .foregroundStyle(Color.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .contentShape(Rectangle())
-    }
-}
-
-@MainActor
-private final class TopTabsActionsGlyphView: UIView {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        translatesAutoresizingMaskIntoConstraints = false
-        isUserInteractionEnabled = false
-        backgroundColor = .clear
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func draw(_ rect: CGRect) {
-        UIColor.white.setFill()
-        let radius: CGFloat = 3.25
-        for center in [
-            CGPoint(x: 12.25, y: 12.25),
-            CGPoint(x: 23.75, y: 12.25),
-            CGPoint(x: 12.25, y: 23.75),
-            CGPoint(x: 23.75, y: 23.75),
-        ] {
-            UIBezierPath(
-                ovalIn: CGRect(
-                    x: center.x - radius,
-                    y: center.y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )
-            ).fill()
-        }
     }
 }
 

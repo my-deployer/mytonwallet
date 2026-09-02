@@ -57,7 +57,7 @@ public final class NftPreviewFlow: WrappingFlowView {
         setArrangedSubviews(views) { count in
             let label = UILabel()
             label.semanticContentAttribute = .forceLeftToRight
-            label.text = lang("$more_nfts", arg1: count)
+            label.text = L10n.moreNfts(count: count)
             label.applyTextStyle(.supporting)
             label.textColor = .air.secondaryLabel
             label.numberOfLines = 1

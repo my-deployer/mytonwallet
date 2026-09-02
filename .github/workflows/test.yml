@@ -10,7 +10,7 @@ jobs:
   test:
     name: Simple tests
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,7 +20,53 @@ jobs:
         with:
           node-version: ${{ vars.NODE_VERSION }}
 
+      - name: Prepare default translations
+        run: npm run i18n:build:default
+
+      - name: Check types and lint
+        run: npm run check
+
       - name: Test
-        run: |
-          npm run i18n:build:default
-          npm test
+        run: npm test
+
+      - name: Check Agent V2 contracts
+        run: node dev/checkAgentV2Contract.mjs
+
+      # The standalone Air SDK sets `NO_EXTRA_FEATURES=1` to exclude guarded extra features from the bundle
+      - name: Build the standalone SDK bundle
+        run: npm run sdk:build:slim
+
+  chromium-e2e:
+    name: Agent V2 / Chromium E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Prepare the Node environment
+        uses: mytonwallet-org/shared-actions/prepare_node@master
+        with:
+          node-version: ${{ vars.NODE_VERSION }}
+
+      - name: Prepare default translations
+        run: npm run i18n:build:default
+
+      - name: Install Chromium
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Run Agent V2 Chromium E2E
+        run: npm run test:agent:v2:e2e
+
+      - name: Upload Playwright diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-v2-playwright-diagnostics
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore
+          retention-days: 7

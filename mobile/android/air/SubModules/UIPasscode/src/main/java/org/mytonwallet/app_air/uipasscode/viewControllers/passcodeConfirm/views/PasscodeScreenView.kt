@@ -919,14 +919,14 @@ class PasscodeScreenView(
                 val hourText = LocaleController.getPlural(hours.toInt(), "hour")
                 val minuteText = LocaleController.getPlural(minutes.toInt(), "minute")
                 if (minutes > 0) {
-                    LocaleController.getFormattedString(
-                        "Try again in %1$@ and %2$@",
-                        listOf(hourText, minuteText)
+                    LocaleController.getStringWithKeyValues(
+                        "Try again in %duration% and %unit%",
+                        listOf("%duration%" to hourText, "%unit%" to minuteText)
                     )
                 } else {
-                    LocaleController.getFormattedString(
-                        "Try again in %1$@",
-                        listOf(hourText)
+                    LocaleController.getStringWithKeyValues(
+                        "Try again in %duration%",
+                        listOf("%duration%" to hourText)
                     )
                 }
             }
@@ -935,21 +935,24 @@ class PasscodeScreenView(
                 val minuteText = LocaleController.getPlural(minutes.toInt(), "minute")
                 val secondText = LocaleController.getPlural(seconds.toInt(), "second")
                 if (seconds > 0) {
-                    LocaleController.getFormattedString(
-                        "Try again in %1$@ and %2$@",
-                        listOf(minuteText, secondText)
+                    LocaleController.getStringWithKeyValues(
+                        "Try again in %duration% and %unit%",
+                        listOf("%duration%" to minuteText, "%unit%" to secondText)
                     )
                 } else {
-                    LocaleController.getFormattedString(
-                        "Try again in %1$@",
-                        listOf(minuteText)
+                    LocaleController.getStringWithKeyValues(
+                        "Try again in %duration%",
+                        listOf("%duration%" to minuteText)
                     )
                 }
             }
 
             else -> {
                 val secondText = LocaleController.getPlural(seconds.toInt(), "second")
-                LocaleController.getFormattedString("Try again in %1$@", listOf(secondText))
+                LocaleController.getStringWithKeyValues(
+                    "Try again in %duration%",
+                    listOf("%duration%" to secondText)
+                )
             }
         }
 

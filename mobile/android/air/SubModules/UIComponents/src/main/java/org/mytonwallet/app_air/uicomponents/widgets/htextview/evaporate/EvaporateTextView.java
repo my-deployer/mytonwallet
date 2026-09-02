@@ -47,6 +47,10 @@ public class EvaporateTextView extends HTextView {
         evaporateText.setProgress(progress);
     }
 
+    public void setResizeAnchor(int anchor) {
+        evaporateText.setResizeAnchor(anchor);
+    }
+
     @Override
     public void animateText(CharSequence text, boolean animated) {
         evaporateText.animateText(text, animated);

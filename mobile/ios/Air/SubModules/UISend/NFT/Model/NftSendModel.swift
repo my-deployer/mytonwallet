@@ -13,10 +13,13 @@ struct NftSendContinueState {
     let isDraftRejected: Bool
 }
 
-struct NftSendDraftSnapshot: Equatable, Sendable {
-    let request: NftSendDraftRequest
-    let draft: NftSendValidatedDraft
+typealias NftSendDraftSnapshot = OperationDraftSnapshot<
+    NftSendDraftRequest,
+    NftSendValidatedDraft
+>
 
+extension OperationDraftSnapshot
+where Request == NftSendDraftRequest, Draft == NftSendValidatedDraft {
     var isAccepted: Bool {
         draft.recipient.error == nil
     }
@@ -38,15 +41,13 @@ final class NftSendModel: Sendable {
     @PerceptionIgnored
     private var observers: [ObserveToken] = []
     @PerceptionIgnored
-    private var draftTask: Task<Void, Never>?
-    @PerceptionIgnored
-    private var draftRevision: UInt64 = 0
-    @PerceptionIgnored
     var onDraftFailure: ((any Error) -> Void)?
+    @PerceptionIgnored
+    let draftCoordinator: OperationDraftCoordinator<
+        NftSendDraftRequest,
+        NftSendValidatedDraft
+    >
 
-    private(set) var draftSnapshot: NftSendDraftSnapshot?
-    private(set) var loadingDraftRequest: NftSendDraftRequest?
-    private(set) var failedDraftRequest: NftSendDraftRequest?
     var didConfirmDomainScamWarning = false
 
     init(
@@ -58,6 +59,10 @@ final class NftSendModel: Sendable {
         self._account = accountContext
         self.configuration = configuration
         self.flow = flow
+        self.draftCoordinator = OperationDraftCoordinator(
+            debounce: .milliseconds(250),
+            load: flow.validateDraft
+        )
 
         self.sanitizedComment = TransferPayloadPolicy.sanitizeComment(
             configuration.initialComment
@@ -79,13 +84,11 @@ final class NftSendModel: Sendable {
         recipient.onScanResult = { [weak self] result in
             self?.applyScanResult(result)
         }
+        draftCoordinator.didFailRequest = { [weak self] _, error in
+            self?.onDraftFailure?(error)
+        }
 
         setupObservers()
-        refreshDraft()
-    }
-
-    deinit {
-        draftTask?.cancel()
     }
 
     var comment: String {
@@ -124,11 +127,7 @@ final class NftSendModel: Sendable {
     }
 
     var currentDraftSnapshot: NftSendDraftSnapshot? {
-        guard let request = currentDraftRequest,
-              draftSnapshot?.request == request else {
-            return nil
-        }
-        return draftSnapshot
+        draftCoordinator.snapshot(for: currentDraftRequest)
     }
 
     var currentValidatedDraft: NftSendValidatedDraft? {
@@ -136,13 +135,11 @@ final class NftSendModel: Sendable {
     }
 
     var hasCurrentDraftFailure: Bool {
-        currentDraftRequest != nil
-            && failedDraftRequest == currentDraftRequest
+        draftCoordinator.hasFailed(currentDraftRequest)
     }
 
     var isDraftLoading: Bool {
-        guard let request = currentDraftRequest else { return false }
-        return loadingDraftRequest == request
+        draftCoordinator.isLoading(currentDraftRequest)
     }
 
     var addressViewModel: AddressViewModel {
@@ -257,7 +254,7 @@ final class NftSendModel: Sendable {
     }
 
     func retryDraft() {
-        refreshDraft(debounce: false, force: true)
+        draftCoordinator.retry()
     }
 
     func makeConfirmedSend() throws -> ConfirmedNftSend {
@@ -282,7 +279,7 @@ final class NftSendModel: Sendable {
     }
 
     private var displayedDraft: NftSendValidatedDraft? {
-        guard let snapshot = draftSnapshot,
+        guard let snapshot = draftCoordinator.lastSnapshot,
               snapshot.request.accountId == account.id,
               snapshot.request.chain == configuration.chain,
               snapshot.request.nfts == configuration.nfts,
@@ -321,10 +318,15 @@ final class NftSendModel: Sendable {
                 self.addressOrDomain,
                 self.$account.balances[self.feeToken.slug]
             )
-            self.didConfirmDomainScamWarning = false
-            self.refreshDraft(
-                force: !self.hasCurrentDraftFailure
-            )
+            // Keep coordinator state outside this observation scope. Otherwise
+            // every loading transition would retrigger and restart the draft.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.didConfirmDomainScamWarning = false
+                self.refreshDraft(
+                    force: !self.hasCurrentDraftFailure
+                )
+            }
         }
     }
 
@@ -332,55 +334,11 @@ final class NftSendModel: Sendable {
         debounce: Bool = true,
         force: Bool = false
     ) {
-        guard let request = currentDraftRequest else {
-            draftRevision &+= 1
-            draftTask?.cancel()
-            loadingDraftRequest = nil
-            failedDraftRequest = nil
-            return
-        }
-        if !force {
-            if loadingDraftRequest == request
-                || draftSnapshot?.request == request
-                || failedDraftRequest == request {
-                return
-            }
-        }
-
-        draftRevision &+= 1
-        let revision = draftRevision
-        loadingDraftRequest = request
-        failedDraftRequest = nil
-        draftTask?.cancel()
-        draftTask = Task { [weak self, flow] in
-            do {
-                if debounce {
-                    try await Task.sleep(for: .seconds(0.250))
-                }
-                let draft = try await flow.validateDraft(request)
-                try Task.checkCancellation()
-                guard let self,
-                      draftRevision == revision,
-                      currentDraftRequest == request else {
-                    return
-                }
-                loadingDraftRequest = nil
-                failedDraftRequest = nil
-                draftSnapshot = NftSendDraftSnapshot(
-                    request: request,
-                    draft: draft
-                )
-            } catch {
-                guard let self, !Task.isCancelled,
-                      draftRevision == revision,
-                      currentDraftRequest == request else {
-                    return
-                }
-                loadingDraftRequest = nil
-                failedDraftRequest = request
-                onDraftFailure?(error)
-            }
-        }
+        draftCoordinator.setRequest(
+            currentDraftRequest,
+            debounce: debounce ? nil : .zero,
+            refreshIfUnchanged: force
+        )
     }
 
     private func applyScanResult(_ result: ScanResult) {

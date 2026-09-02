@@ -3,13 +3,14 @@ import UIKit
 import WalletContext
 
 @MainActor
-final class SegmentedControlInteractionView: UIView {
+final class SegmentedControlInteractionView: UIView, UIGestureRecognizerDelegate {
 
     private var selectionTapGestureRecognizer: UITapGestureRecognizer?
     private var contextMenuInteraction: ContextMenuInteraction?
     private var onSelect: (@MainActor () -> Void)?
     private var currentProvider: SegmentedControlContextMenuProvider?
     private var currentMenuTriggers: ContextMenuInteractionTriggers = []
+    private var allowsSimultaneousGlassInteraction = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -28,9 +29,11 @@ final class SegmentedControlInteractionView: UIView {
         title: String,
         contextMenuProvider: SegmentedControlContextMenuProvider?,
         segmentedControl: WSegmentedControl,
+        allowsSimultaneousGlassInteraction: Bool = false,
         onSelect: @escaping @MainActor () -> Void
     ) {
         self.onSelect = onSelect
+        self.allowsSimultaneousGlassInteraction = allowsSimultaneousGlassInteraction
         self.accessibilityLabel = title
         self.accessibilityTraits = isSelected ? [.button, .selected] : .button
         self.updateSelectionTap(isSelected: isSelected)
@@ -52,6 +55,7 @@ final class SegmentedControlInteractionView: UIView {
         if !isSelected {
             if self.selectionTapGestureRecognizer == nil {
                 let gestureRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.handleSelectionTap))
+                gestureRecognizer.delegate = self
                 self.addGestureRecognizer(gestureRecognizer)
                 self.selectionTapGestureRecognizer = gestureRecognizer
             }
@@ -59,6 +63,27 @@ final class SegmentedControlInteractionView: UIView {
             self.removeGestureRecognizer(gestureRecognizer)
             self.selectionTapGestureRecognizer = nil
         }
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        guard gestureRecognizer === selectionTapGestureRecognizer,
+              allowsSimultaneousGlassInteraction else {
+            return false
+        }
+        if #available(iOS 26, iOSApplicationExtension 26, *) {
+            var view = otherGestureRecognizer.view
+            while let candidate = view {
+                if let effectView = candidate as? UIVisualEffectView,
+                   effectView.effect is UIGlassEffect {
+                    return true
+                }
+                view = candidate.superview
+            }
+        }
+        return false
     }
 
     private func updateContextMenuInteraction(

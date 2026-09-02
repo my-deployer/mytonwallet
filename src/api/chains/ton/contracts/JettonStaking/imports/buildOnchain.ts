@@ -1,6 +1,6 @@
+import type { Cell } from '@ton/core';
 import { Dictionary } from '@ton/core';
-import type { Cell } from '@ton/ton';
-import { beginCell } from '@ton/ton';
+import { beginCell } from '@ton/core';
 
 import { sha256BigInt as toKey } from '../../../util/other';
 

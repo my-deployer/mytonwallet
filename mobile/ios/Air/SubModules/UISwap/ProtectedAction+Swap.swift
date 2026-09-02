@@ -18,7 +18,7 @@ extension ProtectedAction where HeaderView == SwapConfirmHeaderView, Result == S
                 Self.makeCrosschainResultReplacement(receipt: receipt)
             }
         } else {
-            let context: ActivityDetailsContext = snapshot.swapType == .onChain
+            let context: ActivityDetailsContext = snapshot.swapType.route == .dex
                 ? .onchainSwapConfirmation
                 : .swapConfirmation
             completion = .activity(

@@ -1,0 +1,270 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "send-amount-normalization-v1",
+  "locales": ["en", "de", "es", "fa", "ar", "pl", "ru", "th", "tr", "uk", "unknown"],
+  "cases": [
+    {
+      "id": "en.positive.group-comma-decimal-dot",
+      "category": "positive",
+      "locale": "en",
+      "rawAmount": "1,234.56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "en", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "en.ambiguous.single-comma-three-digits",
+      "category": "ambiguous",
+      "locale": "en",
+      "rawAmount": "1,000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "en", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "en.negative.exponent",
+      "category": "negative",
+      "locale": "en",
+      "rawAmount": "1e3",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "en", "status": "rejected", "code": "amount_exponent_not_allowed", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "de.positive.group-dot-decimal-comma",
+      "category": "positive",
+      "locale": "de",
+      "rawAmount": "1.234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "de", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "de.ambiguous.single-dot-three-digits",
+      "category": "ambiguous",
+      "locale": "de",
+      "rawAmount": "1.000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "de", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "de.negative.plus-sign",
+      "category": "negative",
+      "locale": "de",
+      "rawAmount": "+1,5",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "de", "status": "rejected", "code": "amount_sign_not_allowed", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "es.positive.group-dot-decimal-comma",
+      "category": "positive",
+      "locale": "es",
+      "rawAmount": "12.345,67",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "es", "status": "normalized", "canonicalValue": "12345.67", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "es.ambiguous.single-comma-three-digits",
+      "category": "ambiguous",
+      "locale": "es",
+      "rawAmount": "12,345",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "es", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["12.345", "12345"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "es.negative.invalid-indian-grouping",
+      "category": "negative",
+      "locale": "es",
+      "rawAmount": "12,34,567",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "es", "status": "rejected", "code": "amount_invalid_grouping", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "fa.positive.persian-digits-arabic-separators",
+      "category": "positive",
+      "locale": "fa",
+      "rawAmount": "۱٬۲۳۴٫۵۶",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "fa", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "fa.ambiguous.persian-digits-ascii-comma",
+      "category": "ambiguous",
+      "locale": "fa",
+      "rawAmount": "۱,۰۰۰",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "fa", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "fa.negative.mixed-ascii-persian-digits",
+      "category": "negative",
+      "locale": "fa",
+      "rawAmount": "۱2٫۵",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "fa", "status": "rejected", "code": "amount_mixed_digit_set", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "ar.positive.arabic-digits-arabic-separators",
+      "category": "positive",
+      "locale": "ar",
+      "rawAmount": "١٬٢٣٤٫٥٦",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ar", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "ar.ambiguous.arabic-digits-ascii-dot",
+      "category": "ambiguous",
+      "locale": "ar",
+      "rawAmount": "١.٠٠٠",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ar", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "ar.negative.currency-text",
+      "category": "negative",
+      "locale": "ar",
+      "rawAmount": "١٢٫٣٤ USD",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ar", "status": "rejected", "code": "amount_invalid_character", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "pl.positive.nbsp-grouping",
+      "category": "positive",
+      "locale": "pl",
+      "rawAmount": "1 234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "pl", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "pl.ambiguous.single-comma-three-digits",
+      "category": "ambiguous",
+      "locale": "pl",
+      "rawAmount": "1,000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "pl", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "pl.negative.tab-not-grouping",
+      "category": "negative",
+      "locale": "pl",
+      "rawAmount": "1\t234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "pl", "status": "rejected", "code": "amount_invalid_character", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "ru.positive.narrow-nbsp-grouping",
+      "category": "positive",
+      "locale": "ru",
+      "rawAmount": "1 234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ru", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "ru.ambiguous.single-dot-three-digits",
+      "category": "ambiguous",
+      "locale": "ru",
+      "rawAmount": "1.000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ru", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "ru.negative.minus",
+      "category": "negative",
+      "locale": "ru",
+      "rawAmount": "-1,5",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ru", "status": "rejected", "code": "amount_non_positive", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "th.positive.thai-digits",
+      "category": "positive",
+      "locale": "th",
+      "rawAmount": "๑,๒๓๔.๕๖",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "th", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "th.ambiguous.thai-digits-ascii-comma",
+      "category": "ambiguous",
+      "locale": "th",
+      "rawAmount": "๑,๐๐๐",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "th", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "th.negative.percent-symbol",
+      "category": "negative",
+      "locale": "th",
+      "rawAmount": "๑๒๓%",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "th", "status": "rejected", "code": "amount_invalid_character", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "tr.positive.group-dot-decimal-comma",
+      "category": "positive",
+      "locale": "tr",
+      "rawAmount": "1.234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "tr", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "tr.ambiguous.single-comma-three-digits",
+      "category": "ambiguous",
+      "locale": "tr",
+      "rawAmount": "1,000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "tr", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "tr.negative.zero",
+      "category": "negative",
+      "locale": "tr",
+      "rawAmount": "0,000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "tr", "status": "rejected", "code": "amount_non_positive", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "uk.positive-space-grouping",
+      "category": "positive",
+      "locale": "uk",
+      "rawAmount": "1 234,56",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "uk", "status": "normalized", "canonicalValue": "1234.56", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "uk.ambiguous.single-dot-three-digits",
+      "category": "ambiguous",
+      "locale": "uk",
+      "rawAmount": "1.000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "uk", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "uk.negative.invalid-space-grouping",
+      "category": "negative",
+      "locale": "uk",
+      "rawAmount": "1 23,45",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "uk", "status": "rejected", "code": "amount_invalid_grouping", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "unknown.positive.fullwidth-nfkc",
+      "category": "positive",
+      "locale": "unknown",
+      "rawAmount": "１２３．４５",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "unknown", "status": "normalized", "canonicalValue": "123.45", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "unknown.ambiguous.single-comma-three-digits",
+      "category": "ambiguous",
+      "locale": "unknown",
+      "rawAmount": "1,000",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "unknown", "status": "clarification_required", "code": "amount_separator_ambiguous", "candidateValues": ["1.000", "1000"], "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "unknown.negative.empty",
+      "category": "negative",
+      "locale": "unknown",
+      "rawAmount": "",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "unknown", "status": "rejected", "code": "amount_empty", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+
+    {
+      "id": "en.positive.leading-zero-and-trailing-zero-preservation",
+      "category": "positive",
+      "locale": "en",
+      "rawAmount": "0000.1250",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "en", "status": "normalized", "canonicalValue": "0.1250", "resolverCallsAllowed": true, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "unknown.negative.superscript-not-nfkc-digit",
+      "category": "negative",
+      "locale": "unknown",
+      "rawAmount": "²",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "unknown", "status": "rejected", "code": "amount_invalid_character", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    },
+    {
+      "id": "ru.negative.arabic-digit-set-not-allowed",
+      "category": "negative",
+      "locale": "ru",
+      "rawAmount": "١٢,٥",
+      "expected": { "contractVersion": "send-amount-normalization-v1", "locale": "ru", "status": "rejected", "code": "amount_digit_set_not_allowed", "resolverCallsAllowed": false, "prepareCallsAllowed": false }
+    }
+  ]
+}

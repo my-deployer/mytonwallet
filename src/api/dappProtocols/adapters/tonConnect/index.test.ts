@@ -148,7 +148,9 @@ describe('TonConnectAdapter.connect', () => {
     const onUpdate = jest.fn();
     await adapter.init({
       onUpdate,
-      env: { isSseSupported: false, byNetwork: { mainnet: {}, testnet: {} } },
+      env: {
+        agentOverride: 'v1', isAgentV2Enabled: false, isSseSupported: false, byNetwork: { mainnet: {}, testnet: {} },
+      },
       chainDappSupports: {},
     });
 

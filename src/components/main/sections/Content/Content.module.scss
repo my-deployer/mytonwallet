@@ -271,6 +271,8 @@
   }
 
   .landscapeSlide {
+    scrollbar-gutter: stable;
+
     overflow: hidden;
     overflow-y: auto;
     display: flex;

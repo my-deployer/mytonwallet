@@ -2,9 +2,8 @@ package org.mytonwallet.app_air.walletcore
 
 import java.net.URLDecoder
 
-// Keys we are willing to parse out of an install-referrer string. `r` (the swap
-// referrerId) is kept here ONLY so a referrer that carries it parses cleanly; it
-// is NEVER returned as the channel. The channel carrier is always `utm_source`.
+// Keys parsed from the referrer. `r` (swap referrerId) is here only so a referrer
+// carrying it parses cleanly; the channel carrier is always `utm_source`.
 private val REFERRER_PARSE_KEYS = setOf(
     "clickId",
     "r",
@@ -14,22 +13,29 @@ private val REFERRER_PARSE_KEYS = setOf(
     "utm_content"
 )
 
-// Input-safety guard for a single decoded value: a short, URL-safe token.
+// Input-safety guard for one decoded value. Looser than the canonical slug guard
+// below: it allows the hyphen in the Play "google-play" organic marker.
 private val REFERRER_VALUE_PATTERN = Regex("^[A-Za-z0-9._~-]{1,64}$")
 
+// A canonical channel bucket slug, e.g. "wc", "tg_channel", "app_share".
+private val CANONICAL_SLUG_PATTERN = Regex("^[a-z0-9_]{1,64}$")
+
+private const val ORGANIC_UTM_SOURCE = "google-play"
+private const val ORGANIC_UTM_MEDIUM = "organic"
+private const val CHANNEL_ORGANIC = "organic"
+private const val CHANNEL_UNKNOWN = "unknown"
+
 /**
- * Extract the install channel from an untrusted Play Install Referrer string.
- *
- * This enforces INPUT SAFETY only (char-class + length bound + `utm_source`
- * extraction). It does NOT enforce the business allowlist of known channels;
- * that is re-validated downstream inside the JS claim path (single source of
- * truth). A well-formed but unknown `utm_source` legitimately passes here and
- * is dropped later in JS.
- *
- * @return the valid `utm_source` value, or null when absent or malformed.
+ * Resolve the channel from an untrusted Play Install Referrer into a canonical bucket, never null:
+ * `organic` for the Google Play organic marker, the `utm_source` slug when well-formed, or
+ * `unknown` when absent, empty or malformed. Enforces input safety only; the JS claim path
+ * re-validates and buckets unrecognised slugs server-side.
  */
-fun sanitizeReferrer(raw: String): String? {
-    var channel: String? = null
+fun sanitizeReferrer(raw: String?): String {
+    if (raw.isNullOrEmpty()) return CHANNEL_UNKNOWN
+
+    var utmSource: String? = null
+    var utmMedium: String? = null
     for (pair in raw.split("&")) {
         val separator = pair.indexOf('=')
         if (separator < 0) continue
@@ -41,7 +47,22 @@ fun sanitizeReferrer(raw: String): String? {
             continue
         }
         if (!REFERRER_VALUE_PATTERN.matches(value)) continue
-        if (key == "utm_source") channel = value
+        when (key) {
+            "utm_source" -> utmSource = value
+            "utm_medium" -> utmMedium = value
+        }
     }
-    return channel
+
+    // The organic-marker check MUST run before the canonical slug guard:
+    // "google-play" passes REFERRER_VALUE_PATTERN (hyphen allowed) but fails
+    // CANONICAL_SLUG_PATTERN (hyphen rejected).
+    if (utmSource == ORGANIC_UTM_SOURCE && utmMedium == ORGANIC_UTM_MEDIUM) {
+        return CHANNEL_ORGANIC
+    }
+
+    val source = utmSource
+    if (source != null && CANONICAL_SLUG_PATTERN.matches(source)) {
+        return source
+    }
+    return CHANNEL_UNKNOWN
 }

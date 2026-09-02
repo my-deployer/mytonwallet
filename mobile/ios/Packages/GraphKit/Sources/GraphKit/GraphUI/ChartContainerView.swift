@@ -406,7 +406,11 @@ public final class ChartContainerView: UIView {
         chartView.apply(theme: theme, strings: strings, animated: animated)
     }
 
-    public func setup(controller: BaseChartController, noInitialZoom: Bool) {
+    public func setup(
+        controller: BaseChartController,
+        noInitialZoom: Bool,
+        showsRangeSelector: Bool? = nil
+    ) {
         self.controller = controller
 
         var displayRange = true
@@ -416,6 +420,9 @@ public final class ChartContainerView: UIView {
         }
         if noInitialZoom {
             zoomToEnding = false
+        }
+        if let showsRangeSelector {
+            displayRange = showsRangeSelector
         }
         self.displayRange = displayRange
 

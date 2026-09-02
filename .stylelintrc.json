@@ -9,6 +9,10 @@
     "coverage/**",
     "dist-electron/*.css",
     "dist-push/*.css",
+    "mobile/**/.build/**",
+    "mobile/**/DerivedData/**",
+    "mobile/**/build/**",
+    "mobile/**/Pods/**",
     "mobile/**/public/*.css"
   ],
   "plugins": [

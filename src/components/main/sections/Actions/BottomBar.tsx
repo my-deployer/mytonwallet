@@ -5,7 +5,6 @@ import { getActions, withGlobal } from '../../../../global';
 
 import type { Theme } from '../../../../global/types';
 
-import { IS_FEATURE_LIMITED } from '../../../../config';
 import { selectCurrentAccountSettings } from '../../../../global/selectors';
 import { ACCENT_COLORS } from '../../../../util/accentColor/constants';
 import buildClassName from '../../../../util/buildClassName';
@@ -49,10 +48,9 @@ const ANIMATED_STICKER_SPEED = 2;
 const TAB_WALLET = 0;
 const TAB_AGENT = 1;
 const TAB_EXPLORE = 2;
-const TAB_SETTINGS_FULL = 3;
+const TAB_SETTINGS = 3;
 
-const TAB_COUNT = IS_FEATURE_LIMITED ? 2 : 4;
-const SETTINGS_INDEX = IS_FEATURE_LIMITED ? 1 : TAB_SETTINGS_FULL;
+const TAB_COUNT = 4;
 
 function BottomBar({
   theme, areSettingsOpen, isAgentOpen, isExploreOpen, accentColorIndex,
@@ -73,17 +71,12 @@ function BottomBar({
 
   const activeIndex = getActiveIndex({ isAgentOpen, isExploreOpen, areSettingsOpen });
 
-  const tabs: TabConfig[] = IS_FEATURE_LIMITED
-    ? [
-      { index: TAB_WALLET, label: 'Wallet', iconKey: 'iconWallet', onClick: switchToWallet },
-      { index: SETTINGS_INDEX, label: 'Settings', iconKey: 'iconSettings', onClick: switchToSettings },
-    ]
-    : [
-      { index: TAB_WALLET, label: 'Wallet', iconKey: 'iconWallet', onClick: switchToWallet },
-      { index: TAB_AGENT, label: 'Agent', iconKey: 'iconAgent', onClick: switchToAgent },
-      { index: TAB_EXPLORE, label: 'Explore', iconKey: 'iconExplore', onClick: switchToExplore },
-      { index: SETTINGS_INDEX, label: 'Settings', iconKey: 'iconSettings', onClick: switchToSettings },
-    ];
+  const tabs: TabConfig[] = [
+    { index: TAB_WALLET, label: 'Wallet', iconKey: 'iconWallet', onClick: switchToWallet },
+    { index: TAB_AGENT, label: 'Agent', iconKey: 'iconAgent', onClick: switchToAgent },
+    { index: TAB_EXPLORE, label: 'Explore', iconKey: 'iconExplore', onClick: switchToExplore },
+    { index: TAB_SETTINGS, label: 'Settings', iconKey: 'iconSettings', onClick: switchToSettings },
+  ];
 
   const switchToTabByIndex = useLastCallback((index: number) => {
     tabs.find((tab) => tab.index === index)?.onClick();
@@ -193,13 +186,9 @@ const TabButton = memo(({
 function getActiveIndex({
   isAgentOpen, isExploreOpen, areSettingsOpen,
 }: Pick<StateProps, 'isAgentOpen' | 'isExploreOpen' | 'areSettingsOpen'>) {
-  if (IS_FEATURE_LIMITED) {
-    return areSettingsOpen ? SETTINGS_INDEX : TAB_WALLET;
-  }
-
   if (isAgentOpen) return TAB_AGENT;
   if (isExploreOpen) return TAB_EXPLORE;
-  if (areSettingsOpen) return TAB_SETTINGS_FULL;
+  if (areSettingsOpen) return TAB_SETTINGS;
 
   return TAB_WALLET;
 }

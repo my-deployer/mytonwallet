@@ -1,35 +1,51 @@
-import { Address } from '@ton/core';
-
 import type {
+  ApiChain,
   ApiEthenaStakingState,
   ApiJettonStakingState,
-  ApiStakingCommonData,
-  ApiStakingCommonResponse,
   ApiStakingHistory,
   ApiStakingState,
 } from '../types';
 import { ApiCommonError } from '../types';
 
-import { fromDecimal } from '../../util/decimals';
 import { logDebugError } from '../../util/logs';
-import * as ton from '../chains/ton';
-import { getTonClient } from '../chains/ton/util/tonCore';
-import { fetchStoredAccount, fetchStoredWallet } from '../common/accounts';
+import { getChainBySlug } from '../../util/tokens';
+import chains from '../chains';
+import { doesAccountHaveChain, fetchStoredAccount, fetchStoredWallet } from '../common/accounts';
 import { callBackendGet } from '../common/backend';
 import { setStakingCommonCache } from '../common/cache';
 import { publishSignedMfaRequest } from './mfa';
 import { createLocalTransactions } from './transfer';
 
-import { StakingPool } from '../chains/ton/contracts/JettonStaking/StakingPool';
-
 export function initStaking() {}
 
-export function checkStakeDraft(accountId: string, amount: bigint, state: ApiStakingState) {
-  return ton.checkStakeDraft(accountId, amount, state);
+/** The chain a staking state belongs to, and its staking implementation, both keyed by the state's token. */
+function resolveStaking(state: ApiStakingState) {
+  const chain = getChainBySlug(state.tokenSlug);
+  const staking = chains[chain]?.staking;
+  if (!staking) {
+    throw new Error(`Staking is not supported for ${chain}`);
+  }
+
+  return { chain, staking };
 }
 
-export function checkUnstakeDraft(accountId: string, amount: bigint, state: ApiStakingState) {
-  return ton.checkUnstakeDraft(accountId, amount, state);
+/**
+ * The account's staking chain, for the operations that have no staking state to take it from. The registry
+ * scan is unambiguous only while a single chain supports staking.
+ */
+async function findStakingChain(accountId: string): Promise<ApiChain | undefined> {
+  const account = await fetchStoredAccount(accountId);
+  return (Object.keys(chains) as ApiChain[]).find(
+    (chain) => chains[chain].staking && doesAccountHaveChain(account, chain),
+  );
+}
+
+export async function checkStakeDraft(accountId: string, amount: bigint, state: ApiStakingState) {
+  return resolveStaking(state).staking.checkStakeDraft(accountId, amount, state);
+}
+
+export async function checkUnstakeDraft(accountId: string, amount: bigint, state: ApiStakingState) {
+  return resolveStaking(state).staking.checkUnstakeDraft(accountId, amount, state);
 }
 
 export async function submitStake(
@@ -39,25 +55,24 @@ export async function submitStake(
   state: ApiStakingState,
   realFee?: bigint,
 ) {
-  const { address: fromAddress } = await fetchStoredWallet(accountId, 'ton');
+  const { chain, staking } = resolveStaking(state);
+  const { address: fromAddress } = await fetchStoredWallet(accountId, chain);
 
-  const result = await ton.submitStake(
-    accountId, enclaveToken, amount, state,
-  );
+  const result = await staking.submitStake(accountId, enclaveToken, amount, state);
 
   if ('error' in result) {
     return result;
   }
 
   if (result.mfaRequest) {
-    return publishSignedMfaRequest(accountId, 'ton', result.mfaRequest);
+    return publishSignedMfaRequest(accountId, chain, result.mfaRequest);
   }
 
   if (!result.txId) {
     return { error: ApiCommonError.Unexpected };
   }
 
-  const [localActivity] = createLocalTransactions(accountId, 'ton', [{
+  const [localActivity] = createLocalTransactions(accountId, chain, [{
     id: result.txId,
     amount,
     fromAddress,
@@ -79,22 +94,23 @@ export async function submitUnstake(
   state: ApiStakingState,
   realFee?: bigint,
 ) {
-  const { address: fromAddress } = await fetchStoredWallet(accountId, 'ton');
+  const { chain, staking } = resolveStaking(state);
+  const { address: fromAddress } = await fetchStoredWallet(accountId, chain);
 
-  const result = await ton.submitUnstake(accountId, enclaveToken, tokenAmount, state);
+  const result = await staking.submitUnstake(accountId, enclaveToken, tokenAmount, state);
   if ('error' in result) {
     return result;
   }
 
   if (result.mfaRequest) {
-    return publishSignedMfaRequest(accountId, 'ton', result.mfaRequest);
+    return publishSignedMfaRequest(accountId, chain, result.mfaRequest);
   }
 
   if (!result.txId) {
     return { error: ApiCommonError.Unexpected };
   }
 
-  const [localActivity] = createLocalTransactions(accountId, 'ton', [{
+  const [localActivity] = createLocalTransactions(accountId, chain, [{
     id: result.txId,
     amount: 0n, // Always 0, because all the gas send for the unstaking is in the fee
     fromAddress,
@@ -109,42 +125,22 @@ export async function submitUnstake(
 }
 
 export async function getStakingHistory(accountId: string): Promise<ApiStakingHistory> {
-  const { byChain: { ton: tonWallet } } = await fetchStoredAccount(accountId);
-  if (!tonWallet) return [];
-  return callBackendGet(`/staking/profits/${tonWallet.address}`);
+  const chain = await findStakingChain(accountId);
+  if (!chain) return [];
+  const { address } = await fetchStoredWallet(accountId, chain);
+  return callBackendGet(`/staking/profits/${address}`);
 }
 
 export async function tryUpdateStakingCommonData() {
-  try {
-    const tonClient = getTonClient('mainnet');
-    const response = await callBackendGet<ApiStakingCommonResponse>('/staking/common');
+  for (const chain of Object.keys(chains) as ApiChain[]) {
+    const staking = chains[chain].staking;
+    if (!staking) continue;
 
-    const data: ApiStakingCommonData = {
-      ...response,
-      liquid: {
-        ...response.liquid,
-        available: fromDecimal(response.liquid.available),
-        tvl: fromDecimal(response.liquid.tvl),
-      },
-      jettonPools: await Promise.all(response.jettonPools.map(async (pool) => {
-        const poolContract = tonClient.open(StakingPool.createFromAddress(Address.parse(pool.pool)));
-        const poolConfig = await poolContract.getStorageData();
-        return {
-          ...pool,
-          poolConfig,
-        };
-      })),
-    };
-    data.round.start *= 1000;
-    data.round.end *= 1000;
-    data.round.unlock *= 1000;
-    data.prevRound.start *= 1000;
-    data.prevRound.end *= 1000;
-    data.prevRound.unlock *= 1000;
-
-    setStakingCommonCache(data);
-  } catch (err) {
-    logDebugError('tryUpdateStakingCommonData', err);
+    try {
+      setStakingCommonCache(chain, await staking.getCommonData());
+    } catch (err) {
+      logDebugError('tryUpdateStakingCommonData', err);
+    }
   }
 }
 
@@ -154,25 +150,26 @@ export async function submitStakingClaimOrUnlock(
   state: ApiJettonStakingState | ApiEthenaStakingState,
   realFee?: bigint,
 ) {
-  const { address: walletAddress } = await fetchStoredWallet(accountId, 'ton');
+  const { chain, staking } = resolveStaking(state);
+  const { address: walletAddress } = await fetchStoredWallet(accountId, chain);
 
   const result = state.type === 'ethena'
-    ? await ton.submitUnstakeEthenaLocked(accountId, enclaveToken, state)
-    : await ton.submitTokenStakingClaim(accountId, enclaveToken, state);
+    ? await staking.submitUnstakeEthenaLocked(accountId, enclaveToken, state)
+    : await staking.submitTokenStakingClaim(accountId, enclaveToken, state);
 
   if ('error' in result) {
     return result;
   }
 
   if (result.mfaRequest) {
-    return publishSignedMfaRequest(accountId, 'ton', result.mfaRequest);
+    return publishSignedMfaRequest(accountId, chain, result.mfaRequest);
   }
 
   if (!result.txId) {
     return { error: ApiCommonError.Unexpected };
   }
 
-  const [localActivity] = createLocalTransactions(accountId, 'ton', [{
+  const [localActivity] = createLocalTransactions(accountId, chain, [{
     id: result.txId,
     fromAddress: walletAddress,
     fee: realFee ?? 0n,

@@ -4,6 +4,7 @@ package org.mytonwallet.uihome.home.cells
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import androidx.core.view.updateLayoutParams
 import java.util.concurrent.Executors
@@ -38,6 +39,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.models.MCollectionTab
+import org.mytonwallet.app_air.walletcontext.utils.ensureMainThread
 import org.mytonwallet.app_air.walletcore.models.NftCollection
 import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
@@ -65,12 +67,18 @@ class HomePhoneAssetsCell(
         isInSelectionMode: Boolean,
         shouldShowTransferActions: Boolean
     ) -> Unit,
-    private val onDetailsOpened: () -> Unit
+    private val onDetailsOpened: () -> Unit,
+    // The tokens tab is hosted elsewhere (see HomeTokensCell); only collectibles tabs are shown.
+    private val excludeTokens: Boolean = false
 ) : WCell(context),
     WThemedView,
     ISortableController,
     IHomeAssetsCell,
     IHomeAssetsHost {
+
+    companion object {
+        private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    }
 
     override var areAssetsShown = false
     private var selectionAssetsVC: AssetsVC? = null
@@ -102,12 +110,15 @@ class HomePhoneAssetsCell(
 
     // Make this cell the active host: point the pool at us and re-bind the mutable per-VC callbacks.
     override fun attachHost(pool: HomeAssetsVCPool) {
-        pool.host = this
-        tokensVC.onScrollToVisibleRequested = { onScrollToVisibleRequested?.invoke() }
+        if (!excludeTokens) {
+            pool.host = this
+            tokensVC.onScrollToVisibleRequested = { onScrollToVisibleRequested?.invoke() }
+        }
         segmentedController.items.forEach { item ->
             (item.viewController as? AssetsVC)?.let { vc ->
                 bindPooledAssetsVC(vc)
                 vc.segmentedController = segmentedController
+                vc.onShowAllMenuTapped = if (excludeTokens) item.onMenuPressed else null
             }
         }
     }
@@ -135,7 +146,8 @@ class HomePhoneAssetsCell(
                 onForceEndReorderingRequested()
             },
             ownsItems = false,
-            initialPagePrefetchCount = 0
+            initialPagePrefetchCount = 0,
+            showActiveTabArrow = !excludeTokens
         ).apply {
             setDragAllowed(true)
         }
@@ -218,7 +230,7 @@ class HomePhoneAssetsCell(
         pool.onAccountChanged(accountId)
         segmentedController.updateProtectedView()
         val itemsChanged = reloadTabs(true)
-        tokensVC.configure(showingAccountId)
+        if (!excludeTokens) tokensVC.configure(showingAccountId)
         if (itemsChanged) {
             collectiblesVC.configure(showingAccountId)
         } else {
@@ -261,6 +273,7 @@ class HomePhoneAssetsCell(
             updateCollectiblesClick()
         }
         if (resetSelection) segmentedController.setActiveIndex(0)
+        updateHeight()
         return itemsChanged
     }
 
@@ -280,7 +293,7 @@ class HomePhoneAssetsCell(
         val showCollectionsMenu = !nftCollections.isEmpty() || hiddenNFTsExist
         val homeNftCollections =
             WGlobalStorage.getHomeNftCollections(showingAccountId)
-        if (!homeNftCollections.any { it.address == AssetsTabVC.TAB_COINS }) {
+        if (!excludeTokens && !homeNftCollections.any { it.address == AssetsTabVC.TAB_COINS }) {
             items.add(
                 WSegmentedControllerItem(
                     tokensVC,
@@ -321,10 +334,12 @@ class HomePhoneAssetsCell(
         }
 
         if (homeNftCollections.isNotEmpty()) {
+            val nftCollectionsByAddress = nftCollections.associateBy { it.address }
             items.addAll(
                 homeNftCollections.mapNotNull { homeNftCollection ->
                     when (homeNftCollection.address) {
                         AssetsTabVC.TAB_COINS -> {
+                            if (excludeTokens) return@mapNotNull null
                             WSegmentedControllerItem(
                                 tokensVC,
                                 AssetsTabVC.identifierForVC(tokensVC),
@@ -368,7 +383,7 @@ class HomePhoneAssetsCell(
                                 ) {
                                     AssetsVC.CollectionMode.TelegramGifts
                                 } else {
-                                    nftCollections.find { it.address == homeNftCollection.address }
+                                    nftCollectionsByAddress[homeNftCollection.address]
                                         ?.let {
                                             AssetsVC.CollectionMode.SingleCollection(
                                                 collection = it
@@ -442,10 +457,14 @@ class HomePhoneAssetsCell(
                 }
             )
         }
+        if (excludeTokens) {
+            items.forEach { item ->
+                (item.viewController as? AssetsVC)?.onShowAllMenuTapped = item.onMenuPressed
+            }
+        }
         return items
     }
 
-    private val backgroundExecutor = Executors.newSingleThreadExecutor()
     fun updateCollectiblesClick() {
         backgroundExecutor.execute {
             val isActiveAccount = NftStore.nftData?.accountId == showingAccountId
@@ -457,26 +476,32 @@ class HomePhoneAssetsCell(
                 }
             val hiddenNFTsExist = NftStore.getHasHiddenNft(showingAccountId) || hasBlacklistNft
             val showCollectionsMenu = !NftStore.getCollections().isEmpty() || hiddenNFTsExist
-            segmentedController.updateOnMenuPressed(
-                identifier = AssetsTabVC.TAB_COLLECTIBLES,
-                onMenuPressed = if (showCollectionsMenu) {
-                    { v ->
-                        CollectionsMenuHelpers.presentCollectionsMenuOn(
-                            showingAccountId,
-                            v,
-                            navigationController,
-                            onReorderTapped = {
-                                onReorderingRequested(true)
-                            },
-                            onSelectTapped = {
-                                openSelectionMode(collectiblesVC)
-                            }
-                        )
-                    }
-                } else {
-                    null
+            val onMenuPressed: ((v: View) -> Unit)? = if (showCollectionsMenu) {
+                { v ->
+                    CollectionsMenuHelpers.presentCollectionsMenuOn(
+                        showingAccountId,
+                        v,
+                        navigationController,
+                        onReorderTapped = {
+                            onReorderingRequested(true)
+                        },
+                        onSelectTapped = {
+                            openSelectionMode(collectiblesVC)
+                        }
+                    )
                 }
-            )
+            } else {
+                null
+            }
+            ensureMainThread {
+                segmentedController.updateOnMenuPressed(
+                    identifier = AssetsTabVC.TAB_COLLECTIBLES,
+                    onMenuPressed = onMenuPressed
+                )
+                if (excludeTokens) {
+                    collectiblesVC.onShowAllMenuTapped = onMenuPressed
+                }
+            }
         }
     }
 
@@ -515,12 +540,13 @@ class HomePhoneAssetsCell(
                 }
             val secondEffective = if (secondHeight > 0) secondHeight else firstHeight
 
+            val headerHeight = segmentedController.headerHeight
             newHeight = if (firstHeight > 0) {
                 val interpolatedHeight =
                     firstHeight + (offset - currentIndex) * (secondEffective - firstHeight)
-                (53.dp + interpolatedHeight).roundToInt()
+                (headerHeight + interpolatedHeight).roundToInt()
             } else {
-                53.dp + 60.dp
+                headerHeight + 60.dp
             }
         }
 
@@ -564,7 +590,7 @@ class HomePhoneAssetsCell(
                             itemToRemoveIndex - 1
                         )
                     ].viewController
-                ) + 56.dp
+                ) + (if (segmentedController.items.size > 2 || isInDragMode) 56.dp else 0)
             animateHeight(nextHeight)
         }
         val removedItem = segmentedController.removeItem(itemToRemoveIndex, onCompletion = {
@@ -599,6 +625,19 @@ class HomePhoneAssetsCell(
                 }
 
                 else -> null
+            }
+        }.toMutableList()
+        if (excludeTokens) {
+            // The tokens tab is not part of this controller; keep its stored position intact.
+            val storedCollections =
+                WGlobalStorage.getHomeNftCollections(AccountStore.activeAccountId!!)
+            val storedCoinsIndex =
+                storedCollections.indexOfFirst { it.address == AssetsTabVC.TAB_COINS }
+            if (storedCoinsIndex >= 0) {
+                orderedCollections.add(
+                    min(storedCoinsIndex, orderedCollections.size),
+                    MCollectionTab(MBlockchain.ton.name, AssetsTabVC.TAB_COINS)
+                )
             }
         }
         WGlobalStorage.setHomeNftCollections(
@@ -696,6 +735,18 @@ class HomePhoneAssetsCell(
         (segmentedController.currentItem as? ISortableView)?.endSorting()
         (segmentedController.currentItem as? AssetsVC)?.apply {
             if (save) saveList() else reloadList()
+        }
+        if (save) {
+            segmentedController.updateTabBarPresentation(animated = true)
+            animateToTabBarHeight()
+        }
+    }
+
+    private fun animateToTabBarHeight() {
+        val currentVC = segmentedController.currentItem ?: return
+        val targetHeight = segmentedController.headerHeight + getViewHeight(currentVC)
+        if (layoutParams.height != targetHeight) {
+            animateHeight(targetHeight)
         }
     }
 

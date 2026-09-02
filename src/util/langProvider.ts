@@ -33,8 +33,10 @@ const {
 
 export { addCallback, removeCallback };
 
-const SUBSTITUTION_REGEX = /%\d?\$?[sdf@]/g;
-const PLURAL_OPTIONS = ['value', 'zeroValue', 'oneValue', 'twoValue', 'fewValue', 'manyValue', 'otherValue'] as const;
+const SUBSTITUTION_REGEX = /%(?:(\d+)\$)?[sdf@](?![a-zA-Z0-9_])/g;
+const NAMED_SUBSTITUTION_REGEX = /%([a-zA-Z_][a-zA-Z0-9_]*)%/g;
+const PLURAL_VALUE_OPTIONS = ['zeroValue', 'oneValue', 'twoValue', 'fewValue', 'manyValue', 'otherValue'] as const;
+const PLURAL_OPTIONS = ['value', ...PLURAL_VALUE_OPTIONS] as const;
 // Some rules edited from https://github.com/eemeli/make-plural/blob/master/packages/plurals/cardinals.js
 // ar - zeroValue, oneValue, twoValue, fewValue, manyValue, otherValue
 // de - zeroValue, oneValue, otherValue
@@ -183,14 +185,36 @@ function getPluralOption(amount: number) {
   return PLURAL_OPTIONS[optionIndex];
 }
 
-function processTemplate(template: string, value: any) {
-  value = Array.isArray(value) ? value : [value];
-  const translationSlices = template.split(SUBSTITUTION_REGEX);
-  const initialValue = translationSlices.shift();
+function getParameterNames(langString: LangString | string | undefined) {
+  const templates = typeof langString === 'string'
+    ? [langString]
+    : PLURAL_VALUE_OPTIONS.map((option) => langString?.[option]).filter(Boolean);
+  const names: string[] = [];
 
-  return translationSlices.reduce((result, str, index) => {
-    return `${result}${String(value[index] ?? '')}${str}`;
-  }, initialValue || '');
+  templates.forEach((template) => {
+    for (const match of template.matchAll(NAMED_SUBSTITUTION_REGEX)) {
+      if (!names.includes(match[1])) names.push(match[1]);
+    }
+  });
+
+  return names;
+}
+
+function processTemplate(template: string, value: any, parameterNames: string[]) {
+  const values = Array.isArray(value) ? value : [value];
+  const namedValues = Object.fromEntries(parameterNames.map((name, index) => [name, values[index]]));
+  const namedResult = template.replace(NAMED_SUBSTITUTION_REGEX, (placeholder, name) => (
+    Object.hasOwn(namedValues, name) ? String(namedValues[name] ?? '') : placeholder
+  ));
+
+  // Keep accepting positional placeholders while cached language packs from an older version expire.
+  if (!SUBSTITUTION_REGEX.test(namedResult)) return namedResult;
+  SUBSTITUTION_REGEX.lastIndex = 0;
+  let nextValueIndex = 0;
+  return namedResult.replace(SUBSTITUTION_REGEX, (_placeholder, position?: string) => {
+    const valueIndex = position ? Number(position) - 1 : nextValueIndex++;
+    return String(values[valueIndex] ?? '');
+  });
 }
 
 // Export a function for testing purposes
@@ -262,7 +286,7 @@ function processTranslation(
   const formattedValue = format === 'i' ? formatNumber(value) : value;
   const result = typeof value === 'object' && !Array.isArray(value)
     ? processTemplateJsx(template, formattedValue)
-    : processTemplate(template, formattedValue);
+    : processTemplate(template, formattedValue, getParameterNames(defaultLangPack[key]));
   if (typeof value !== 'object' && typeof result === 'string') {
     const cacheValue = Array.isArray(value) ? JSON.stringify(value) : value;
     cache.set(`${key}_${cacheValue}_${format}${pluralValue ? `_${pluralValue}` : ''}`, result);

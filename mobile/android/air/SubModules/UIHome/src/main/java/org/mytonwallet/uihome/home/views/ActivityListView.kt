@@ -3,6 +3,11 @@ package org.mytonwallet.uihome.home.views
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -12,14 +17,22 @@ import androidx.core.animation.doOnEnd
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
+import androidx.dynamicanimation.animation.FloatValueHolder
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.lang.ref.WeakReference
 import java.util.Date
+import java.util.concurrent.Executors
+import kotlin.math.max
+import kotlin.math.roundToInt
 import me.everything.android.ui.overscroll.IOverScrollState
 import org.mytonwallet.app_air.uiassets.viewControllers.views.MultisigWalletWarningView
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WActionBar.TitleAnimationMode
+import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.base.executeWithLowPriority
@@ -27,7 +40,9 @@ import org.mytonwallet.app_air.uicomponents.commonViews.HeaderActionsView
 import org.mytonwallet.app_air.uicomponents.commonViews.SkeletonView
 import org.mytonwallet.app_air.uicomponents.commonViews.TabletHeaderActionsView
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.EmptyCell
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderSpaceCell
+import org.mytonwallet.app_air.uicomponents.commonViews.cells.ShowAllView
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.SkeletonCell
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.SkeletonContainer
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.SkeletonHeaderCell
@@ -39,7 +54,12 @@ import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WFrameLayout
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
+import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
+import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
+import org.mytonwallet.app_air.walletbasecontext.theme.WColor
+import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.isSameDayAs
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.models.MBlockchainNetwork
@@ -49,12 +69,15 @@ import org.mytonwallet.app_air.walletcore.helpers.IActivityLoader
 import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
+import org.mytonwallet.app_air.walletcore.stores.NftStore
 import org.mytonwallet.app_air.walletcore.stores.StakingStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
+import org.mytonwallet.uihome.home.activities.AllActivitiesVC
 import org.mytonwallet.uihome.home.cells.HomeAssetsVCPool
 import org.mytonwallet.uihome.home.cells.HomePhoneAssetsCell
 import org.mytonwallet.uihome.home.cells.HomeTabletAssetsCell
 import org.mytonwallet.uihome.home.cells.HomeTabletAssetsSkeletonCell
+import org.mytonwallet.uihome.home.cells.HomeTokensCell
 import org.mytonwallet.uihome.home.cells.IHomeAssetsCell
 import org.mytonwallet.uihome.home.views.header.HomeHeaderView
 
@@ -79,6 +102,8 @@ class ActivityListView<T>(
         }
 
     companion object {
+        private const val REMOVE_ANIMATION_FALLBACK_MS = 1500L
+        private const val SHOW_ALL_ROW_HEIGHT = 56
         val HEADER_CELL = WCell.Type(1)
         val ACTIONS_CELL = WCell.Type(2)
         val ASSETS_CELL = WCell.Type(3)
@@ -92,6 +117,9 @@ class ActivityListView<T>(
         val SKELETON_CELL = WCell.Type(10)
         val TABLET_ASSETS_SKELETON_CELL = WCell.Type(11)
         val MULTISIG_WARNING_CELL = WCell.Type(12)
+        val TOKENS_CELL = WCell.Type(13)
+        val ACTIVITY_TITLE_CELL = WCell.Type(14)
+        val SHOW_ALL_ACTIVITIES_CELL = WCell.Type(15)
 
         const val HEADER_SECTION = 0
         const val MULTISIG_WARNING_SECTION = 1
@@ -101,6 +129,11 @@ class ActivityListView<T>(
         const val LOADING_SECTION = 5
 
         const val LARGE_INT = 10000
+
+        private val HOME_ACTIVITIES_TOP_LIMITS = listOf(5, 10, 30)
+
+        // Cache reads for accounts other than the active one stay off the main thread.
+        private val collectiblesExecutor = Executors.newSingleThreadExecutor()
     }
 
     // DATA SOURCE /////////////////////////////////////////////////////////////////////////////////
@@ -110,6 +143,11 @@ class ActivityListView<T>(
         fun activityListReserveActionsCell(): Boolean
         fun activityListActionsCellHeight(): Int = HeaderActionsView.HEIGHT.dp
         fun activityListReserveAssetsCell(): Boolean = true
+
+        // Tokens, collectibles and the latest activities are laid out as separate cards; the
+        // activities card is capped to the per-account top limit and ends with a "Show All" row.
+        fun activityListUsesCardSections(): Boolean = false
+        fun activityListShouldSnapCollapsedHeader(): Boolean = true
         fun recyclerViewModeValue(): HomeHeaderView.Mode
         val phoneHeaderView: HomeHeaderView
         val isWideHome: Boolean
@@ -139,6 +177,7 @@ class ActivityListView<T>(
         fun endSelectionMode()
         fun onTransactionTap(accountId: String, transaction: MApiTransaction)
         fun pauseBlurViews()
+        fun pauseBottomBlurViewsOnBottomEdge()
         fun resumeBottomBlurViews()
         fun onHeaderAction(identifier: HeaderActionsView.Identifier)
 
@@ -151,6 +190,7 @@ class ActivityListView<T>(
 
     fun configure(accountId: String?, shouldLoadNewWallets: Boolean, skipSkeletonOnCache: Boolean) {
         if (showingAccountId == accountId) return
+        pendingTransactionsUpdate = false
         assetsShown = false
         isMainnetAccount =
             accountId != null && MBlockchainNetwork.ofAccountId(accountId).isMainnet
@@ -160,6 +200,12 @@ class ActivityListView<T>(
         childrenFadeAnimator = null
         isShowingRecyclerView = false
         setChildrenAlpha(0f)
+        clearRemovingActivities()
+        oldDisplayedTransactions = null
+        showAllRowRevealAnimation?.cancel()
+        pendingShowAllRowReveal = false
+        showAllRowShown = false
+        resetShowAllActivitiesRow()
 
         activityLoader?.clean()
         activityLoader = null
@@ -170,9 +216,12 @@ class ActivityListView<T>(
                 isGeneralDataAvailable &&
                 WGlobalStorage.hasCachedActivities(showingAccountId, null)
             isShowingAccountMultichain = WGlobalStorage.isMultichain(showingAccountId)
+            homeActivitiesLimit = WGlobalStorage.getHomeActivitiesTopLimit(showingAccountId)
+            refreshCollectiblesCard(showingAccountId)
             activityLoader =
                 ActivityLoader(context, showingAccountId, null, WeakReference(this))
             activityLoader?.askForActivities()
+            tokensCell?.configure(showingAccountId)
             assetsCell?.configure(showingAccountId)
             updateSkeletonState(animated = false)
         }
@@ -195,8 +244,8 @@ class ActivityListView<T>(
         }
     }
 
-    private fun scrollAssetsCellToVisible() {
-        val cell = assetsCell?.asCell ?: return
+    private fun scrollAssetsCellToVisible(cell: View? = assetsCell?.asCell) {
+        cell ?: return
         val visibleTop = (dataSource?.navigationController?.getSystemBars()?.top ?: 0) +
             HomeHeaderView.navDefaultHeight
         if (cell.top < visibleTop) {
@@ -215,6 +264,9 @@ class ActivityListView<T>(
     fun onDestroy() {
         activityLoader?.clean()
         activityLoader = null
+        removalFallbackHandler.removeCallbacksAndMessages(null)
+        emptyCellCollapseAnimation?.cancel()
+        showAllRowRevealAnimation?.cancel()
         recyclerView.setOnOverScrollListener(null)
         recyclerView.removeOnScrollListener(scrollListener)
         recyclerView.layoutManager = null
@@ -224,6 +276,7 @@ class ActivityListView<T>(
         skeletonRecyclerView.adapter = null
         skeletonRecyclerView.removeAllViews()
         skeletonView.onDestroy()
+        tokensCell?.onDestroy()
         assetsCell?.onDestroy()
         assetsVCPool?.destroy()
         assetsVCPool = null
@@ -234,6 +287,7 @@ class ActivityListView<T>(
     // phone shared vs tablet per-instance actions), so cached instances are dropped and rebuilt on
     // the next bind.
     fun onWideLayoutChanged() {
+        clearRemovingActivities()
         assetsCell?.let {
             if (it.isInDragMode) it.endSorting(false)
             if (it.isInSelectionMode) it.closeSelectionMode()
@@ -241,6 +295,11 @@ class ActivityListView<T>(
             it.onDestroy()
         }
         assetsCell = null
+        tokensCell?.let {
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
+            it.onDestroy()
+        }
+        tokensCell = null
 
         tabletActionsView?.let {
             (it.parent as? android.view.ViewGroup)?.removeView(it)
@@ -254,6 +313,9 @@ class ActivityListView<T>(
         actionsCell.removeAllViews()
 
         rvAdapter.invalidateCellType(ASSETS_CELL)
+        rvAdapter.invalidateCellType(TOKENS_CELL)
+        rvAdapter.invalidateCellType(TRANSACTION_CELL)
+        rvAdapter.invalidateCellType(TRANSACTION_SMALL_CELL)
         reloadData()
         rvSkeletonAdapter.reloadData()
     }
@@ -265,10 +327,14 @@ class ActivityListView<T>(
         if (animationsPaused != newAnimationsPaused) {
             animationsPaused = newAnimationsPaused
             if (animationsPaused) {
+                tokensCell?.setAnimations(paused = true)
                 assetsCell?.setAnimations(paused = true)
             } else {
                 post {
-                    if (!animationsPaused) assetsCell?.setAnimations(paused = false)
+                    if (!animationsPaused) {
+                        tokensCell?.setAnimations(paused = false)
+                        assetsCell?.setAnimations(paused = false)
+                    }
                 }
             }
         }
@@ -283,6 +349,161 @@ class ActivityListView<T>(
     var showingAccountId: String? = null
         private set
     private var isShowingAccountMultichain = false
+    private var homeActivitiesLimit = WGlobalStorage.getHomeActivitiesTopLimit("")
+
+    private val usesCardSections: Boolean
+        get() = dataSource?.activityListUsesCardSections() == true && !isWideLayout
+
+    // Every loaded activity fits in the activities card: the cap stretches by one row so a
+    // single overflow activity renders in place of the "Show All" row.
+    private val allActivitiesFitCard: Boolean
+        get() = (showingTransactions?.size ?: 0) <= homeActivitiesLimit + 1
+
+    // Number of activity rows rendered in the activities card (card sections only).
+    private val displayedTransactionsCount: Int
+        get() {
+            val count = showingTransactions?.size ?: 0
+            return if (usesCardSections && !allActivitiesFitCard) {
+                minOf(count, homeActivitiesLimit)
+            } else {
+                count
+            }
+        }
+
+    private fun transactionIndex(row: Int): Int = if (usesCardSections) row - 1 else row
+
+    // Activities that just fell off the capped card (pushed out by newer ones). They stay
+    // rendered right below the displayed ones while their cell collapses, then get dropped in
+    // `finishRemovingActivity`. Card sections only.
+    private val removingTransactions = mutableListOf<MApiTransaction>()
+
+    // Owns the collapse safety-net posts so they can be dropped on destroy.
+    private val removalFallbackHandler = Handler(Looper.getMainLooper())
+
+    private val removingTransactionsCount: Int
+        get() = if (usesCardSections) removingTransactions.size else 0
+
+    private fun isRemovingActivityIndex(index: Int): Boolean = usesCardSections &&
+        index >= displayedTransactionsCount &&
+        index - displayedTransactionsCount < removingTransactions.size
+
+    // The activity rendered at `index`, either a displayed one or one being removed.
+    private fun activityAt(index: Int): MApiTransaction? = if (isRemovingActivityIndex(index)) {
+        removingTransactions.getOrNull(index - displayedTransactionsCount)
+    } else if (index < displayedTransactionsCount) {
+        showingTransactions?.getOrNull(index)
+    } else {
+        null
+    }
+
+    // Diffs the previously displayed activities against the current ones and queues the
+    // pushed-out tail for the collapse animation. Idempotent across rapid updates: already
+    // queued ids are kept once, and anything that made it back into the displayed set is dropped.
+    private fun queueRemovedActivities(previouslyDisplayed: List<MApiTransaction>) {
+        if (!usesCardSections) return
+        val transactions = showingTransactions ?: return
+        val displayedIds = HashSet<String>(displayedTransactionsCount)
+        for (i in 0 until displayedTransactionsCount) {
+            displayedIds.add(transactions[i].getStableId())
+        }
+        removingTransactions.removeAll { displayedIds.contains(it.getStableId()) }
+        val queuedIds = removingTransactions.mapTo(HashSet()) { it.getStableId() }
+        for (transaction in previouslyDisplayed) {
+            val id = transaction.getStableId()
+            if (displayedIds.contains(id) || queuedIds.contains(id)) continue
+            removingTransactions.add(transaction)
+            queuedIds.add(id)
+            // Safety net: a cell recycled mid-collapse never reports back, so the row must not
+            // outlive the animation regardless.
+            removalFallbackHandler.postDelayed(
+                { finishRemovingActivity(id) },
+                REMOVE_ANIMATION_FALLBACK_MS
+            )
+        }
+    }
+
+    private fun finishRemovingActivity(stableId: String) {
+        if (!removingTransactions.removeAll { it.getStableId() == stableId }) return
+        reloadData()
+    }
+
+    private fun clearRemovingActivities() {
+        removingTransactions.clear()
+        emptyCellCollapseAnimation?.cancel()
+        removingEmptyCell = false
+    }
+
+    // The empty card stays rendered while it collapses under the first revealed activity, then
+    // gets dropped in `finishRemovingEmptyCell`. Card sections only.
+    private var removingEmptyCell = false
+    private var emptyCellCollapseAnimation: SpringAnimation? = null
+
+    private fun collapseEmptyCell(cell: EmptyCell) {
+        if (emptyCellCollapseAnimation?.isRunning == true) return
+        val startHeight = if (cell.height > 0) cell.height else cell.layoutParams.height
+        if (startHeight <= 0) {
+            finishRemovingEmptyCell()
+            return
+        }
+        // Mirror of the row reveal: the text is fully faded once the card is at 70% of its height.
+        val fadeStartHeight = 0.7f * startHeight
+        val fadeRange = startHeight - fadeStartHeight
+        emptyCellCollapseAnimation = SpringAnimation(FloatValueHolder()).apply {
+            setStartValue(startHeight.toFloat())
+            spring = SpringForce(0f).apply {
+                stiffness = 500f
+                dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+            }
+            setMinValue(0f)
+            addUpdateListener { _, value, _ ->
+                cell.updateLayoutParams { height = value.toInt().coerceAtLeast(0) }
+                cell.emptyView.alpha = ((value - fadeStartHeight) / fadeRange).coerceIn(0f, 1f)
+            }
+            addEndListener { _, _, _, _ ->
+                emptyCellCollapseAnimation = null
+                finishRemovingEmptyCell()
+            }
+            start()
+        }
+    }
+
+    private fun finishRemovingEmptyCell() {
+        if (!removingEmptyCell) return
+        removingEmptyCell = false
+        reloadData()
+    }
+
+    private val showsShowAllActivitiesRow: Boolean
+        get() = usesCardSections &&
+            (showingTransactions?.size ?: 0) > 0 &&
+            !allActivitiesFitCard
+
+    // The collectibles card is only laid out when the account has something to show in it.
+    private var showsCollectiblesCard = false
+
+    private fun refreshCollectiblesCard(accountId: String) {
+        val activeData = NftStore.nftData?.takeIf { it.accountId == accountId }
+        if (activeData?.cachedNfts != null) {
+            applyCollectiblesCardVisibility(accountId, NftStore.hasVisibleNfts(accountId))
+            return
+        }
+        collectiblesExecutor.execute {
+            val hasNfts = NftStore.hasVisibleNfts(accountId)
+            post { applyCollectiblesCardVisibility(accountId, hasNfts) }
+        }
+    }
+
+    private fun applyCollectiblesCardVisibility(accountId: String, hasNfts: Boolean) {
+        if (accountId != showingAccountId || hasNfts == showsCollectiblesCard) return
+        showsCollectiblesCard = hasNfts
+        if (usesCardSections) reloadData()
+    }
+
+    /** Re-evaluates the collectibles card after the account's NFTs changed. */
+    fun nftsUpdated() {
+        val accountId = showingAccountId ?: return
+        refreshCollectiblesCard(accountId)
+    }
 
     /**
      * Set alpha on recyclerView children for sections other than header and actions.
@@ -378,6 +599,11 @@ class ActivityListView<T>(
     val rvLayoutManager = object : LinearLayoutManagerAccurateOffset(context) {
         override fun canScrollVertically(): Boolean =
             !skeletonView.isVisible && dataSource?.phoneHeaderView?.isAnimating != true
+
+        override fun onLayoutCompleted(state: RecyclerView.State) {
+            super.onLayoutCompleted(state)
+            updateCollapseGap()
+        }
     }.apply {
         isSmoothScrollbarEnabled = true
     }
@@ -449,6 +675,8 @@ class ActivityListView<T>(
                 dataSource.heavyAnimationInProgress()
                 if (recyclerView.computeVerticalScrollOffset() == 0) {
                     delegate?.pauseBlurViews()
+                } else {
+                    delegate?.pauseBottomBlurViewsOnBottomEdge()
                 }
             } else {
                 dataSource.executeWithLowPriority {
@@ -461,6 +689,53 @@ class ActivityListView<T>(
         }
     }
 
+    // Rounds the bottom corners of the activities card by painting the page background outside
+    // the corner radius, over whatever row currently ends the card. The card's last row changes
+    // and animates its height (rows collapsing out, the "Show All" row revealing), so a corner
+    // painted by any single cell would jump; this overlay follows the card's bottom edge every
+    // frame instead.
+    private val activityCardBottomCornerDecoration = object : RecyclerView.ItemDecoration() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stripPath = Path()
+        private val cardPath = Path()
+
+        override fun onDrawOver(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+            super.onDrawOver(canvas, parent, state)
+            if (!usesCardSections) return
+            val cardRowCount = recyclerViewNumberOfItems(parent, TRANSACTION_SECTION) +
+                recyclerViewNumberOfItems(parent, EMPTY_VIEW_SECTION)
+            if (cardRowCount == 0) return
+            val firstCardPosition = recyclerViewNumberOfItems(parent, HEADER_SECTION) +
+                recyclerViewNumberOfItems(parent, MULTISIG_WARNING_SECTION) +
+                recyclerViewNumberOfItems(parent, ASSETS_SECTION)
+            val lastCardPosition = firstCardPosition + cardRowCount - 1
+            val lastCardChild = (0 until parent.childCount)
+                .map { parent.getChildAt(it) }
+                .firstOrNull { parent.getChildAdapterPosition(it) == lastCardPosition }
+                ?: return
+            val radius = ViewConstants.BLOCK_RADIUS.dp
+            val bottom = lastCardChild.bottom + lastCardChild.translationY
+            val left = lastCardChild.left.toFloat()
+            val right = lastCardChild.right.toFloat()
+            if (bottom - radius >= parent.height || right <= left) return
+            stripPath.reset()
+            stripPath.addRect(left, bottom - radius, right, bottom, Path.Direction.CW)
+            cardPath.reset()
+            cardPath.addRoundRect(
+                left,
+                bottom - 2 * radius,
+                right,
+                bottom,
+                radius,
+                radius,
+                Path.Direction.CW
+            )
+            stripPath.op(cardPath, Path.Op.DIFFERENCE)
+            paint.color = WColor.SecondaryBackground.color
+            canvas.drawPath(stripPath, paint)
+        }
+    }
+
     private var isShowingRecyclerView = false
     val recyclerView: WRecyclerView by lazy {
         WRecyclerView(context).apply {
@@ -468,6 +743,7 @@ class ActivityListView<T>(
             clipToPadding = false
             adapter = rvAdapter
             setLayoutManager(rvLayoutManager)
+            addItemDecoration(activityCardBottomCornerDecoration)
             addOnScrollListener(scrollListener)
             setOnOverScrollListener { isTouchActive, newState, suggestedOffset, velocity ->
                 val dataSource = dataSource ?: return@setOnOverScrollListener
@@ -508,6 +784,7 @@ class ActivityListView<T>(
                             }
                         expandingProgrammatically = false
                         ignoreScrolls = true
+                        updateCollapseGap()
                         recyclerView.scrollBy(0, newOffset)
                         recyclerView.post {
                             recyclerView.smoothScrollBy(
@@ -567,7 +844,10 @@ class ActivityListView<T>(
                 TRANSACTION_SMALL_FIRST_IN_DAY_CELL,
                 EMPTY_VIEW_CELL,
                 BLACK_CELL,
-                SKELETON_CELL
+                SKELETON_CELL,
+                TOKENS_CELL,
+                ACTIVITY_TITLE_CELL,
+                SHOW_ALL_ACTIVITIES_CELL
             )
         ).apply {
             setHasStableIds(true)
@@ -620,6 +900,154 @@ class ActivityListView<T>(
 
     val stickyCells = setOf(headerCell, actionsCell)
     var assetsCell: IHomeAssetsCell? = null
+    var tokensCell: HomeTokensCell? = null
+
+    private val activityTitleCell: HeaderCell by lazy {
+        HeaderCell(context).apply {
+            configure(
+                LocaleController.getString("Activity"),
+                titleColor = WColor.Tint,
+                topRounding = HeaderCell.TopRounding.NORMAL
+            )
+        }
+    }
+
+    private val showAllActivitiesCell: WCell by lazy {
+        WCell(
+            context,
+            ViewGroup.LayoutParams(LayoutParams.MATCH_PARENT, SHOW_ALL_ROW_HEIGHT.dp)
+        ).apply {
+            val showAllView = ShowAllView(context).apply {
+                configure(
+                    icon = org.mytonwallet.app_air.icons.R.drawable.ic_show_all,
+                    text = LocaleController.getString("Show All Actions")
+                )
+                setCounter(null)
+                onTap = { openAllActivities() }
+                onMenuTap = { anchorView -> presentActivitiesTopLimitMenu(anchorView) }
+            }
+            addView(showAllView, LayoutParams(LayoutParams.MATCH_PARENT, SHOW_ALL_ROW_HEIGHT.dp))
+            setConstraints {
+                toTop(showAllView)
+                toCenterX(showAllView)
+            }
+        }
+    }
+
+    // The "Show All" row entered the card on the latest update (activities outgrew the card):
+    // its next bind reveals it by growing from the card's corner instead of popping in.
+    private var pendingShowAllRowReveal = false
+    private var showAllRowShown = false
+    private var showAllRowRevealAnimation: SpringAnimation? = null
+
+    private fun revealShowAllActivitiesRow() {
+        val targetHeight = SHOW_ALL_ROW_HEIGHT.dp
+        val content = showAllActivitiesCell.getChildAt(0)
+        showAllRowRevealAnimation?.cancel()
+        if (!WGlobalStorage.getAreAnimationsActive()) {
+            resetShowAllActivitiesRow()
+            return
+        }
+        val startHeight = 0f
+        showAllActivitiesCell.updateLayoutParams { height = startHeight.toInt() }
+        content?.alpha = 0f
+        // Content fades in over the last 30% of the growth, mirroring the activity row reveal.
+        val fadeStartHeight = 0.7f * targetHeight
+        val fadeRange = targetHeight - fadeStartHeight
+        showAllRowRevealAnimation = SpringAnimation(FloatValueHolder()).apply {
+            setStartValue(startHeight)
+            spring = SpringForce(targetHeight.toFloat()).apply {
+                stiffness = 500f
+                dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+            }
+            addUpdateListener { _, value, _ ->
+                showAllActivitiesCell.updateLayoutParams { height = value.toInt() }
+                content?.alpha = ((value - fadeStartHeight) / fadeRange).coerceIn(0f, 1f)
+            }
+            addEndListener { _, canceled, _, _ ->
+                if (!canceled) resetShowAllActivitiesRow()
+            }
+        }
+        showAllRowRevealAnimation?.start()
+    }
+
+    private fun resetShowAllActivitiesRow() {
+        val targetHeight = SHOW_ALL_ROW_HEIGHT.dp
+        if (showAllActivitiesCell.layoutParams.height != targetHeight) {
+            showAllActivitiesCell.updateLayoutParams { height = targetHeight }
+        }
+        showAllActivitiesCell.getChildAt(0)?.alpha = 1f
+    }
+
+    private fun updateActivityCardCellsTheme() {
+        activityTitleCell.updateTheme()
+        showAllActivitiesCell.setBackgroundColor(
+            WColor.Background.color,
+            0f,
+            ViewConstants.BLOCK_RADIUS.dp,
+            true
+        )
+        (showAllActivitiesCell.getChildAt(0) as? ShowAllView)?.updateTheme()
+    }
+
+    private fun openAllActivities() {
+        val dataSource = dataSource ?: return
+        val accountId = showingAccountId ?: return
+        val window = dataSource.window ?: return
+        val navVC = WNavigationController(
+            window,
+            WNavigationController.PresentationConfig.PreferredFullScreen
+        )
+        navVC.setRoot(
+            AllActivitiesVC(context, accountId) { transaction ->
+                delegate?.onTransactionTap(accountId, transaction)
+            }
+        )
+        window.present(navVC)
+    }
+
+    private fun presentActivitiesTopLimitMenu(anchorView: View) {
+        val accountId = showingAccountId ?: return
+        homeActivitiesLimit = WGlobalStorage.getHomeActivitiesTopLimit(accountId)
+        val items = HOME_ACTIVITIES_TOP_LIMITS.map { option ->
+            WMenuPopup.Item(
+                WMenuPopup.Item.Config.SelectableItem(
+                    title = LocaleController.getString("Top $option"),
+                    subtitle = null,
+                    isSelected = homeActivitiesLimit == option
+                ),
+                hasSeparator = false
+            ) {
+                setHomeActivitiesTopLimit(option)
+            }
+        }
+        WMenuPopup.present(
+            anchorView,
+            items,
+            popupWidth = LayoutParams.WRAP_CONTENT,
+            positioning = WMenuPopup.Positioning.ALIGNED,
+            centerHorizontally = true,
+            windowBackgroundStyle = WMenuPopup.BackgroundStyle.Cutout.fromView(
+                anchorView,
+                roundRadius = 16f.dp
+            ),
+            backdropStyle = WMenuPopup.BackdropStyle.Transparent,
+            usePillShadow = true
+        )
+    }
+
+    private fun setHomeActivitiesTopLimit(limit: Int) {
+        val accountId = showingAccountId ?: return
+        if (limit == homeActivitiesLimit) return
+        val isReducing = limit < homeActivitiesLimit
+        homeActivitiesLimit = limit
+        WGlobalStorage.setHomeActivitiesTopLimit(accountId, limit)
+        clearRemovingActivities()
+        showAllRowShown = showsShowAllActivitiesRow
+        oldDisplayedTransactions = showingTransactions?.take(displayedTransactionsCount)
+        reloadData()
+        if (isReducing) scrollAssetsCellToVisible(activityTitleCell)
+    }
 
     private val showMultisigWarning: Boolean
         get() {
@@ -732,8 +1160,22 @@ class ActivityListView<T>(
                 onForceEndReorderingRequested = onForceEndReorderingRequested,
                 onSelectionRequested = onSelectionRequested,
                 onSelectionChanged = onSelectionChanged,
-                onDetailsOpened = onDetailsOpened
-            )
+                onDetailsOpened = onDetailsOpened,
+                excludeTokens = usesCardSections
+            ).also { collectiblesCell ->
+                if (usesCardSections) {
+                    tokensCell = HomeTokensCell(
+                        context,
+                        pool = pool,
+                        showingAccountId = showingAccountId ?: "",
+                        collectiblesHost = collectiblesCell,
+                        heightChanged = heightChanged,
+                        onAssetsShown = onAssetsShown
+                    ).apply {
+                        onScrollToVisibleRequested = { scrollAssetsCellToVisible(this) }
+                    }
+                }
+            }
         }
         cell.onScrollToVisibleRequested = { scrollAssetsCellToVisible() }
         return cell
@@ -749,6 +1191,7 @@ class ActivityListView<T>(
             )
         )
         addView(skeletonView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        insetsUpdated()
     }
 
     override fun onAttachedToWindow() {
@@ -771,16 +1214,25 @@ class ActivityListView<T>(
     override fun updateTheme() {
         rvAdapter.updateTheme()
         rvSkeletonAdapter.updateTheme()
+        tokensCell?.updateTheme()
+        if (usesCardSections) updateActivityCardCellsTheme()
     }
 
     fun insetsUpdated() {
         val startInset = dataSource?.systemBarStartInset ?: 0
         val endInset = dataSource?.systemBarEndInset ?: 0
+        val navigationController = dataSource?.navigationController
+        // The card layout ends with the "Show All" row, which must clear the floating bottom bar.
+        baseBottomPadding = if (usesCardSections) {
+            (navigationController?.bottomInset ?: 0) + ViewConstants.GAP.dp
+        } else {
+            navigationController?.getSystemBars()?.bottom ?: 0
+        }
         recyclerView.setPaddingLocalized(
             ViewConstants.HORIZONTAL_PADDINGS.dp + additionalTabletPadding + startInset,
             recyclerView.paddingTop,
             ViewConstants.HORIZONTAL_PADDINGS.dp + endInset,
-            dataSource?.navigationController?.getSystemBars()?.bottom ?: 0
+            baseBottomPadding + collapseGap
         )
         skeletonRecyclerView.setPaddingLocalized(
             ViewConstants.HORIZONTAL_PADDINGS.dp + additionalTabletPadding + startInset,
@@ -788,6 +1240,46 @@ class ActivityListView<T>(
             ViewConstants.HORIZONTAL_PADDINGS.dp + endInset,
             dataSource?.navigationController?.getSystemBars()?.bottom ?: 0
         )
+    }
+
+    // Bottom padding that lets short card content scroll far enough to collapse the header.
+    private var baseBottomPadding = 0
+    private var collapseGap = 0
+
+    private fun updateCollapseGap() {
+        val gap = if (usesCardSections) computeCollapseGap() else 0
+        if (gap == collapseGap) return
+        collapseGap = gap
+        recyclerView.updatePadding(bottom = baseBottomPadding + collapseGap)
+    }
+
+    private fun computeCollapseGap(): Int {
+        val dataSource = dataSource ?: return 0
+        val itemCount = recyclerView.adapter?.itemCount ?: 0
+        if (itemCount == 0 || recyclerView.height <= 0) return 0
+        val contentBottom = rvLayoutManager.findViewByPosition(itemCount - 1)?.let { last ->
+            if (removingEmptyCell) {
+                rvLayoutManager.getDecoratedTop(last)
+            } else {
+                rvLayoutManager.getDecoratedBottom(last)
+            }
+        } ?: rvLayoutManager.estimateContentBottom(
+            if (removingEmptyCell) itemCount - 1 else itemCount
+        ) ?: return 0
+        val currentOffset = recyclerView.computeVerticalScrollOffset()
+        val contentTop = recyclerView.paddingTop - currentOffset
+        val scrollable = contentBottom - contentTop +
+            recyclerView.paddingTop + baseBottomPadding - recyclerView.height
+        val header = dataSource.phoneHeaderView
+        val collapseOffset = recyclerView.paddingTop +
+            if (dataSource.recyclerViewModeValue() == HomeHeaderView.Mode.Expanded) {
+                header.diffPx.roundToInt() + header.collapseExtraScrollPx
+            } else if (header.mode == HomeHeaderView.Mode.Expanded) {
+                header.diffPx.roundToInt()
+            } else {
+                0
+            }
+        return (max(collapseOffset, currentOffset) - scrollable).coerceAtLeast(0)
     }
 
     private fun updateHeaderCellHeight() {
@@ -980,6 +1472,14 @@ class ActivityListView<T>(
                             (correctionOffset - scrollOffset).toInt()
                         )
                     }
+                } else if (usesCardSections) {
+                    recyclerView.scrollBy(0, -correctionOffset.toInt())
+                    val remainder = scrollOffset - correctionOffset.toInt()
+                    if (remainder <= dataSource.phoneHeaderView.collapseExtraScrollPx) {
+                        recyclerView.smoothScrollBy(0, -remainder)
+                    } else {
+                        adjustScrollingPosition()
+                    }
                 } else {
                     if (rvLayoutManager.findLastVisibleItemPosition() < rvAdapter.itemCount - 1) {
                         recyclerView.scrollBy(
@@ -995,6 +1495,7 @@ class ActivityListView<T>(
             if (dataSource.phoneHeaderView.mode == HomeHeaderView.Mode.Expanded) {
                 recyclerView.removeOverScroll()
             }
+            updateCollapseGap()
         }
     }
 
@@ -1017,7 +1518,13 @@ class ActivityListView<T>(
                     val canGoDown = recyclerView.canScrollVertically(1)
                     if (!canGoDown) return true
                     val adjustment =
-                        if (scrollOffset < 46.dp) -scrollOffset else 92.dp - scrollOffset
+                        if (!dataSource.activityListShouldSnapCollapsedHeader() ||
+                            scrollOffset < 46.dp
+                        ) {
+                            -scrollOffset
+                        } else {
+                            92.dp - scrollOffset
+                        }
                     if (adjustment != 0) {
                         recyclerView.smoothScrollBy(0, adjustment)
                         return true
@@ -1030,10 +1537,55 @@ class ActivityListView<T>(
 
     private var oldTransactions: Set<String>? = null
     private var oldTransactionsFirstDt: Date? = null
+
+    // Activities rendered in the capped card before the latest update, in display order.
+    private var oldDisplayedTransactions: List<MApiTransaction>? = null
     private var isApplyingUpdate = false
+
+    // Off-screen lists defer data refreshes until they become visible again
+    private var pendingTransactionsUpdate = false
+
+    fun markTransactionsDirty() {
+        pendingTransactionsUpdate = true
+    }
+
+    override fun onVisibilityAggregated(isVisible: Boolean) {
+        super.onVisibilityAggregated(isVisible)
+        if (isVisible && pendingTransactionsUpdate) {
+            transactionsUpdated(isUpdateEvent = false)
+        }
+    }
+
     fun transactionsUpdated(isUpdateEvent: Boolean) {
         if (showingAccountId == null) return
+        pendingTransactionsUpdate = false
         updateSkeletonState(animated = true)
+        if (usesCardSections) {
+            val previouslyDisplayed = oldDisplayedTransactions
+            if (isUpdateEvent && previouslyDisplayed != null) {
+                queueRemovedActivities(previouslyDisplayed)
+                if (previouslyDisplayed.isEmpty() && displayedTransactionsCount > 0) {
+                    removingEmptyCell = true
+                    removalFallbackHandler.postDelayed(
+                        { finishRemovingEmptyCell() },
+                        REMOVE_ANIMATION_FALLBACK_MS
+                    )
+                }
+            }
+            val showsRowNow = showsShowAllActivitiesRow
+            pendingShowAllRowReveal = isUpdateEvent &&
+                showsRowNow &&
+                !showAllRowShown &&
+                previouslyDisplayed != null
+            showAllRowShown = showsRowNow
+            oldDisplayedTransactions =
+                showingTransactions?.take(displayedTransactionsCount)
+        } else {
+            clearRemovingActivities()
+            pendingShowAllRowReveal = false
+            showAllRowShown = false
+            oldDisplayedTransactions = null
+        }
         val shouldReloadActionsCellHeight = tabletActionsView?.isScrolling != true
         val shouldReloadAssetsCellHeight = assetsCell?.isDraggingCollectible != true
         val shouldShowActions = dataSource?.activityListReserveActionsCell()
@@ -1108,20 +1660,28 @@ class ActivityListView<T>(
                         false
                     ) {
                         0
+                    } else if (usesCardSections) {
+                        if (showsCollectiblesCard) 4 else 2
                     } else {
                         2
                     }
 
-                    TRANSACTION_SECTION -> if ((showingTransactions?.size ?: 0) > 0) {
+                    TRANSACTION_SECTION -> if (usesCardSections) {
+                        // Title row + capped activities + "Show All" row.
+                        if (showingTransactions == null) {
+                            0
+                        } else {
+                            1 + displayedTransactionsCount + removingTransactionsCount +
+                                (if (showsShowAllActivitiesRow) 1 else 0)
+                        }
+                    } else if ((showingTransactions?.size ?: 0) > 0) {
                         showingTransactions!!.size
                     } else {
                         0
                     }
 
                     EMPTY_VIEW_SECTION -> {
-                        if (
-                            showingTransactions?.isEmpty() == true
-                        ) {
+                        if (showingTransactions?.isEmpty() == true || removingEmptyCell) {
                             1
                         } else {
                             0
@@ -1129,7 +1689,7 @@ class ActivityListView<T>(
                     }
 
                     LOADING_SECTION -> {
-                        1
+                        if (usesCardSections) 0 else 1
                     }
 
                     else -> throw Error()
@@ -1159,7 +1719,15 @@ class ActivityListView<T>(
                     }
 
                     ASSETS_SECTION -> {
-                        if (indexPath.row == 0) ASSETS_CELL else BLACK_CELL
+                        if (usesCardSections) {
+                            when (indexPath.row) {
+                                0 -> TOKENS_CELL
+                                2 -> ASSETS_CELL
+                                else -> BLACK_CELL
+                            }
+                        } else {
+                            if (indexPath.row == 0) ASSETS_CELL else BLACK_CELL
+                        }
                     }
 
                     EMPTY_VIEW_SECTION -> {
@@ -1171,16 +1739,28 @@ class ActivityListView<T>(
                     }
 
                     else -> {
-                        val tx = showingTransactions?.getOrNull(indexPath.row)
+                        if (usesCardSections) {
+                            if (indexPath.row == 0) return ACTIVITY_TITLE_CELL
+                            if (indexPath.row >
+                                displayedTransactionsCount + removingTransactionsCount
+                            ) {
+                                return SHOW_ALL_ACTIVITIES_CELL
+                            }
+                        }
+                        val index = transactionIndex(indexPath.row)
+                        val tx = activityAt(index)
                         tx?.let { transaction ->
                             if (transaction.isNft ||
                                 (transaction as? MApiTransaction.Transaction)?.hasComment == true
                             ) {
                                 TRANSACTION_CELL
-                            } else if (indexPath.row == 0 ||
-                                !transaction.dt.isSameDayAs(
-                                    showingTransactions!![indexPath.row - 1].dt
-                                )
+                            } else if (!usesCardSections &&
+                                (
+                                    index == 0 ||
+                                        !transaction.dt.isSameDayAs(
+                                            showingTransactions!![index - 1].dt
+                                        )
+                                    )
                             ) {
                                 TRANSACTION_SMALL_FIRST_IN_DAY_CELL
                             } else {
@@ -1204,6 +1784,8 @@ class ActivityListView<T>(
                                 1 -> SKELETON_HEADER_CELL
                                 else -> SKELETON_CELL
                             }
+                        } else if (usesCardSections) {
+                            SKELETON_CELL
                         } else {
                             if (indexPath.row == 0) SKELETON_HEADER_CELL else SKELETON_CELL
                         }
@@ -1243,15 +1825,32 @@ class ActivityListView<T>(
                         assetsCell!!.asCell
                     }
 
+                    TOKENS_CELL -> {
+                        if (assetsCell == null) assetsCell = createAssetsCell(dataSource)
+                        tokensCell!!
+                    }
+
+                    ACTIVITY_TITLE_CELL -> {
+                        activityTitleCell
+                    }
+
+                    SHOW_ALL_ACTIVITIES_CELL -> {
+                        showAllActivitiesCell
+                    }
+
                     TRANSACTION_CELL -> {
                         val cell = ActivityCell(
                             recyclerView,
                             withoutTagAndComment = false,
                             isFirstInDay = null
                         )
+                        cell.showsInlineDate = usesCardSections
                         cell.allowNftMenu = true
                         cell.onTap = { transaction ->
                             delegate?.onTransactionTap(showingAccountId!!, transaction)
+                        }
+                        cell.onRemoved = { transaction ->
+                            finishRemovingActivity(transaction.getStableId())
                         }
                         cell
                     }
@@ -1262,9 +1861,13 @@ class ActivityListView<T>(
                             withoutTagAndComment = true,
                             isFirstInDay = false
                         )
+                        cell.showsInlineDate = usesCardSections
                         cell.allowNftMenu = true
                         cell.onTap = { transaction ->
                             delegate?.onTransactionTap(showingAccountId!!, transaction)
+                        }
+                        cell.onRemoved = { transaction ->
+                            finishRemovingActivity(transaction.getStableId())
                         }
                         cell
                     }
@@ -1330,7 +1933,8 @@ class ActivityListView<T>(
     ) {
         when (rv) {
             recyclerView -> {
-                if (indexPath.section == TRANSACTION_SECTION &&
+                if (!usesCardSections &&
+                    indexPath.section == TRANSACTION_SECTION &&
                     indexPath.row >= (showingTransactions?.size ?: 0) - 20
                 ) {
                     activityLoader?.useBudgetTransactions()
@@ -1360,10 +1964,16 @@ class ActivityListView<T>(
                     }
 
                     ASSETS_SECTION -> {
-                        if (indexPath.row == 0) {
+                        val isCardCell =
+                            indexPath.row == 0 || (usesCardSections && indexPath.row == 2)
+                        if (isCardCell) {
                             cellHolder.cell.visibility =
                                 if (showingTransactions == null) INVISIBLE else VISIBLE
-                            assetsCell?.configure(showingAccountId)
+                            if (cellHolder.cell === tokensCell) {
+                                tokensCell?.configure(showingAccountId)
+                            } else {
+                                assetsCell?.configure(showingAccountId)
+                            }
                         } else {
                             val layoutParams = cellHolder.cell.layoutParams
                             layoutParams.height = ViewConstants.GAP.dp
@@ -1372,26 +1982,59 @@ class ActivityListView<T>(
                     }
 
                     TRANSACTION_SECTION -> {
-                        if (indexPath.row < showingTransactions!!.size) {
-                            val transactionCell = cellHolder.cell as ActivityCell
-                            val transaction = showingTransactions!![indexPath.row]
-                            val isFirstInDay = indexPath.row == 0 || !transaction.dt.isSameDayAs(
-                                showingTransactions!![indexPath.row - 1].dt
+                        val index = transactionIndex(indexPath.row)
+                        val lastIndex = displayedTransactionsCount - 1
+                        if (usesCardSections && cellHolder.cell !is ActivityCell) {
+                            updateActivityCardCellsTheme()
+                            if (cellHolder.cell === showAllActivitiesCell) {
+                                if (pendingShowAllRowReveal) {
+                                    pendingShowAllRowReveal = false
+                                    revealShowAllActivitiesRow()
+                                } else if (showAllRowRevealAnimation?.isRunning != true) {
+                                    resetShowAllActivitiesRow()
+                                }
+                            }
+                        } else if (isRemovingActivityIndex(index)) {
+                            (cellHolder.cell as ActivityCell).configure(
+                                transaction = removingTransactions[
+                                    index -
+                                        displayedTransactionsCount
+                                ],
+                                accountId = showingAccountId!!,
+                                isMultichain = isShowingAccountMultichain,
+                                positioning = ActivityCell.Positioning(
+                                    isFirst = false,
+                                    isFirstInDay = false,
+                                    isLastInDay = true,
+                                    isLast = false,
+                                    isRemoving = true
+                                )
                             )
+                        } else if (index <= lastIndex) {
+                            val transactionCell = cellHolder.cell as ActivityCell
+                            val transaction = showingTransactions!![index]
+                            val isFirstInDay = !usesCardSections &&
+                                (
+                                    index == 0 ||
+                                        !transaction.dt.isSameDayAs(
+                                            showingTransactions!![index - 1].dt
+                                        )
+                                    )
                             transactionCell.configure(
                                 transaction = transaction,
                                 accountId = showingAccountId!!,
                                 isMultichain = isShowingAccountMultichain,
                                 positioning = ActivityCell.Positioning(
-                                    isFirst = indexPath.row == 0,
+                                    isFirst = index == 0 && !usesCardSections,
                                     isFirstInDay = isFirstInDay,
                                     isLastInDay =
-                                        (indexPath.row == showingTransactions!!.size - 1) ||
+                                        (index == lastIndex) ||
                                             !transaction.dt.isSameDayAs(
-                                                showingTransactions!![indexPath.row + 1].dt
+                                                showingTransactions!![index + 1].dt
                                             ),
                                     isLast =
-                                        indexPath.row == showingTransactions!!.size - 1 &&
+                                        !usesCardSections &&
+                                            index == lastIndex &&
                                             activityLoader?.loadedAll != false,
                                     isAdded = isApplyingUpdate &&
                                         oldTransactions?.contains(
@@ -1404,7 +2047,8 @@ class ActivityListView<T>(
                                                     !transaction.dt.isSameDayAs(
                                                         oldTransactionsFirstDt!!
                                                     )
-                                                )
+                                                ),
+                                    revealsFromZero = usesCardSections
                                 )
                             )
                         } else {
@@ -1418,16 +2062,53 @@ class ActivityListView<T>(
                     EMPTY_VIEW_SECTION -> {
                         (cellHolder.cell as EmptyCell).let { cell ->
                             cell.updateTheme()
-                            val systemBars = dataSource?.navigationController?.getSystemBars()
-                            val occupiedHeight =
-                                (systemBars?.top ?: 0) +
-                                    (systemBars?.bottom ?: 0) +
-                                    75.dp + // TabBar
-                                    HomeHeaderView.navDefaultHeight +
-                                    ViewConstants.GAP.dp +
-                                    (assetsCell?.asCell?.height ?: 0)
-                            cell.layoutParams = cell.layoutParams.apply {
-                                height = (dataSource?.view?.parent as View).height - occupiedHeight
+                            if (usesCardSections) {
+                                cell.setBackgroundColor(
+                                    WColor.Background.color,
+                                    0f,
+                                    ViewConstants.BLOCK_RADIUS.dp,
+                                    true
+                                )
+                                if (removingEmptyCell) {
+                                    collapseEmptyCell(cell)
+                                    return@let
+                                }
+                                emptyCellCollapseAnimation?.cancel()
+                                cell.emptyView.alpha = 1f
+                                // Fill the viewport below the collapsed header so the list can
+                                // still scroll far enough to collapse the card.
+                                val systemBars = dataSource?.navigationController?.getSystemBars()
+                                val occupiedHeight =
+                                    (systemBars?.top ?: 0) +
+                                        (dataSource?.phoneHeaderView?.collapsedHeight ?: 0) +
+                                        (tokensCell?.height ?: 0) + ViewConstants.GAP.dp +
+                                        (
+                                            if (showsCollectiblesCard) {
+                                                (assetsCell?.asCell?.height ?: 0) +
+                                                    ViewConstants.GAP.dp
+                                            } else {
+                                                0
+                                            }
+                                            ) +
+                                        activityTitleCell.height +
+                                        recyclerView.paddingBottom
+                                cell.layoutParams = cell.layoutParams.apply {
+                                    height = (recyclerView.height - occupiedHeight)
+                                        .coerceAtLeast(160.dp)
+                                }
+                            } else {
+                                val systemBars = dataSource?.navigationController?.getSystemBars()
+                                val occupiedHeight =
+                                    (systemBars?.top ?: 0) +
+                                        (systemBars?.bottom ?: 0) +
+                                        75.dp + // TabBar
+                                        HomeHeaderView.navDefaultHeight +
+                                        ViewConstants.GAP.dp +
+                                        (assetsCell?.asCell?.height ?: 0)
+                                cell.layoutParams = cell.layoutParams.apply {
+                                    height =
+                                        (dataSource?.view?.parent as View).height - occupiedHeight
+                                }
                             }
                         }
                     }
@@ -1468,7 +2149,11 @@ class ActivityListView<T>(
 
                     is SkeletonCell -> {
                         (cellHolder.cell as SkeletonCell).apply {
-                            configure(indexPath.row, isFirst = false, isLast = false)
+                            configure(
+                                indexPath.row,
+                                isFirst = usesCardSections && indexPath.row == 0,
+                                isLast = false
+                            )
                             updateTheme()
                         }
                     }
@@ -1492,8 +2177,14 @@ class ActivityListView<T>(
                     }
 
                     TRANSACTION_SECTION -> {
-                        if (indexPath.row < (showingTransactions?.size ?: 0)) {
-                            showingTransactions!![indexPath.row].getStableId()
+                        if (usesCardSections && indexPath.row == 0) return "activity_title"
+                        val index = transactionIndex(indexPath.row)
+                        if (index < displayedTransactionsCount) {
+                            showingTransactions!![index].getStableId()
+                        } else if (isRemovingActivityIndex(index)) {
+                            "removing_" + activityAt(index)!!.getStableId()
+                        } else if (usesCardSections) {
+                            "activity_show_all"
                         } else {
                             null
                         }
@@ -1519,6 +2210,10 @@ class ActivityListView<T>(
     }
 
     override fun activityLoaderLoadedAll() {
+        if (usesCardSections) {
+            showAllRowShown = showsShowAllActivitiesRow
+            oldDisplayedTransactions = showingTransactions?.take(displayedTransactionsCount)
+        }
         reloadData()
     }
 }

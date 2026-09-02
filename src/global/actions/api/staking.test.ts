@@ -26,6 +26,9 @@ const MY_STATE = {
 const TON_STATE = {
   id: 'ton-1', type: 'liquid', tokenSlug: TONCOIN.slug, balance: 0n,
 } as unknown as ApiStakingState;
+const TON_ALT_STATE = {
+  id: 'ton-2', type: 'nominators', tokenSlug: TONCOIN.slug, balance: 0n,
+} as unknown as ApiStakingState;
 
 function makeGlobal(stakingId?: string): GlobalState {
   return {
@@ -33,7 +36,12 @@ function makeGlobal(stakingId?: string): GlobalState {
     accounts: { byId: { acc: { title: 'Test', type: 'mnemonic', byChain: {} } } },
     auth: { accounts: [] },
     byAccountId: {
-      acc: { staking: { stateById: { 'my-1': MY_STATE, 'ton-1': TON_STATE }, stakingId } },
+      acc: {
+        staking: {
+          stateById: { 'my-1': MY_STATE, 'ton-1': TON_STATE, 'ton-2': TON_ALT_STATE },
+          stakingId,
+        },
+      },
     },
     stakingDefault: TON_STATE,
     currentStaking: {},
@@ -51,7 +59,11 @@ describe('startStaking action', () => {
     });
   });
 
-  function run(global: GlobalState, payload?: { tokenSlug?: string }) {
+  function run(global: GlobalState, payload?: {
+    stakingId?: string;
+    tokenSlug?: string;
+    initialAmount?: bigint | 'all';
+  }) {
     store = global;
     getHandler('startStaking')(store, {}, payload);
     return store;
@@ -70,6 +82,41 @@ describe('startStaking action', () => {
   it('opens the stake form for an allowed token', () => {
     const result = run(makeGlobal('ton-1'), { tokenSlug: TONCOIN.slug });
     expect(result.currentStaking.state).toBe(StakingState.StakeInitial);
+  });
+
+  it('selects the exact product and preserves an exact amount prefill', () => {
+    const result = run(makeGlobal('ton-1'), {
+      stakingId: 'ton-2',
+      tokenSlug: TONCOIN.slug,
+      initialAmount: 10_000_000_000n,
+    });
+
+    expect(result.byAccountId.acc.staking?.stakingId).toBe('ton-2');
+    expect(result.currentStaking).toMatchObject({
+      state: StakingState.StakeInitial,
+      initialAmount: 10_000_000_000n,
+    });
+  });
+
+  it('preserves an all-balance prefill for the exact product', () => {
+    const result = run(makeGlobal('ton-1'), {
+      stakingId: 'ton-1',
+      tokenSlug: TONCOIN.slug,
+      initialAmount: 'all',
+    });
+
+    expect(result.currentStaking.initialAmount).toBe('all');
+  });
+
+  it('rejects a mismatched product and asset pair', () => {
+    const result = run(makeGlobal('ton-1'), {
+      stakingId: 'ton-1',
+      tokenSlug: MYCOIN_MAINNET.slug,
+      initialAmount: 1n,
+    });
+
+    expect(result.currentStaking.state).not.toBe(StakingState.StakeInitial);
+    expect(setGlobal).not.toHaveBeenCalled();
   });
 
   it('refuses to build a stake draft when the current position is blocked', async () => {

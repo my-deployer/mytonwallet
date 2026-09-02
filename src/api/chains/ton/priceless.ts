@@ -1,5 +1,6 @@
 import type { ApiNetwork, ApiTokenWithPrice } from '../../types';
 
+import { raceWithAbortSignal, throwIfAborted } from '../../../util/abortSignal';
 import { buildCollectionByKey } from '../../../util/iteratees';
 import { logDebugError } from '../../../util/logs';
 import { getTokensCache, tokensPreload, updateTokens } from '../../common/tokens';
@@ -9,8 +10,9 @@ export async function updateTokenHashes(
   network: ApiNetwork,
   tokenSlugs: string[],
   sendUpdateTokens?: NoneToVoidFunction,
+  signal?: AbortSignal,
 ) {
-  await tokensPreload.promise;
+  await raceWithAbortSignal(tokensPreload.promise, signal);
   const cachedTokens = getTokensCache().bySlug;
 
   const tokensToFetch = tokenSlugs.reduce<ApiTokenWithPrice[]>((tokensToFetch, tokenSlug) => {
@@ -35,7 +37,7 @@ export async function updateTokenHashes(
   const tokensByAddress = buildCollectionByKey(tokensToFetch, 'tokenAddress');
 
   try {
-    const states = await getAccountStates(network, tokensToFetch.map((token) => token.tokenAddress!));
+    const states = await getAccountStates(network, tokensToFetch.map((token) => token.tokenAddress!), signal);
 
     for (const address of Object.keys(states)) {
       if (!tokensByAddress[address]) continue;
@@ -47,6 +49,7 @@ export async function updateTokenHashes(
       await updateTokens(updatedTokens, sendUpdateTokens, [], true);
     }
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('Failed to fetch contract code hashes for tokens', err);
   }
 }

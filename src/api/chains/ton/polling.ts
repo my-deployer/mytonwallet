@@ -12,7 +12,7 @@ import type {
   OnUpdatingStatusChange,
 } from '../../types';
 
-import { IS_MY_WALLET_BRAND, IS_STAKING_DISABLED, POPULAR_WALLET_VERSIONS, TONCOIN } from '../../../config';
+import { NO_EXTRA_FEATURES, POPULAR_WALLET_VERSIONS, TONCOIN } from '../../../config';
 import { parseAccountId } from '../../../util/account';
 import { getActivityTokenSlugs } from '../../../util/activities';
 import { areDeepEqual } from '../../../util/areDeepEqual';
@@ -45,7 +45,6 @@ import { LEDGER_WALLET_VERSIONS } from './constants';
 import { fetchDomains } from './domains';
 import { getNftUpdates, streamAllAccountNfts } from './nfts';
 import { RichActivityStream } from './richActivityStream';
-import { getBackendStakingState, getStakingStates } from './staking';
 import { importUnknownTokens } from './tokens';
 import { ActivityStream } from './toncenter';
 import { fetchVestings } from './vesting';
@@ -379,7 +378,7 @@ function setupNftPolling(accountId: string, onUpdate: OnApiUpdate) {
 }
 
 function setupStakingPolling(accountId: string, getBalances: () => Promise<ApiBalanceBySlug>, onUpdate: OnApiUpdate) {
-  if (IS_STAKING_DISABLED || parseAccountId(accountId).network !== 'mainnet') {
+  if (NO_EXTRA_FEATURES || parseAccountId(accountId).network !== 'mainnet') {
     return () => {};
   }
 
@@ -389,12 +388,14 @@ function setupStakingPolling(accountId: string, getBalances: () => Promise<ApiBa
     period: STAKING_INTERVAL,
     async poll() {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const staking = require('./staking') as typeof import('./staking');
         const [common, balances, backendState] = await Promise.all([
-          getStakingCommonCache(),
+          getStakingCommonCache('ton'),
           getBalances(),
-          getBackendStakingState(accountId),
+          staking.getBackendStakingState(accountId),
         ]);
-        const states = await getStakingStates(accountId, common, backendState, balances);
+        const states = await staking.getStakingStates(accountId, common, backendState, balances);
 
         const { shouldUseNominators, totalProfit } = backendState;
 
@@ -574,11 +575,6 @@ function setupTonDnsPolling(
 }
 
 function setupVestingPolling(accountId: string, onUpdate: OnApiUpdate) {
-  // Vesting is a MYCOIN perk, so only the My Wallet brand renders it; polling for the rest would be dead traffic
-  if (!IS_MY_WALLET_BRAND) {
-    return () => {};
-  }
-
   let lastVestingInfo: ApiVestingInfo[] | undefined;
 
   return pollingLoop({

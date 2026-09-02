@@ -1,32 +1,23 @@
-import type { LangCode } from '../../global/types';
 import type {
   StoredSessionChain } from '../dappProtocols/storage';
 import type { DappProofRequest, UnifiedSignDataPayload } from '../dappProtocols/types';
 import type {
-  ApiAnyDisplayError,
   ApiDappTransfer,
   ApiNetwork,
-  ApiSite,
-  ApiSiteCategory,
   OnApiUpdate,
 } from '../types';
-import { ApiCommonError } from '../types';
 
 import { parseAccountId } from '../../util/account';
 import isEmptyObject from '../../util/isEmptyObject';
 import { logDebugError } from '../../util/logs';
 import chains from '../chains';
-import * as ton from '../chains/ton';
 import {
-  fetchStoredWallet,
   getAccountValue,
   removeAccountValue,
   removeNetworkAccountsValue,
   setAccountValue,
 } from '../common/accounts';
-import { callBackendGet } from '../common/backend';
 import { isUpdaterAlive } from '../common/helpers';
-import { createMfaRequest } from '../common/mfa';
 import {
   migrateLegacyConnection,
   type StoredDappConnection,
@@ -193,12 +184,6 @@ export function setSseLastEventId(lastEventId: string) {
   return storage.setItem('sseLastEventId', lastEventId);
 }
 
-export function loadExploreSites(
-  { isLandscape, langCode }: { isLandscape: boolean; langCode: LangCode },
-): Promise<{ categories: ApiSiteCategory[]; sites: ApiSite[] }> {
-  return callBackendGet('/v2/dapp/catalog', { isLandscape, langCode });
-}
-
 export async function signDappProof(
   dappChains: StoredSessionChain[] = [],
   accountId: string,
@@ -245,38 +230,4 @@ export async function signDappData(
   enclaveToken?: string,
 ) {
   return await chains[dappChain.chain].dapp?.signDappData(accountId, url, payload, enclaveToken);
-}
-
-export async function createDappConnectMfaRequest(
-  accountId: string,
-  enclaveToken?: string,
-): Promise<{ mfaRequestHash: string } | { error: ApiAnyDisplayError }> {
-  try {
-    const { address: walletAddress } = await fetchStoredWallet(accountId, 'ton');
-
-    const signingResult = await ton.signTransfers(accountId, [{
-      toAddress: walletAddress,
-      amount: 0n,
-    }], enclaveToken);
-
-    if ('error' in signingResult) {
-      return signingResult;
-    }
-
-    if (!('mfaRequest' in signingResult)) {
-      return { error: ApiCommonError.Unexpected };
-    }
-
-    const { payload, signature } = signingResult.mfaRequest;
-    const { reqId } = await createMfaRequest({
-      walletAddress,
-      payload: payload.toBoc(),
-      signature,
-    });
-
-    return { mfaRequestHash: reqId };
-  } catch (err) {
-    logDebugError('createDappConnectMfaRequest', err);
-    return { error: ApiCommonError.Unexpected };
-  }
 }

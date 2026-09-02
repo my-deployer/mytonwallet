@@ -361,7 +361,7 @@ extension MTokenBalance {
     public static func displayName(apiToken: ApiToken, isStaking: Bool, strippingLabelWhenShown: Bool = false) -> String {
         let name = apiToken.displayName(strippingLabelWhenShown: strippingLabelWhenShown)
         if isStaking {
-            return lang("%token% Staking", arg1: name)
+            return L10n.tokenStaking(token: name)
         } else {
             return name
         }

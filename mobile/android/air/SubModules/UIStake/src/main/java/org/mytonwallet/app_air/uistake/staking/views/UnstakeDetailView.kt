@@ -81,9 +81,9 @@ class UnstakeDetailView(context: Context) :
         instantlyAvailableAmount?.let {
             instantWithdrawalRow.isGone = false
             instantWithdrawalRow.setValue(
-                LocaleController.getFormattedString(
-                    "Up to %1$@",
-                    listOf(instantlyAvailableAmount)
+                LocaleController.getStringWithKeyValues(
+                    "Up to %amount%",
+                    listOf("%amount%" to instantlyAvailableAmount)
                 )
             )
             receivingRow.setLast(false)

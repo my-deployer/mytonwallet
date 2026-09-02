@@ -67,9 +67,15 @@ class SearchWalletCell(
     }
 
     private var isLastItem = false
+    private var hasOpaqueBackground = true
 
-    fun configure(match: ExploreVM.MyWalletMatch, isLastItem: Boolean) {
+    fun configure(
+        match: ExploreVM.MyWalletMatch,
+        isLastItem: Boolean,
+        hasOpaqueBackground: Boolean = true
+    ) {
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         val account = match.account
         iconView.config(account)
         val name = account.name.takeIf { it.isNotEmpty() }
@@ -79,8 +85,13 @@ class SearchWalletCell(
         updateTheme()
     }
 
-    fun configure(match: ExploreVM.WalletInfoMatch, isLastItem: Boolean) {
+    fun configure(
+        match: ExploreVM.WalletInfoMatch,
+        isLastItem: Boolean,
+        hasOpaqueBackground: Boolean = true
+    ) {
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         val name = match.name?.takeIf { it.isNotEmpty() }
         iconView.config(null, name, match.address)
         titleLabel.text = name ?: match.address.formatStartEndAddress()
@@ -96,7 +107,7 @@ class SearchWalletCell(
 
     override fun updateTheme() {
         setBackgroundColor(
-            WColor.Background.color,
+            if (hasOpaqueBackground) WColor.Background.color else WColor.Transparent.color,
             0f,
             if (isLastItem) ViewConstants.BLOCK_RADIUS.dp else 0f
         )

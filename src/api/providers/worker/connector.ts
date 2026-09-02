@@ -14,13 +14,25 @@ import { createWindowProvider, createWindowProviderForExtension } from '../../..
 import { POPUP_PORT } from '../extension/config';
 
 const HEALTH_CHECK_TIMEOUT = 150;
-const HEALTH_CHECK_MIN_DELAY = 5000; // 5 sec
+// How long a worker is allowed to spend booting before silence counts as death rather than
+// as a slow start. Measured from the moment THIS worker was created.
+const WORKER_BOOT_BUDGET = 5000; // 5 sec
 
 let updateCallback: OnApiUpdate;
 let worker: Worker | undefined;
 let connector: Connector | undefined;
 let isInitialized = false;
 let initPromise: Promise<void> | undefined;
+let isHealthCheckRunning = false;
+
+/**
+ * What the health check knows about the worker currently in place. Readiness lives HERE rather
+ * than in a module flag so it cannot outlive the worker it describes: a retired worker's `init`
+ * settling late mutates the record nobody reads any more, instead of vouching for its successor.
+ */
+type WorkerState = { createdAt: number; isReady: boolean };
+
+let workerState: WorkerState = { createdAt: 0, isReady: false };
 
 export function initApi(onUpdate: OnApiUpdate, initArgs: ApiInitArgs) {
   updateCallback = onUpdate;
@@ -29,7 +41,7 @@ export function initApi(onUpdate: OnApiUpdate, initArgs: ApiInitArgs) {
     // We use process.env.IS_EXTENSION instead of IS_EXTENSION in order to remove the irrelevant code during bundling
     if (process.env.IS_EXTENSION) {
       const onReconnect = () => {
-        initPromise = connector!.init(initArgs);
+        initPromise = trackReadiness(connector!.init(initArgs));
       };
 
       connector = createExtensionConnector(POPUP_PORT, onUpdate, undefined, onReconnect);
@@ -39,6 +51,7 @@ export function initApi(onUpdate: OnApiUpdate, initArgs: ApiInitArgs) {
       worker = new Worker(
         /* webpackChunkName: "worker" */ new URL('./provider.ts', import.meta.url),
       );
+      workerState = { createdAt: Date.now(), isReady: false };
       connector = createConnector(worker, onUpdate);
 
       createWindowProvider(worker);
@@ -52,7 +65,22 @@ export function initApi(onUpdate: OnApiUpdate, initArgs: ApiInitArgs) {
     isInitialized = true;
   }
 
-  initPromise = connector.init(initArgs);
+  initPromise = trackReadiness(connector.init(initArgs));
+}
+
+/**
+ * A worker counts as ready once its `init` has settled. Until then it cannot answer a ping,
+ * and the health check must not read that silence as death.
+ */
+function trackReadiness(promise: Promise<void>) {
+  const state = workerState;
+
+  void promise.then(
+    () => { state.isReady = true; },
+    () => undefined,
+  );
+
+  return promise;
 }
 
 export async function callApi<T extends keyof AllMethods>(
@@ -72,7 +100,11 @@ export async function callApi<T extends keyof AllMethods>(
       args,
     }) as Promise<MethodResponseWithMaybePrefix<T>>);
 
-    logDebugApi(`callApi: ${fnName}`, args, result);
+    if (isAgentV2Method(fnName)) {
+      logDebugApi(`callApi: ${fnName}`, { status: 'completed' });
+    } else {
+      logDebugApi(`callApi: ${fnName}`, args, result);
+    }
 
     return result;
   } catch (err) {
@@ -81,6 +113,10 @@ export async function callApi<T extends keyof AllMethods>(
     logDebugError(`callApi: ${fnName}`, err);
     return undefined;
   }
+}
+
+export function isAgentV2Method(fnName: PropertyKey): boolean {
+  return typeof fnName === 'string' && fnName.includes('AgentV2');
 }
 
 export async function callApiWithThrow<T extends keyof AllMethods>(
@@ -95,7 +131,14 @@ export async function callApiWithThrow<T extends keyof AllMethods>(
   }) as MethodResponseWithMaybePrefix<T>);
 }
 
-const startedAt = Date.now();
+/**
+ * Whether an unanswered ping is evidence that the worker is gone. A worker that has not
+ * finished initialising is silent for a mundane reason, so silence only proves death once the
+ * worker has had its whole boot budget. Exported for the test that pins this distinction.
+ */
+export function isSilenceConclusive(isReady: boolean, workerAgeMs: number) {
+  return isReady || workerAgeMs >= WORKER_BOOT_BUDGET;
+}
 
 // Workaround for iOS sometimes stops interacting with worker
 function setupIosHealthCheck() {
@@ -107,6 +150,18 @@ function setupIosHealthCheck() {
 }
 
 async function ensureWorkerPing() {
+  // Each focus fires two checks, and a focus can arrive while an earlier one is still racing.
+  // Without this, concurrent checks each terminate in turn, so one gesture destroys a chain of
+  // workers instead of one.
+  if (isHealthCheckRunning) {
+    return;
+  }
+
+  if (!isSilenceConclusive(workerState.isReady, Date.now() - workerState.createdAt)) {
+    return;
+  }
+
+  isHealthCheckRunning = true;
   let isResolved = false;
 
   try {
@@ -118,14 +173,14 @@ async function ensureWorkerPing() {
   } catch (err) {
     logDebugError('ensureWorkerPing', err);
 
-    if (Date.now() - startedAt >= HEALTH_CHECK_MIN_DELAY) {
-      worker?.terminate();
-      worker = undefined;
-      connector = undefined;
-      initPromise = undefined;
-      updateCallback({ type: 'requestReconnectApi' });
-    }
+    worker?.terminate();
+    worker = undefined;
+    connector = undefined;
+    initPromise = undefined;
+    workerState = { createdAt: Date.now(), isReady: false };
+    updateCallback({ type: 'requestReconnectApi' });
   } finally {
     isResolved = true;
+    isHealthCheckRunning = false;
   }
 }

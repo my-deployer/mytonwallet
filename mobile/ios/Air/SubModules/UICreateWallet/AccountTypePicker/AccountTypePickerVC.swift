@@ -9,6 +9,7 @@ import SwiftUI
 import WalletContext
 import WalletCore
 import UIComponents
+import UIPasscode
 import Ledger
 
 public final class AccountTypePickerVC: CreateWalletBaseVC {
@@ -16,6 +17,7 @@ public final class AccountTypePickerVC: CreateWalletBaseVC {
     private let network: ApiNetwork
     
     private var hostingController: UIHostingController<AccountTypePickerView>?
+    private let authorizationState = AccountTypePickerAuthorizationState()
     private let navHeight: CGFloat = 60
     private let navHeader = NavigationHeader2()
     private var vcSwitchingInProgress = false
@@ -53,9 +55,94 @@ public final class AccountTypePickerVC: CreateWalletBaseVC {
     private func makeView() -> AccountTypePickerView {
         AccountTypePickerView(
             network: network,
+            authorizationState: authorizationState,
             onHeightChange: { [weak self] height in self?.onHeightChange(height) },
+            onCreate: { [weak self] in self?.createWallet() },
+            onCreateSubwallet: { [weak self] in self?.createSubwallet() },
+            onImport: { [weak self] in self?.importWallet() },
             onViewAddress: { [weak self] in self?.openAddViewWallet() },
             onLedger: { [weak self] in self?.openAddLedgerWallet() }
+        )
+    }
+
+    private func createWallet() {
+        authorize(.createWallet) { [weak self] enclaveToken in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let words = try await Api.generateMnemonic()
+                    let introModel = IntroModel(
+                        network: network,
+                        authMode: IntroAuthMode(enclaveToken: enclaveToken),
+                        words: words
+                    )
+                    let addAccountVC = WordDisplayVC(introModel: introModel, wordList: words)
+                    let title = localizedIntegerDigits(in: words.count == 24 ? lang("24 Words") : lang("12 Words"))
+                    replaceContent(with: addAccountVC, newTitle: title)
+                } catch {
+                    resetTransitionState()
+                    AppActions.showError(error: error)
+                }
+            }
+        }
+    }
+
+    private func createSubwallet() {
+        authorize(.createSubwallet) { [weak self] enclaveToken in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard let enclaveToken else {
+                    resetTransitionState()
+                    return
+                }
+                do {
+                    let account = try await AccountStore.createSubWallet(enclaveToken: enclaveToken)
+                    AppActions.showHome(popToRoot: true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                        AppActions.showToast(
+                            style: .large,
+                            icon: .symbolImage("plus"),
+                            message: lang("Subwallet Created"),
+                            actionTitle: lang("Set Name")
+                        ) {
+                            AppActions.showRenameAccount(accountId: account.id)
+                        }
+                    }
+                } catch {
+                    resetTransitionState()
+                    AppActions.showError(error: error)
+                }
+            }
+        }
+    }
+
+    private func importWallet() {
+        authorize(.importWallet) { [weak self] enclaveToken in
+            guard let self else { return }
+            let introModel = IntroModel(
+                network: network,
+                authMode: IntroAuthMode(enclaveToken: enclaveToken)
+            )
+            let importWalletVC = ImportWalletVC(introModel: introModel)
+            replaceContent(with: importWalletVC, newTitle: nil)
+        }
+    }
+
+    private func authorize(
+        _ action: AccountTypePickerAuthorizationAction,
+        onDone: @escaping (EnclaveToken?) -> Void
+    ) {
+        guard !vcSwitchingInProgress, authorizationState.begin(action) else { return }
+        vcSwitchingInProgress = true
+
+        UnlockVC.presentAuth(
+            on: self,
+            tryBiometricsBeforePresentation: true,
+            onDone: onDone,
+            cancellable: true,
+            onCancel: { [weak self] in
+                self?.resetTransitionState()
+            }
         )
     }
     
@@ -71,7 +158,7 @@ public final class AccountTypePickerVC: CreateWalletBaseVC {
     private func replaceContent(with vc: UIViewController, newTitle: String?, completion: (() -> Void)? = nil) {
         let coordinator = ContentReplaceAnimationCoordinator()
         guard coordinator.replaceContentInPresentedSheet(self, with: vc, completion: completion) else {
-            vcSwitchingInProgress = false
+            resetTransitionState()
             return 
         }
         navHeader.setTitleAnimated(newTitle ?? "")
@@ -105,6 +192,11 @@ public final class AccountTypePickerVC: CreateWalletBaseVC {
         
         let vc = AddViewWalletVC(introModel: IntroModel(network: network, authMode: .requiresPasscodeSetup))
         replaceContent(with: vc, newTitle: nil)
+    }
+
+    private func resetTransitionState() {
+        vcSwitchingInProgress = false
+        authorizationState.reset()
     }
 }
 

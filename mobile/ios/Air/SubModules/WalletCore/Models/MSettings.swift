@@ -13,6 +13,7 @@ private func settingsJsonString(from object: Any?) -> String? {
 public struct MSettings: Equatable, Hashable, Codable, Sendable, FetchableRecord, PersistableRecord {
     public static let defaultCurrentTokenPeriod = "1D"
     public static let defaultWalletTokensLimit = HomeWalletVisibleTokensLimit.defaultValue.rawValue
+    public static let defaultHomeActivityLimit = HomeActivityVisibleItemsLimit.defaultValue.rawValue
 
     public let id: Int64
     public var theme: String
@@ -33,6 +34,7 @@ public struct MSettings: Equatable, Hashable, Codable, Sendable, FetchableRecord
     // Air intentionally keeps token period shared across accounts.
     public var currentTokenPeriod: String
     public var walletTokensLimit: Int
+    public var homeActivityLimit: Int
     public var walletSettingsListLayout: String?
     public var walletSettingsCurrentFilter: String?
     public var walletSettingsFilterOrder: [String]
@@ -57,6 +59,7 @@ public struct MSettings: Equatable, Hashable, Codable, Sendable, FetchableRecord
         pushNotifications: GlobalPushNotifications? = nil,
         currentTokenPeriod: String = defaultCurrentTokenPeriod,
         walletTokensLimit: Int = defaultWalletTokensLimit,
+        homeActivityLimit: Int = defaultHomeActivityLimit,
         walletSettingsListLayout: String? = nil,
         walletSettingsCurrentFilter: String?  = nil,
         walletSettingsFilterOrder: [String] = [],
@@ -80,6 +83,7 @@ public struct MSettings: Equatable, Hashable, Codable, Sendable, FetchableRecord
         self.pushNotifications = pushNotifications
         self.currentTokenPeriod = currentTokenPeriod
         self.walletTokensLimit = HomeWalletVisibleTokensLimit(storedValue: walletTokensLimit).rawValue
+        self.homeActivityLimit = HomeActivityVisibleItemsLimit(storedValue: homeActivityLimit).rawValue
         self.walletSettingsListLayout = walletSettingsListLayout
         self.walletSettingsCurrentFilter = walletSettingsCurrentFilter
         self.walletSettingsFilterOrder = walletSettingsFilterOrder

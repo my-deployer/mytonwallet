@@ -14,13 +14,16 @@ final class ReceiveTableVC: WViewController, WSegmentedControllerContent, UIColl
 
     @AccountContext private var account: MAccount
     let chain: ApiChain
+    private let preferredBuyingToken: String?
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<Section, ReceiveItem>!
+    private var isResolvingSwapDefaults = false
 
-    public init(account: AccountContext, chain: ApiChain) {
+    public init(account: AccountContext, chain: ApiChain, preferredBuyingToken: String?) {
         self._account = account
         self.chain = chain
+        self.preferredBuyingToken = preferredBuyingToken
         super.init(nibName: nil, bundle: nil)
         title = lang("Add Crypto")
     }
@@ -80,9 +83,9 @@ final class ReceiveTableVC: WViewController, WSegmentedControllerContent, UIColl
             guard let self else { return }
             let title: String
             if isViewWalletMode {
-                title = lang("%blockchain% Address", arg1: chain.title)
+                title = L10n.blockchainAddress(blockchain: chain.title)
             } else {
-                title = lang("My %blockchain% Address", arg1: chain.title)
+                title = L10n.myBlockchainAddress(blockchain: chain.title)
             }
             var content = UIListContentConfiguration.groupedHeader()
             content.text = title
@@ -141,7 +144,7 @@ final class ReceiveTableVC: WViewController, WSegmentedControllerContent, UIColl
 
     func collectionView(_ collectionView: UICollectionView, shouldSelectItemAt indexPath: IndexPath) -> Bool {
         guard let item = dataSource.itemIdentifier(for: indexPath) else { return false }
-        return item != .address
+        return item != .address && !(item == .buyWithCrypto && isResolvingSwapDefaults)
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
@@ -153,13 +156,7 @@ final class ReceiveTableVC: WViewController, WSegmentedControllerContent, UIColl
         case .buyWithCard:
             AppActions.showBuyWithCard(accountContext: $account, chain: chain, push: true)
         case .buyWithCrypto:
-            AppActions.showSwap(
-                accountContext: $account,
-                defaultSellingToken: chain.defaultSellingSlug,
-                defaultBuyingToken: chain.defaultBuyingSlug,
-                defaultSellingAmount: nil,
-                push: true
-            )
+            showBuyWithCrypto()
         case .depositLink:
             topWViewController()?.navigationController?.pushViewController(
                 DepositLinkVC(accountContext: $account, chain: chain),
@@ -181,27 +178,28 @@ final class ReceiveTableVC: WViewController, WSegmentedControllerContent, UIColl
     public var scrollingView: UIScrollView? { collectionView }
     public func calculateHeight(isHosted: Bool) -> CGFloat { 0 }
 
-}
+    private func showBuyWithCrypto() {
+        guard !isResolvingSwapDefaults else { return }
+        isResolvingSwapDefaults = true
+        let accountId = account.id
 
-private extension ApiChain {
-    var defaultSellingSlug: String {
-        switch self {
-        case .ton:
-            TRON_USDT_SLUG
-        case .tron:
-            TON_USDT_SLUG
-        case .solana:
-            TON_USDT_SLUG
-        default:
-            TON_USDT_SLUG
+        Task { [weak self] in
+            guard let self else { return }
+            let defaults = await ReceiveSwapDefaultsResolver.resolve(
+                accountContext: $account,
+                chain: chain,
+                preferredBuyingToken: preferredBuyingToken
+            )
+            isResolvingSwapDefaults = false
+            guard account.id == accountId, viewIfLoaded?.window != nil else { return }
+            AppActions.showSwap(
+                accountContext: $account,
+                defaultSellingToken: defaults.sellingToken,
+                defaultBuyingToken: defaults.buyingToken,
+                defaultSellingAmount: nil,
+                push: true
+            )
         }
     }
-    
-    var defaultBuyingSlug: String {
-        let crosschainSwapSlugs = getChainConfig(chain: self).crosschainSwapSlugs
-        if let usdtSlug = self.usdtSlug[.mainnet], crosschainSwapSlugs.contains(usdtSlug) {
-            return usdtSlug
-        }
-        return crosschainSwapSlugs.first ?? self.nativeToken.slug
-    }
+
 }

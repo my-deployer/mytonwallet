@@ -50,6 +50,20 @@ class ApiTokenSearchTest {
         assertFalse(token.matchesSearch("missing"))
     }
 
+    @Test
+    fun identifiesExactTokenMatches() {
+        val token = testToken(
+            name = "My Wallet Coin",
+            symbol = "MY",
+            tokenAddress = "EQ_MY"
+        )
+
+        assertTrue(token.matchesSearchExactly("my wallet coin"))
+        assertTrue(token.matchesSearchExactly("my"))
+        assertTrue(token.matchesSearchExactly("eq_my"))
+        assertFalse(token.matchesSearchExactly("wallet"))
+    }
+
     private fun testToken(
         name: String = "Tether USD",
         symbol: String = "USDT",

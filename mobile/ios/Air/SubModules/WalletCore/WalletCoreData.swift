@@ -60,6 +60,7 @@ public struct WalletCoreData {
         case accountChanged(accountId: String, isNew: Bool)
         case accountNameChanged
         case accountDeleted(accountId: String)
+        case savedAddressesChanged(accountId: String)
         case accountsReset
         case stakingAccountData(MStakingData)
         case rawBalancesChanged(accountId: String)
@@ -67,6 +68,7 @@ public struct WalletCoreData {
         case hideTinyTransfersChanged
         case hideUnverifiedNftsChanged
         case hideNoCostTokensChanged
+        case homeActivityVisibleItemsLimitChanged
         case homeWalletVisibleTokensLimitChanged
         case cardBackgroundChanged(_ accountId: String, _ nft: ApiNft?)
         case accentColorNftChanged(_ accountId: String, _ nft: ApiNft?)
@@ -116,6 +118,7 @@ public struct WalletCoreData {
         case updateSwapTokens(ApiUpdate.UpdateSwapTokens)
         case updateTokens([String: Any])
         case updateNfts(ApiUpdate.UpdateNfts)
+        case agentV2(ApiAgentV2ClientUpdate)
         case nftReceived(ApiUpdate.NftReceived)
         case nftSent(ApiUpdate.NftSent)
         case nftPutUpForSale(ApiUpdate.NftPutUpForSale)
@@ -182,12 +185,8 @@ public struct WalletCoreData {
 
     public static func notifyAccountChanged(to account: MAccount, isNew: Bool) {
         Task { @MainActor in
-            @Dependency(\.accountSettings) var _accountSettings
-            let accountSettings = _accountSettings.for(accountId: account.id)
             AccountStore.walletVersionsData = nil
             DappsStore.updateDappCount()
-            changeThemeColors(to: accountSettings.accentColorIndex)
-            UIApplication.shared.sceneKeyWindow?.updateTheme()
             UIApplication.shared.sceneKeyWindow?.updateSensitiveData()
             for observer in WalletCoreData.eventObservers {
                 observer.value?.walletCore(event: .accountChanged(accountId: account.id, isNew: isNew))
@@ -263,6 +262,10 @@ public struct WalletCoreData {
         }
         await runDeferredStartupStep("balanceData") {
             await BalanceDataStore.use()
+            let prewarmAccountIds = Array(AccountStore.orderedAccountIds)
+            Task {
+                await BalanceDataStore.prewarm(accountIds: prewarmAccountIds)
+            }
         }
         await runDeferredStartupStep("nftStore") {
             await NftStore.use(db: db, accountIds: accountIds)
@@ -272,6 +275,9 @@ public struct WalletCoreData {
         }
         await runDeferredStartupStep("autolock") {
             _ = AutolockStore.shared
+        }
+        await runDeferredStartupStep("accountTheme") {
+            _ = AccountThemeObserver.shared
         }
         StartupTrace.mark("walletCoreData.startDeferred.end")
         StartupTrace.endInterval("walletCoreData.startDeferred", details: "result=done")

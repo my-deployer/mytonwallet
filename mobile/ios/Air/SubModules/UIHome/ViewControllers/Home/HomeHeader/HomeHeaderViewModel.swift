@@ -46,6 +46,9 @@ final class HomeHeaderViewModel: WalletCoreData.EventsObserver {
     
     @PerceptionIgnored
     var onSelect: (String) -> () = { _ in }
+
+    @PerceptionIgnored
+    var onExpand: () -> Void = {}
     
     @PerceptionIgnored
     @Dependency(\.accountStore.currentAccountId) var currentAccountId

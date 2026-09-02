@@ -238,6 +238,14 @@ class SettingsHeaderView(private val viewController: SettingsVC, private var top
     private var lastY = 0
     private var expandPercentage = 1f
     private var contentHeight = normalHeight
+    private var isBackButtonVisible = false
+
+    fun setBackButtonVisible(visible: Boolean) {
+        if (isBackButtonVisible == visible) return
+        isBackButtonVisible = visible
+        updateScroll(lastY, forceUpdate = true)
+    }
+
     fun updateScroll(dy: Int, forceUpdate: Boolean = false) {
         if (lastY == dy && !forceUpdate) return
         lastY = dy
@@ -248,23 +256,40 @@ class SettingsHeaderView(private val viewController: SettingsVC, private var top
         if (isFullyCollapsed && newIsCollapsed && !forceUpdate) return
         isFullyCollapsed = newIsCollapsed
 
+        val collapsedContentCenterY = topInset + minHeight / 2f
+
         // Update wallet icon view
         walletIcon.scaleX = min(1f, 0.45f + expandPercentage / 2)
         walletIcon.scaleY = walletIcon.scaleX
-        // px20 is the offset, because of scaling the icon
-        walletIcon.y = topInset + px16 + expandPercentage * px48 - (1 - expandPercentage) * px20
+        walletIcon.y =
+            lerp(
+                collapsedContentCenterY - walletIcon.height / 2f,
+                (topInset + px16 + px48).toFloat(),
+                expandPercentage
+            )
+
+        val collapsedStartOffset = if (isBackButtonVisible) {
+            min(1f, (1 - expandPercentage)) * px32
+        } else {
+            0f
+        }
 
         if (LocaleController.isRTL) {
             walletIcon.x =
-                width - walletIcon.width - (px16 - max(0f, (1 - expandPercentage) * px20))
+                width - walletIcon.width -
+                (px16 - max(0f, (1 - expandPercentage) * px20)) - collapsedStartOffset
         } else {
-            walletIcon.x = px16 - max(0f, (1 - expandPercentage) * px20)
+            walletIcon.x =
+                px16 - max(0f, (1 - expandPercentage) * px20) + collapsedStartOffset
         }
 
         // Update wallet name and detail view
         walletNameLabel.y =
-            topInset + px20 + px56 * expandPercentage -
-            (walletNameLabel.height / 2 * (1 - walletNameLabel.scaleY))
+            lerp(
+                collapsedContentCenterY - walletNameLabel.height / 2f - 1.dp,
+                (topInset + px20 + px56).toFloat(),
+                expandPercentage
+            )
 
         if (LocaleController.isRTL) {
             val labelX =
@@ -273,11 +298,12 @@ class SettingsHeaderView(private val viewController: SettingsVC, private var top
                         walletIcon.height * walletIcon.scaleY + px32 -
                             (walletNameLabel.width / 2 * (1 - walletNameLabel.scaleX))
                         )
-            walletNameLabel.x = labelX
+            walletNameLabel.x = labelX - collapsedStartOffset
         } else {
             walletNameLabel.x =
                 walletIcon.height * walletIcon.scaleY + px32 -
-                (walletNameLabel.width / 2 * (1 - walletNameLabel.scaleX))
+                (walletNameLabel.width / 2 * (1 - walletNameLabel.scaleX)) +
+                collapsedStartOffset
         }
         updateWalletDataLayoutParams()
         updateWalletNamePadding()

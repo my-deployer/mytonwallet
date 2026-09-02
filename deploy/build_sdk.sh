@@ -16,6 +16,27 @@ for sdk in dist-air/mytonwallet-sdk.js dist-air/gramwallet-sdk.js; do
   fi
 done
 
+AGENT_OVERRIDE_VALUE=$(node -r dotenv/config -e 'process.stdout.write(process.env.AGENT_OVERRIDE ?? "v1")')
+case "$AGENT_OVERRIDE_VALUE" in
+  no_override|v1|v2) ;;
+  *)
+    echo "Unsupported AGENT_OVERRIDE value: $AGENT_OVERRIDE_VALUE" >&2
+    exit 1
+    ;;
+esac
+AGENT_API_BASE_URL=$(node -r dotenv/config -e 'process.stdout.write(process.env.AGENT_API_URL ?? "https://agent.mywallet.io/api")')
+node -e '
+const [override, agentApiBaseUrl] = process.argv.slice(1);
+const url = new URL(agentApiBaseUrl);
+const loopbackHosts = new Set(["localhost", "127.0.0.1", "[::1]"]);
+const hasSafeProtocol = url.protocol === "https:"
+  || (url.protocol === "http:" && loopbackHosts.has(url.hostname.toLowerCase()));
+if (!hasSafeProtocol || !url.hostname || url.username || url.password || url.search || url.hash) {
+  throw new Error("AGENT_API_URL must use HTTPS, or HTTP on loopback, without credentials, query, or fragment");
+}
+process.stdout.write(`${JSON.stringify({ override, agentApiBaseUrl })}\n`);
+' "$AGENT_OVERRIDE_VALUE" "$AGENT_API_BASE_URL" > dist-air/agent-override-config.json
+
 bash ./deploy/copy_to_dist.sh
 
 IOS_LEGACY_TARGET="mobile/ios/Air/SubModules/WalletResources/Resources/JS"
@@ -32,13 +53,21 @@ mkdir -p "$ANDROID_GRAM_TARGET"
 # Copy SDKs to iOS target-specific asset dirs
 rm -f "$IOS_LEGACY_TARGET"/*-sdk.js "$IOS_LEGACY_TARGET"/*-sdk.js.LICENSE.txt
 
-rm -f "$IOS_MYTONWALLET_TARGET"/*-sdk.js "$IOS_MYTONWALLET_TARGET"/*-sdk.js.LICENSE.txt
+rm -f \
+  "$IOS_MYTONWALLET_TARGET"/*-sdk.js \
+  "$IOS_MYTONWALLET_TARGET"/*-sdk.js.LICENSE.txt \
+  "$IOS_MYTONWALLET_TARGET"/agent-*-config.json
 cp dist-air/mytonwallet-sdk.js "$IOS_MYTONWALLET_TARGET/"
 cp dist-air/mytonwallet-sdk.js.LICENSE.txt "$IOS_MYTONWALLET_TARGET/" 2>/dev/null || true
+cp dist-air/agent-override-config.json "$IOS_MYTONWALLET_TARGET/"
 
-rm -f "$IOS_GRAM_TARGET"/*-sdk.js "$IOS_GRAM_TARGET"/*-sdk.js.LICENSE.txt
+rm -f \
+  "$IOS_GRAM_TARGET"/*-sdk.js \
+  "$IOS_GRAM_TARGET"/*-sdk.js.LICENSE.txt \
+  "$IOS_GRAM_TARGET"/agent-*-config.json
 cp dist-air/gramwallet-sdk.js "$IOS_GRAM_TARGET/"
 cp dist-air/gramwallet-sdk.js.LICENSE.txt "$IOS_GRAM_TARGET/" 2>/dev/null || true
+cp dist-air/agent-override-config.json "$IOS_GRAM_TARGET/"
 
 # Copy SDKs to Android flavor-specific asset dirs
 rm -f "$ANDROID_MYTONWALLET_TARGET"/*-sdk.js "$ANDROID_MYTONWALLET_TARGET"/*-sdk.js.LICENSE.txt
@@ -49,9 +78,9 @@ rm -f "$ANDROID_GRAM_TARGET"/*-sdk.js "$ANDROID_GRAM_TARGET"/*-sdk.js.LICENSE.tx
 cp dist-air/gramwallet-sdk.js "$ANDROID_GRAM_TARGET/"
 cp dist-air/gramwallet-sdk.js.LICENSE.txt "$ANDROID_GRAM_TARGET/" 2>/dev/null || true
 
-# Build .xcstrings from YAML locale files. Both mobile platforms share this script, and compiling
-# them needs `xcrun`, so the step is confined to the machines that carry an Xcode toolchain.
-if command -v xcrun > /dev/null 2>&1; then
+# Build .xcstrings from YAML locale files when Xcode is available. Local Agent launchers reuse the
+# checked-in compiled strings so the acceptance cycle stays offline.
+if [ "${MOBILE_SDK_SKIP_IOS_LOCALIZATIONS:-0}" != "1" ] && command -v xcrun > /dev/null 2>&1; then
   PY_SCRIPTS_DIR="./mobile/ios/Air/scripts/strings"
   PY_VENV_DIR="$PY_SCRIPTS_DIR/.venv"
 

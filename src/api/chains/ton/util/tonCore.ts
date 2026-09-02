@@ -17,7 +17,7 @@ import type { ApiTonWalletVersion, TokenTransferBodyParams } from '../types';
 import { ApiTokenImportError } from '../../../types';
 import { ApiCommonError } from '../../../types';
 
-import { DEFAULT_TIMEOUT } from '../../../../config';
+import { raceWithAbortSignal } from '../../../../util/abortSignal';
 import { getDnsZoneByCollection } from '../../../../util/dns';
 import { fromKeyValueArrays, mapValues } from '../../../../util/iteratees';
 import { logDebugError } from '../../../../util/logs';
@@ -75,25 +75,34 @@ export const getTonClient = withCache((network: ApiNetwork) => {
 
   return new TonClient({
     endpoint: `${NETWORK_CONFIG[network].toncenterUrl}/api/v2/jsonRPC`,
-    timeout: DEFAULT_TIMEOUT,
     apiKey: byNetwork[network].toncenterKey,
     headers: apiHeaders,
   });
 });
 
-export const resolveTokenWalletAddress = withCacheAsync(
-  async (network: ApiNetwork, address: string, tokenAddress: string) => {
-    const minter = getTonClient(network).open(new JettonMinter(Address.parse(tokenAddress)));
-    const walletAddress = await minter.getWalletAddress(Address.parse(address));
-    return toBase64Address(walletAddress, true, network);
-  },
-);
+export const resolveTokenWalletAddress = withCacheAsync(fetchTokenWalletAddress);
 
-export const resolveTokenAddress = withCacheAsync(async (network: ApiNetwork, tokenWalletAddress: string) => {
+export async function fetchTokenWalletAddress(
+  network: ApiNetwork,
+  address: string,
+  tokenAddress: string,
+  signal?: AbortSignal,
+) {
+  const minter = getTonClient(network).open(new JettonMinter(Address.parse(tokenAddress)));
+  const walletAddress = await raceWithAbortSignal(
+    () => minter.getWalletAddress(Address.parse(address)),
+    signal,
+  );
+  return toBase64Address(walletAddress, true, network);
+}
+
+export const resolveTokenAddress = withCacheAsync(fetchTokenAddress);
+
+export async function fetchTokenAddress(network: ApiNetwork, tokenWalletAddress: string, signal?: AbortSignal) {
   const tokenWallet = getTonClient(network).open(new JettonWallet(Address.parse(tokenWalletAddress)));
-  const data = await tokenWallet.getWalletData();
+  const data = await raceWithAbortSignal(() => tokenWallet.getWalletData(), signal);
   return toBase64Address(data.minter, true, network);
-});
+}
 
 export const getWalletPublicKey = withCacheAsync(async (network: ApiNetwork, address: string) => {
   const res = await getTonClient(network).runMethodWithError(Address.parse(address), 'get_public_key');
@@ -118,7 +127,7 @@ export const getJettonPoolStakeWallet = withCacheAsync(async (
   return tonClient.open(StakeWallet.createFromAddress(walletAddress));
 });
 
-export async function getJettonMinterData(network: ApiNetwork, address: string) {
+export async function getJettonMinterData(network: ApiNetwork, address: string, signal?: AbortSignal) {
   let parsedAddress: Address;
   try {
     parsedAddress = Address.parse(address);
@@ -129,7 +138,7 @@ export async function getJettonMinterData(network: ApiNetwork, address: string) 
   const contract = getTonClient(network).open(new JettonMinter(parsedAddress));
 
   try {
-    return await contract.getJettonData();
+    return await raceWithAbortSignal(() => contract.getJettonData(), signal);
   } catch (err) {
     if (err instanceof Error) {
       if (err.message.includes('exit_code: -13')) {

@@ -69,6 +69,7 @@ interface OwnProps {
   isWidget?: boolean;
   isStretched?: boolean;
   collection?: ApiNftCollection;
+  scrollContainerSelector?: string;
 }
 
 interface StateProps {
@@ -91,6 +92,7 @@ function Nfts({
   isActive,
   isWidget,
   isStretched,
+  scrollContainerSelector,
   orderedAddresses,
   selectedNfts,
   byAddress,
@@ -215,6 +217,7 @@ function Nfts({
         isWidget
         isWidgetStretched={isStretched}
         isActive={isActive}
+        scrollContainerSelector={scrollContainerSelector}
         addresses={nftAddresses}
         appTheme={appTheme}
         dnsExpiration={dnsExpiration}
@@ -240,6 +243,7 @@ function Nfts({
         key={collection ? `${collection.address}_${collection.chain}` : 'nft-list'}
         isActive={realIsActive}
         isLoading={isLoading}
+        scrollContainerSelector={scrollContainerSelector}
         appTheme={appTheme}
         addresses={nftAddresses}
         dnsExpiration={dnsExpiration}

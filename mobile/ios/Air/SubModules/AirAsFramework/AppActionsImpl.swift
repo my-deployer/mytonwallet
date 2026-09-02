@@ -4,6 +4,7 @@ import ProtectedAction
 import UIKit
 import SwiftUI
 import UIComponents
+import UIAgent
 import WalletCore
 import WalletContext
 import UISwap
@@ -44,7 +45,7 @@ private class AppActionsImpl: AppActionsProtocol {
         if splitRouter.isAvailable {
             return splitRouter
         }
-        return TabRootContainerRouter()
+        return TopTabsRootContainerRouter()
     }
     
     static func copyString(_ string: String?, toastMessage: String) {
@@ -424,8 +425,13 @@ private class AppActionsImpl: AppActionsProtocol {
         rootContainerRouter.showAddWallet(network: network)
     }
     
-    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) {
-        rootContainerRouter.showAssets(accountSource: accountSource, selectedTab: selectedTab, collectionsFilter: collectionsFilter)
+    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?) {
+        rootContainerRouter.showAssets(
+            accountSource: accountSource,
+            selectedTab: selectedTab,
+            collectionsFilter: collectionsFilter,
+            initialPosition: initialPosition
+        )
     }
 
     static func showAssetsAndActivity() {
@@ -498,11 +504,12 @@ private class AppActionsImpl: AppActionsProtocol {
         }
     }
 
-    static func showAgent() {
+    static func showAgent(query: String?) {
+        AgentEntryPoint.enqueueQuery(query)
         rootContainerRouter.showAgent()
     }
     
-    static func showEarn(accountContext: AccountContext, tokenSlug: String?) {
+    static func showEarn(accountContext: AccountContext, tokenSlug: String?, prefilledAmount: StakePrefilledAmount?) {
         let config = StakingConfig.config(forTokenSlug: tokenSlug ?? TONCOIN_SLUG)
         if accountContext.account.supportsEarn,
            let stakingData = accountContext.stakingData,
@@ -513,7 +520,8 @@ private class AppActionsImpl: AppActionsProtocol {
             let addStakeVC = AddStakeVC(
                 config: config,
                 stakingState: stakingState,
-                accountContext: accountContext
+                accountContext: accountContext,
+                prefilledAmount: prefilledAmount
             )
             topViewController()?.present(WNavigationController(rootViewController: addStakeVC), animated: true)
             return
@@ -636,8 +644,9 @@ private class AppActionsImpl: AppActionsProtocol {
         pushIfNeeded(vc, push: true)
     }
     
-    static func showReceive(accountContext: AccountContext, chain: ApiChain?) {
-        let receiveVC = ReceiveVC(accountContext: accountContext, chain: chain)
+    static func showReceive(accountContext: AccountContext, chain: ApiChain?, buyingToken: String?) {
+        guard accountContext.account.supportsReceive else { return }
+        let receiveVC = ReceiveVC(accountContext: accountContext, chain: chain, buyingToken: buyingToken)
         topViewController()?.present(WNavigationController(rootViewController: receiveVC), animated: true)
     }
 
@@ -706,7 +715,7 @@ private class AppActionsImpl: AppActionsProtocol {
         topViewController()?.present(WNavigationController(rootViewController: vc), animated: true)
     }
     
-    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, push: Bool?) {
+    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, defaultBuyingAmount: Double?, push: Bool?) {
         if accountContext.account.supportsSwap != true {
             AppActions.showError(error: DisplayError(text: lang("Swap is not supported on this account.")))
             return
@@ -718,6 +727,7 @@ private class AppActionsImpl: AppActionsProtocol {
             defaultSellingToken: defaultSellingToken,
             defaultBuyingToken: defaultBuyingToken,
             defaultSellingAmount: defaultSellingAmount,
+            defaultBuyingAmount: defaultBuyingAmount,
             isAccountSwitchingAllowed: isAccountSwitchingAllowed
         )
         pushIfNeeded(swapVC, push: push)
@@ -748,7 +758,13 @@ private class AppActionsImpl: AppActionsProtocol {
     static func showToken(accountSource: AccountSource, token: ApiToken, isInModal: Bool) {
         Task {
             let tokenVC: TokenVC = await TokenVC(accountSource: accountSource, token: token, isInModal: isInModal)
-            topWViewController()?.navigationController?.pushViewController(tokenVC, animated: true)
+            if let navigationController = topWViewController()?.navigationController {
+                navigationController.pushViewController(tokenVC, animated: true)
+            } else {
+                rootContainerRouter.closeSearchIfNeeded {
+                    topWViewController()?.navigationController?.pushViewController(tokenVC, animated: true)
+                }
+            }
         }
     }
 
@@ -766,7 +782,7 @@ private class AppActionsImpl: AppActionsProtocol {
                     return
                 }
                 await MainActor.run {
-                    presentOrPushToken(accountSource: .current, token: token)
+                    showToken(accountSource: .current, token: token, isInModal: false)
                 }
             } catch {
                 await MainActor.run {
@@ -781,23 +797,31 @@ private class AppActionsImpl: AppActionsProtocol {
             AppActions.showError(error: DisplayError(text: lang("$unknown_token_address")))
             return
         }
-        presentOrPushToken(accountSource: .current, token: token)
-    }
-
-    private static func presentOrPushToken(accountSource: AccountSource, token: ApiToken) {
-        Task {
-            let tokenVC: TokenVC = await TokenVC(accountSource: accountSource,
-                                                 token: token,
-                                                 isInModal: !rootContainerRouter.isHomeRootSelected())
-            if !rootContainerRouter.pushOnHome(tokenVC) {
-                topViewController()?.present(WNavigationController(rootViewController: tokenVC), animated: true)
-            }
-        }
+        showToken(accountSource: .current, token: token, isInModal: false)
     }
     
     static func showUpgradeCard() {
         log.info("showUpgradeCard")
-        AppActions.openInBrowser(URL(string:  "https://getgems.io/collection/EQCQE2L9hfwx1V8sgmF9keraHx1rNK9VmgR1ctVvINBGykyM")!, title: "My Wallet NFT Cards", injectDappConnect: true)
+        let accountContext = AccountContext(source: .current)
+        guard accountContext.config.cardsInfo != nil else {
+            AppActions.openInBrowser(
+                URL(string: "https://getgems.io/collection/EQCQE2L9hfwx1V8sgmF9keraHx1rNK9VmgR1ctVvINBGykyM")!,
+                title: "My Wallet NFT Cards",
+                injectDappConnect: true
+            )
+            return
+        }
+
+        let vc = MintCardVC(accountContext: accountContext)
+        let nc = WNavigationController(rootViewController: vc)
+        if let sheet = nc.sheetPresentationController {
+            sheet.detents = [.large()]
+            sheet.prefersGrabberVisible = false
+            if #available(iOS 26.1, *) {
+                sheet.backgroundEffect = UIColorEffect(color: .air.sheetBackground)
+            }
+        }
+        topViewController()?.present(nc, animated: true)
     }
     
     static func showWalletSettings() {

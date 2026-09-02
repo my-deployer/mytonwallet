@@ -1,7 +1,7 @@
 import * as tonWebMnemonic from 'tonweb-mnemonic';
-import { WalletContractV5R1 } from '@ton/ton';
 import * as bip39 from 'bip39';
 import nacl from 'tweetnacl';
+import { WalletContractV5R1 } from '@ton/ton/dist/wallets/WalletContractV5R1';
 
 import type {
   ApiDerivation } from '../../types';

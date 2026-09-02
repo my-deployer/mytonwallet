@@ -42,6 +42,10 @@ object ApplicationContextHolder {
         applicationContext.packageName.startsWith("io.gramwallet.")
     }
 
+    val isBetaApp: Boolean by lazy {
+        applicationContext.packageName.endsWith(".beta")
+    }
+
     val universalShortUrlHost: String
         get() = if (isGramApp) "go.gramwallet.io" else "my.tt"
 

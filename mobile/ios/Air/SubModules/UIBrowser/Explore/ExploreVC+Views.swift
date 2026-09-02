@@ -448,20 +448,17 @@ extension ExploreVC {
         private func lockdownModeWarningView() -> some View {
             WarningView(
                 header: lang("$lockdown_mode_enabled_title"),
-                text: lang("$lockdown_mode_walletconnect_unavailable", arg1: APP_NAME),
+                text: L10n.lockdownModeWalletconnectUnavailable(appName: APP_NAME),
                 kind: .info
             )
             .padding(.top, 14)
         }
 
         private func sectionHeaderView(title: String, isFirstHeader: Bool) -> some View {
-            HStack(spacing: 0) {
-                if isFirstHeader {
-                    SectionHeaderView(title: title, topInset: 14)
-                } else {
-                    SectionHeaderView(title: title)
-                }
-                Spacer()
+            if isFirstHeader {
+                SectionHeaderView(title: title, topInset: 14)
+            } else {
+                SectionHeaderView(title: title)
             }
         }
 

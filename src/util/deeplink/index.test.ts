@@ -530,6 +530,36 @@ describe('processSelfDeeplink', () => {
       expect(mockActions.startStaking).toHaveBeenCalled();
     });
 
+    it('should preserve the exact staking product, asset, and decimal amount', async () => {
+      const result = await processSelfDeeplink('mtw://stake?product=liquid&asset=toncoin&amount=10');
+
+      expect(result).toBe(true);
+      expect(mockActions.startStaking).toHaveBeenCalledWith({
+        stakingId: 'liquid',
+        tokenSlug: 'toncoin',
+        initialAmount: 10_000_000_000n,
+      });
+    });
+
+    it('should preserve an all-balance staking instruction', async () => {
+      const result = await processSelfDeeplink('mtw://stake?product=liquid&asset=toncoin&amount=all');
+
+      expect(result).toBe(true);
+      expect(mockActions.startStaking).toHaveBeenCalledWith({
+        stakingId: 'liquid',
+        tokenSlug: 'toncoin',
+        initialAmount: 'all',
+      });
+    });
+
+    it('should reject a partial or invalid exact staking target', async () => {
+      const result = await processSelfDeeplink('mtw://stake?product=liquid&asset=toncoin&amount=0');
+
+      expect(result).toBe(true);
+      expect(mockActions.showError).toHaveBeenCalledWith({ error: '$unsupported_deeplink_parameter' });
+      expect(mockActions.startStaking).not.toHaveBeenCalled();
+    });
+
     it('should show error when staking is requested in testnet', async () => {
       mockGlobal.settings.isTestnet = true;
 

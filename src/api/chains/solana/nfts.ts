@@ -168,7 +168,7 @@ export async function fetchNftByAddress(network: ApiNetwork, address: string) {
   return parseHeliusNft(res.result);
 }
 
-export async function fetchNftsByAddresses(network: ApiNetwork, addresses: string[]) {
+export async function fetchNftsByAddresses(network: ApiNetwork, addresses: string[], signal?: AbortSignal) {
   const options = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -191,7 +191,7 @@ export async function fetchNftsByAddresses(network: ApiNetwork, addresses: strin
   const { result: assets } = await fetchJson<{ result: SolanaSPLToken[] }>(
     NETWORK_CONFIG[network].rpcUrl,
     undefined,
-    options,
+    { ...options, signal },
   );
 
   return assets.map((e) => parseHeliusNft(e));

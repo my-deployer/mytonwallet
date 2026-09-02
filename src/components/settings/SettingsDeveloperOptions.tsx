@@ -13,7 +13,6 @@ import {
   IS_EXTENSION,
   IS_GRAM_WALLET,
   IS_TELEGRAM_APP,
-  IS_TON_BRAND,
   SHOULD_CLEANUP_LEGACY_AUTH,
 } from '../../config';
 import { selectCurrentAccountId, selectIsMultichainAccount, selectSeasonalThemeOverride } from '../../global/selectors';
@@ -149,7 +148,7 @@ function SettingsDeveloperOptions({
       showToast({ message: lang('Logs Copied'), icon: 'icon-copy' });
       onClose();
     } else {
-      const brandPrefix = IS_GRAM_WALLET ? 'gramwallet' : IS_TON_BRAND ? 'tonwallet' : 'mytonwallet';
+      const brandPrefix = IS_GRAM_WALLET ? 'gramwallet' : 'mytonwallet';
       const filename = `${brandPrefix}_logs_${new Date().toISOString()}.json`;
       await shareFile(filename, logsString, 'application/json');
     }

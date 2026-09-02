@@ -42,6 +42,8 @@ public final class WSegmentedPagerView: WTouchPassView, UIScrollViewDelegate {
 
     private let scrollView = UIScrollView()
     private let transitionPageView = UIView()
+    private var scrollViewTopConstraint: NSLayoutConstraint!
+    private let contentTopInsetWhenSegmentedControlHidden: CGFloat
 
     private var items: [WSegmentedPagerItem]
     private var currentIndex: Int = 0
@@ -57,10 +59,17 @@ public final class WSegmentedPagerView: WTouchPassView, UIScrollViewDelegate {
     public var onDidStartDragging: (() -> Void)?
     public var onDidEndScrolling: (() -> Void)?
 
-    public init(items: [WSegmentedPagerItem], style: SegmentedControlStyle = .regular, scrollContentMargin: CGFloat = 0, onScrollProgressChanged: ((_ progress: CGFloat, _ animated: Bool) -> Void)? = nil) {
+    public init(
+        items: [WSegmentedPagerItem],
+        style: SegmentedControlStyle = .regular,
+        scrollContentMargin: CGFloat = 0,
+        contentTopInsetWhenSegmentedControlHidden: CGFloat = 0,
+        onScrollProgressChanged: ((_ progress: CGFloat, _ animated: Bool) -> Void)? = nil
+    ) {
         self.items = items
         self.model = SegmentedControlModel(items: items.map(\.segmentedControlItem), style: style)
         self.segmentedControl = WSegmentedControl(model: model, scrollContentMargin: scrollContentMargin)
+        self.contentTopInsetWhenSegmentedControlHidden = contentTopInsetWhenSegmentedControlHidden
         self.onScrollProgressChanged = onScrollProgressChanged
 
         super.init(frame: .zero)
@@ -82,6 +91,24 @@ public final class WSegmentedPagerView: WTouchPassView, UIScrollViewDelegate {
 
     public var selectedIndex: Int? {
         items.indices.contains(currentIndex) ? currentIndex : nil
+    }
+
+    public var pagingGestureView: UIView {
+        scrollView
+    }
+
+    public var isSegmentedControlHidden: Bool {
+        get { segmentedControl.isHidden }
+        set {
+            guard segmentedControl.isHidden != newValue else { return }
+            segmentedControl.isHidden = newValue
+            scrollViewTopConstraint.constant = contentTopInset
+            setNeedsLayout()
+        }
+    }
+
+    public var contentTopInset: CGFloat {
+        isSegmentedControlHidden ? contentTopInsetWhenSegmentedControlHidden : Layout.barHeight
     }
 
     public override func layoutSubviews() {
@@ -259,6 +286,7 @@ public final class WSegmentedPagerView: WTouchPassView, UIScrollViewDelegate {
         segmentedControl.translatesAutoresizingMaskIntoConstraints = false
         addSubview(segmentedControl)
 
+        scrollViewTopConstraint = scrollView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.barHeight)
         NSLayoutConstraint.activate([
             segmentedControl.centerXAnchor.constraint(equalTo: centerXAnchor),
             segmentedControl.topAnchor.constraint(
@@ -268,7 +296,7 @@ public final class WSegmentedPagerView: WTouchPassView, UIScrollViewDelegate {
             segmentedControl.heightAnchor.constraint(equalToConstant: Layout.segmentedControlFullHeight),
             segmentedControl.widthAnchor.constraint(equalTo: widthAnchor),
 
-            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.barHeight),
+            scrollViewTopConstraint,
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             {

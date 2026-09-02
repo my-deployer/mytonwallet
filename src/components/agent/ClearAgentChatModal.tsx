@@ -34,7 +34,13 @@ function ClearAgentChatModal({ isOpen, onClose, onConfirm }: OwnProps) {
       </div>
       <div className={styles.buttons}>
         <Button onClick={onClose} className={styles.button}>{lang('Cancel')}</Button>
-        <Button isPrimary isDestructive onClick={handleConfirm} className={styles.button}>
+        <Button
+          id="agent-clear-chat-confirm"
+          isPrimary
+          isDestructive
+          onClick={handleConfirm}
+          className={styles.button}
+        >
           {lang('Clear Chat')}
         </Button>
       </div>

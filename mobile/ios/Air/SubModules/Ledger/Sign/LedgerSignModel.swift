@@ -105,7 +105,7 @@ public final class LedgerSignModel<Payload: Sendable>: Sendable {
             Task { @MainActor in
                 self.flow.updateStepSubtitle(
                     .sign,
-                    subtitle: lang("$ledger_confirm_progress", arg1: current, arg2: total)
+                    subtitle: L10n.ledgerConfirmProgress(current: current, total: total)
                 )
             }
         }

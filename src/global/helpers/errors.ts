@@ -99,7 +99,7 @@ export function errorCodeToMessage(error: ApiAnyDisplayError | string = ApiCommo
       return 'Unexpected';
 
     case ApiCommonError.InvalidPassword:
-      return getDoesUsePinPad() ? 'Wrong passcode, please try again.' : 'Wrong password, please try again.';
+      return getDoesUsePinPad() ? 'Wrong passcode, please try again' : 'Wrong password, please try again.';
 
     case ApiTokenImportError.AddressDoesNotExist:
       return 'Address doesn\'t exist';

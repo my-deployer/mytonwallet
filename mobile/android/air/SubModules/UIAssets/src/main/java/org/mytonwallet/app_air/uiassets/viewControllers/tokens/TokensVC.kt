@@ -96,6 +96,9 @@ class TokensVC(
     override var badge: String? = null
     var onScrollToVisibleRequested: (() -> Unit)? = null
 
+    // Replaces the default top-limit menu of the "Show All" row when the host has no tab-level menu.
+    var onShowAllMenuTap: ((anchorView: View) -> Unit)? = null
+
     private var isShowingAccountMultichain = WGlobalStorage.isMultichain(showingAccountId)
     private var _showingAccount: MAccount? = null
     private fun fetchAccount(accountId: String): MAccount? {
@@ -269,7 +272,7 @@ class TokensVC(
             window.present(navVC)
         }
         v.onMenuTap = { anchorView ->
-            presentHomeTopLimitMenu(anchorView)
+            onShowAllMenuTap?.invoke(anchorView) ?: presentHomeTopLimitMenu(anchorView)
         }
         v.visibility = View.GONE
         v.setCounter(null)

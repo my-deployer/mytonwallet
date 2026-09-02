@@ -4,19 +4,17 @@ import { getActions, withGlobal } from '../../global';
 import { type Theme } from '../../global/types';
 
 import {
-  APP_INSTALL_URL, APP_NAME, IS_EXPLORER, IS_FEATURE_LIMITED, IS_GRAM_WALLET, IS_TON_BRAND, NEW_APP_URL,
+  APP_INSTALL_URL, APP_NAME, IS_EXPLORER, IS_GRAM_WALLET, NEW_APP_URL,
   PRODUCTION_URL,
 } from '../../config';
 import renderText from '../../global/helpers/renderText';
 import { selectCurrentAccountId } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
-import { getChainsSupportingLedger } from '../../util/chain';
 import { stopEvent } from '../../util/domEvents';
 import { PARTICLE_BURST_PARAMS, type ParticleConfig, setupParticles } from '../../util/particles';
 import {
-  IS_LEDGER_SUPPORTED, IS_LEGACY_APP_HOST, IS_NEW_WALLET_CREATION_HIDDEN, REM,
+  IS_LEGACY_APP_HOST, IS_NEW_WALLET_CREATION_HIDDEN, REM,
 } from '../../util/windowEnvironment';
-import { ANIMATED_STICKERS_PATHS } from '../ui/helpers/animatedAssets';
 
 import useAppTheme from '../../hooks/useAppTheme';
 import { useDeviceScreen } from '../../hooks/useDeviceScreen';
@@ -27,7 +25,6 @@ import useMediaTransition from '../../hooks/useMediaTransition';
 import { CLOSE_DURATION } from '../../hooks/useShowTransition';
 import useTimeout from '../../hooks/useTimeout';
 
-import AnimatedIconWithPreview from '../ui/AnimatedIconWithPreview';
 import Button from '../ui/Button';
 import Checkbox from '../ui/Checkbox';
 import { PARTICLE_HEIGHT, PARTICLE_LANDSCAPE_HEIGHT } from '../ui/ImageWithParticles';
@@ -68,9 +65,7 @@ function AuthStart({
 }: OwnProps & StateProps) {
   const {
     startCreatingWallet,
-    startImportingWallet,
     openAbout,
-    openHardwareWalletModal,
     resetAuth,
     openAuthImportWalletModal,
     openDisclaimer,
@@ -112,42 +107,6 @@ function AuthStart({
     openDisclaimer();
   }
 
-  const handleImportHardwareWalletClick = useLastCallback(() => {
-    openHardwareWalletModal({ chain: getChainsSupportingLedger()[0] }); // todo: Add a chain selector screen for Ledger auth
-  });
-
-  function renderSimpleImportForm() {
-    return (
-      <>
-        <span className={styles.importText}>{lang('or import from')}</span>
-        <div className={styles.coreWalletStartButtons}>
-          <Button
-            isDisabled={!isAccepted}
-            className={styles.btn}
-            onClick={!isLoading ? startImportingWallet : undefined}
-          >
-            {lang('Secret Words')}
-          </Button>
-          {IS_LEDGER_SUPPORTED && (
-            <Button
-              isDisabled={!isAccepted}
-              className={styles.btn}
-              onClick={!isLoading ? handleImportHardwareWalletClick : undefined}
-            >
-              {lang('Ledger')}
-            </Button>
-          )}
-        </div>
-      </>
-    );
-  }
-
-  // Gram web reuses Core's behavior but ships its own brand mark as a static SVG: the flat June-2026
-  // Gram logo has no lottie asset, and on the combo profile the animated intro logo is only seen on
-  // fresh wallet creation (migrating wallet.ton.org users skip it), so static is the right tradeoff.
-  const brandLogoTgsUrl = IS_TON_BRAND ? ANIMATED_STICKERS_PATHS.coreWalletLogo : undefined;
-  const brandLogoPreviewUrl = IS_TON_BRAND ? ANIMATED_STICKERS_PATHS.coreWalletLogoPreview : undefined;
-
   return (
     <>
       {IS_LEGACY_APP_HOST && (
@@ -184,30 +143,16 @@ function AuthStart({
           onClick={handleParticlesClick}
         >
           <canvas ref={canvasRef} className={styles.logoParticles} />
-          {brandLogoTgsUrl ? (
-            <AnimatedIconWithPreview
-              play={isActive}
-              tgsUrl={brandLogoTgsUrl}
-              previewUrl={brandLogoPreviewUrl}
-              className={buildClassName(
-                styles.logo,
-                isLogoAnimated && styles.logoReadyToScale,
-              )}
-              noLoop={false}
-              nonInteractive
-            />
-          ) : (
-            <img
-              ref={logoRef}
-              src={IS_GRAM_WALLET ? gramWalletLogoPath : logoWebpPath}
-              alt={APP_NAME}
-              className={buildClassName(
-                styles.logo,
-                isLogoAnimated && styles.logoReadyToScale,
-              )}
-              onLoad={markLogoReady}
-            />
-          )}
+          <img
+            ref={logoRef}
+            src={IS_GRAM_WALLET ? gramWalletLogoPath : logoWebpPath}
+            alt={APP_NAME}
+            className={buildClassName(
+              styles.logo,
+              isLogoAnimated && styles.logoReadyToScale,
+            )}
+            onLoad={markLogoReady}
+          />
         </div>
 
         <div className={buildClassName(styles.appName, 'brand-font')}>{APP_NAME}</div>
@@ -221,20 +166,18 @@ function AuthStart({
               {renderText(lang('$auth_intro'))}
             </div>
 
-            {!IS_FEATURE_LIMITED && (
-              <Button
-                isText
-                className={buildClassName(styles.btn, styles.btn_about)}
-                onClick={openAbout}
-              >
-                {lang('More about %app_name%', { app_name: APP_NAME })}{' '}›
-              </Button>
-            )}
-            <div className={buildClassName(styles.buttons, IS_FEATURE_LIMITED && styles.coreWalletButtons)}>
+            <Button
+              isText
+              className={buildClassName(styles.btn, styles.btn_about)}
+              onClick={openAbout}
+            >
+              {lang('More about %app_name%', { app_name: APP_NAME })}{' '}›
+            </Button>
+            <div className={styles.buttons}>
               <Checkbox
                 checked={isAccepted}
                 onChange={setIsAccepted}
-                className={IS_FEATURE_LIMITED ? styles.responsibilityCheckboxSimple : styles.responsibilityCheckbox}
+                className={styles.responsibilityCheckbox}
                 contentClassName={styles.responsibilityCheckboxContent}
               >
                 {lang('$accept_terms_with_link', {
@@ -262,16 +205,14 @@ function AuthStart({
                   {lang('Create New Wallet')}
                 </Button>
               )}
-              {IS_FEATURE_LIMITED ? renderSimpleImportForm() : (
-                <Button
-                  isText
-                  isDisabled={!isAccepted}
-                  className={buildClassName(styles.btn, styles.btn_text)}
-                  onClick={!isLoading ? openAuthImportWalletModal : undefined}
-                >
-                  {lang('Import Existing Wallet')}
-                </Button>
-              )}
+              <Button
+                isText
+                isDisabled={!isAccepted}
+                className={buildClassName(styles.btn, styles.btn_text)}
+                onClick={!isLoading ? openAuthImportWalletModal : undefined}
+              >
+                {lang('Import Existing Wallet')}
+              </Button>
             </div>
           </>
         )}

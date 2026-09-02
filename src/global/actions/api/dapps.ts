@@ -50,14 +50,13 @@ addActionHandler('submitDappConnectRequestConfirm', withEnclaveSessionRelease(as
   const {
     promiseId, permissions, proof, dapp,
   } = global.dappConnectRequest!;
-  const shouldRequireMfa = Boolean(global.accounts?.byId?.[accountId]?.byChain?.ton?.mfa);
 
   recordTonConnectUiEvent('wallet-connect-accepted', promiseId);
   if (!prepareDappOperation(
     accountId,
     DappConnectState.ConfirmHardware,
     updateDappConnectRequest,
-    Boolean(permissions?.isPasswordRequired) || shouldRequireMfa,
+    Boolean(permissions?.isPasswordRequired),
   )) {
     return;
   }
@@ -73,25 +72,6 @@ addActionHandler('submitDappConnectRequestConfirm', withEnclaveSessionRelease(as
     : { signatures: undefined };
 
   if (!handleDappSignatureResult(signingResult, updateDappConnectRequest)) {
-    return;
-  }
-
-  if (shouldRequireMfa) {
-    actions.switchAccount({ accountId });
-
-    const mfaResult = await callApi('createDappConnectMfaRequest', accountId, enclaveToken);
-    if (!handleDappSignatureResult(mfaResult, updateDappConnectRequest)) {
-      return;
-    }
-
-    global = getGlobal();
-    global = updateDappConnectRequest(global, {
-      state: DappConnectState.ConfirmMfa,
-      isLoading: false,
-      proofSignatures: signingResult.signatures,
-      mfaRequestHash: mfaResult.mfaRequestHash,
-    });
-    setGlobal(global);
     return;
   }
 
@@ -489,28 +469,4 @@ addActionHandler('updateDappMfaRequestStatus', async (global) => {
     global = updateCurrentDappTransfer(global, { state: TransferState.Complete });
     setGlobal(global);
   }
-});
-
-addActionHandler('updateDappConnectMfaRequestStatus', async (global, actions) => {
-  const hash = global.dappConnectRequest?.mfaRequestHash;
-  const promiseId = global.dappConnectRequest?.promiseId;
-  const accountId = global.dappConnectRequest?.accountId;
-  const proofSignatures = global.dappConnectRequest?.proofSignatures;
-
-  if (!hash || !promiseId || !accountId) return;
-
-  const result = await callApi('fetchMfaRequest', hash);
-  if (!result?.isConfirmed) return;
-
-  await callApi('confirmDappRequestConnect', promiseId, {
-    accountId,
-    proofSignatures,
-  });
-
-  global = getGlobal();
-  global = clearDappConnectRequest(global);
-  setGlobal(global);
-
-  await pause(GET_DAPPS_PAUSE);
-  actions.getDapps();
 });

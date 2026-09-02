@@ -4,6 +4,7 @@ import type { ApiAddressInfo, ApiBalanceBySlug, ApiNetwork } from '../../types';
 import { ApiCommonError } from '../../types';
 
 import { TRX } from '../../../config';
+import { raceWithAbortSignal } from '../../../util/abortSignal';
 import isEmptyObject from '../../../util/isEmptyObject';
 import { logDebugError } from '../../../util/logs';
 import { getTronClient } from './util/tronweb';
@@ -39,13 +40,15 @@ export async function getWalletAssets(
   network: ApiNetwork,
   address: string,
   sendUpdateTokens: NoneToVoidFunction,
+  options?: { signal?: AbortSignal },
 ): Promise<ApiBalanceBySlug> {
+  const { signal } = options ?? {};
   const { usdtAddress } = NETWORK_CONFIG[network];
   const usdtSlug = buildTokenSlug('tron', usdtAddress);
 
   const [trxBalance, usdtBalance] = await Promise.all([
-    getWalletBalance(network, address),
-    getTrc20Balance(network, usdtAddress, address),
+    raceWithAbortSignal(() => getWalletBalance(network, address), signal),
+    raceWithAbortSignal(() => getTrc20Balance(network, usdtAddress, address), signal),
   ]);
 
   return {

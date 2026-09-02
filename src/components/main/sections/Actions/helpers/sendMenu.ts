@@ -24,6 +24,9 @@ export const SEND_CONTEXT_MENU_ITEMS: DropdownItem<MenuHandler>[] = [{
   value: 'sell',
 }];
 
+export const SEND_CONTEXT_MENU_ITEMS_WITHOUT_SELL = SEND_CONTEXT_MENU_ITEMS
+  .filter(({ value }) => value !== 'sell');
+
 export function handleSendMenuItemClick(value: MenuHandler) {
   switch (value) {
     case 'send':

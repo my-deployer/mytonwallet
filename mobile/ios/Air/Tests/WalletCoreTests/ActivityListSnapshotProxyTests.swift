@@ -1,3 +1,5 @@
+import Foundation
+import OrderedCollections
 import Testing
 @testable import WalletCore
 
@@ -11,6 +13,9 @@ struct ActivityListSnapshotProxyTests {
         let loadingSnapshot = proxy.makeSnapshot(idsByDate: nil, isEndReached: nil, updatedIds: [])
 
         #expect(loadingSnapshot.sectionIdentifiers.contains(.placeholderTransactionsSection))
+        #expect(loadingSnapshot.itemIdentifiers.contains { row in
+            if case .transactionPlaceholder = row { true } else { false }
+        })
         #expect(!loadingSnapshot.sectionIdentifiers.contains(.emptyPlaceholder))
 
         proxy.didUpdateData(idsByDate: [:])
@@ -19,6 +24,10 @@ struct ActivityListSnapshotProxyTests {
         #expect(!emptySnapshot.sectionIdentifiers.contains(.placeholderTransactionsSection))
         #expect(emptySnapshot.sectionIdentifiers.contains(.emptyPlaceholder))
         #expect(emptySnapshot.itemIdentifiers.contains(.emptyPlaceholder))
+        #expect(!emptySnapshot.itemIdentifiers.contains(.loadingMore))
+        #expect(!emptySnapshot.itemIdentifiers.contains { row in
+            if case .transactionPlaceholder = row { true } else { false }
+        })
     }
 
     @Test
@@ -33,8 +42,50 @@ struct ActivityListSnapshotProxyTests {
             #expect(!snapshot.itemIdentifiers.contains(.emptyPlaceholder))
             #expect(snapshot.itemIdentifiers.contains(.loadingMore))
 
-            let actions = proxy.rowDidBecomeVisible(.loadingMore, isEndReached: isEndReached)
-            #expect(actions.shouldRequestRemotePage)
+            #expect(proxy.rowDidBecomeVisible(.loadingMore, isEndReached: isEndReached))
         }
+    }
+
+    @Test
+    func `snapshot includes every locally loaded activity`() {
+        var proxy = ActivityListSnapshotProxy(accountId: "0-mainnet", customSectionIDs: [])
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let ids = (0..<35).map { "activity-\($0)" }
+        let idsByDate: OrderedDictionary<Date, [String]> = [date: ids]
+
+        proxy.didUpdateData(idsByDate: idsByDate)
+        let snapshot = proxy.makeSnapshot(idsByDate: idsByDate, isEndReached: false, updatedIds: [])
+        let snapshotActivityIds = snapshot.itemIdentifiers.compactMap { row -> String? in
+            if case .transaction(_, let id) = row { id } else { nil }
+        }
+
+        #expect(snapshotActivityIds == ids)
+        #expect(snapshot.itemIdentifiers.contains(.loadingMore))
+    }
+
+    @Test
+    func `initially short visible list requests another remote page`() {
+        var proxy = ActivityListSnapshotProxy(accountId: "0-mainnet", customSectionIDs: [])
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let ids = ["first", "second", "third"]
+        let idsByDate: OrderedDictionary<Date, [String]> = [date: ids]
+
+        proxy.didUpdateData(idsByDate: idsByDate)
+
+        #expect(proxy.rowDidBecomeVisible(.transaction("0-mainnet", "first"), isEndReached: false))
+        #expect(!proxy.rowDidBecomeVisible(.transaction("0-mainnet", "first"), isEndReached: true))
+    }
+
+    @Test
+    func `long list requests another remote page only near its loaded end`() {
+        var proxy = ActivityListSnapshotProxy(accountId: "0-mainnet", customSectionIDs: [])
+        let date = Date(timeIntervalSince1970: 1_000_000)
+        let ids = (0..<35).map { "activity-\($0)" }
+        let idsByDate: OrderedDictionary<Date, [String]> = [date: ids]
+
+        proxy.didUpdateData(idsByDate: idsByDate)
+
+        #expect(!proxy.rowDidBecomeVisible(.transaction("0-mainnet", "activity-14"), isEndReached: false))
+        #expect(proxy.rowDidBecomeVisible(.transaction("0-mainnet", "activity-15"), isEndReached: false))
     }
 }

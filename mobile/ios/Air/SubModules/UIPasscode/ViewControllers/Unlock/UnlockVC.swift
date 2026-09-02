@@ -20,6 +20,7 @@ public class UnlockVC: WViewController {
         customHeaderVC: UIViewController,
         compactHeaderVC: UIViewController? = nil,
         sessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         useBioOnPresent: Bool = true,
         biometricPassAllowed: Bool = true,
         prefersNavigationTitleWithCustomHeader: Bool = false,
@@ -33,6 +34,7 @@ public class UnlockVC: WViewController {
             customHeaderVC: customHeaderVC,
             compactHeaderVC: compactHeaderVC,
             sessionKind: sessionKind,
+            extraAuthUsages: extraAuthUsages,
             useBioOnPresent: useBioOnPresent,
             biometricPassAllowed: biometricPassAllowed,
             prefersNavigationTitleWithCustomHeader: prefersNavigationTitleWithCustomHeader,
@@ -43,7 +45,7 @@ public class UnlockVC: WViewController {
     }
 
     /// Should be called before auth required actions.
-    /// Presents unlock UI and optionally auto-triggers biometric auth on appear.
+    /// Optionally tries biometrics first, otherwise presents unlock UI and can auto-trigger biometrics on appear.
     public static func presentAuth(
         on vc: UIViewController,
         title: String = lang("Enter your Wallet Passcode"),
@@ -52,7 +54,9 @@ public class UnlockVC: WViewController {
         customHeaderVC: UIViewController? = nil,
         compactHeaderVC: UIViewController? = nil,
         sessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         prefersNavigationTitleWithCustomHeader: Bool = false,
+        tryBiometricsBeforePresentation: Bool = false,
         onAuthTask: ((_ enclaveToken: EnclaveToken, _ onTaskDone: @escaping () -> Void) -> Void)? = nil,
         onDone: @escaping (_ enclaveToken: EnclaveToken?) -> Void,
         cancellable: Bool,
@@ -77,7 +81,8 @@ public class UnlockVC: WViewController {
                 cancellable: cancellable,
                 onCancel: onCancel,
                 useBioOnPresent: useBioOnPresent,
-                authSessionKind: sessionKind
+                authSessionKind: sessionKind,
+                extraAuthUsages: extraAuthUsages
             )
             if cancellable {
                 let navVC = WNavigationController(rootViewController: unlockVC)
@@ -89,7 +94,30 @@ public class UnlockVC: WViewController {
         }
 
         let canUseBiometric = AuthSupport.status.authorizableMethods.contains(.biometrics)
-        vc.present(_makeUnlockVC(useBioOnPresent: canUseBiometric), animated: true)
+        guard tryBiometricsBeforePresentation, canUseBiometric else {
+            vc.present(_makeUnlockVC(useBioOnPresent: canUseBiometric), animated: true)
+            return
+        }
+
+        Task { @MainActor in
+            if let enclaveToken = try? await AuthSupport.authorizeWithBiometrics(
+                sessionKind: sessionKind,
+                extraUsages: extraAuthUsages
+            ) {
+                if let onAuthTask {
+                    onAuthTask(enclaveToken) {
+                        DispatchQueue.main.async {
+                            onDone(enclaveToken)
+                        }
+                    }
+                } else {
+                    onDone(enclaveToken)
+                }
+                return
+            }
+
+            vc.present(_makeUnlockVC(useBioOnPresent: false), animated: true)
+        }
     }
 
     /// Should be called before auth required actions.
@@ -101,6 +129,7 @@ public class UnlockVC: WViewController {
         customHeaderVC: UIViewController? = nil,
         compactHeaderVC: UIViewController? = nil,
         sessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         prefersNavigationTitleWithCustomHeader: Bool = false,
         authTask: (@MainActor (_ enclaveToken: EnclaveToken) async -> Void)? = nil
     ) async -> EnclaveToken? {
@@ -131,6 +160,7 @@ public class UnlockVC: WViewController {
                 customHeaderVC: customHeaderVC,
                 compactHeaderVC: compactHeaderVC,
                 sessionKind: sessionKind,
+                extraAuthUsages: extraAuthUsages,
                 prefersNavigationTitleWithCustomHeader: prefersNavigationTitleWithCustomHeader,
                 onAuthTask: onAuthTask,
                 onDone: { enclaveToken in
@@ -167,6 +197,7 @@ public class UnlockVC: WViewController {
     private let useBioOnPresent: Bool
     private let biometricPassAllowed: Bool
     private let authSessionKind: AuthSessionKind
+    private let extraAuthUsages: Int
     private let successCompletionDelay: TimeInterval
     private var didTryBiometricOnPresent = false
     private var viewStartedDismissing: Bool = false
@@ -197,6 +228,7 @@ public class UnlockVC: WViewController {
         useBioOnPresent: Bool = false,
         biometricPassAllowed: Bool = true,
         authSessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         onSignOutRequested: (@MainActor () async throws -> Void)? = nil,
         successCompletionDelay: TimeInterval = 0.4
     ) {
@@ -217,6 +249,7 @@ public class UnlockVC: WViewController {
         self.useBioOnPresent = useBioOnPresent
         self.biometricPassAllowed = biometricPassAllowed
         self.authSessionKind = authSessionKind
+        self.extraAuthUsages = extraAuthUsages
         self.successCompletionDelay = successCompletionDelay
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
@@ -301,6 +334,7 @@ public class UnlockVC: WViewController {
             compactLayout: customHeader != nil,
             biometricPassAllowed: biometricPassAllowed,
             authSessionKind: authSessionKind,
+            extraAuthUsages: extraAuthUsages,
             allowsSignOutWhenEmpty: onSignOutRequested != nil,
             showsSignOutWhenEmpty: showsSignOutWhenEmpty,
             delegate: self,
@@ -454,7 +488,8 @@ extension UnlockVC: PasscodeScreenViewDelegate {
             do {
                 enclaveToken = try await AuthSupport.authorizeWithPasscode(
                     passcode,
-                    sessionKind: self.authSessionKind
+                    sessionKind: self.authSessionKind,
+                    extraUsages: self.extraAuthUsages
                 )
                 unexpectedError = nil
             } catch let error as AuthCooldownError {

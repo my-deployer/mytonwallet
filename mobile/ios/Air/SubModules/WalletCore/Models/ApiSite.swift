@@ -24,6 +24,38 @@ public struct ApiSite: Equatable, Hashable, Codable, Sendable {
     public let badgeText: String?
     public let withBorder: Bool?
     public let borderColor: [String]?
+
+    public init(
+        url: String,
+        name: String,
+        icon: String,
+        manifestUrl: String?,
+        description: String,
+        canBeRestricted: Bool,
+        isExternal: Bool?,
+        isFeatured: Bool?,
+        isVerified: Bool?,
+        categoryId: Int?,
+        extendedIcon: String?,
+        badgeText: String?,
+        withBorder: Bool?,
+        borderColor: [String]?
+    ) {
+        self.url = url
+        self.name = name
+        self.icon = icon
+        self.manifestUrl = manifestUrl
+        self.description = description
+        self.canBeRestricted = canBeRestricted
+        self.isExternal = isExternal
+        self.isFeatured = isFeatured
+        self.isVerified = isVerified
+        self.categoryId = categoryId
+        self.extendedIcon = extendedIcon
+        self.badgeText = badgeText
+        self.withBorder = withBorder
+        self.borderColor = borderColor
+    }
 }
 
 extension ApiSite {
@@ -51,6 +83,11 @@ extension ApiSite {
 public struct ApiSiteCategory: Equatable, Hashable, Codable, Sendable {
     public let id: Int
     public let name: String
+
+    public init(id: Int, name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 extension ApiSiteCategory {

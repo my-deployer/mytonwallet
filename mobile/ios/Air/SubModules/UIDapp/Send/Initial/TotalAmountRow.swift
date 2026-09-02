@@ -25,7 +25,7 @@ public struct TotalAmountRow: View {
         var terms: [String] = []
 
         if info.nftsCount > 0 {
-            terms.append(lang("%amount% NFTs", arg1: info.nftsCount))
+            terms.append(L10n.amountNfts(amount: info.nftsCount))
         }
 
         for tokenSlug in info.tokenOrder {

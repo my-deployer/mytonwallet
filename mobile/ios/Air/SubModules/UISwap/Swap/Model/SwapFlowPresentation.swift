@@ -17,7 +17,7 @@ struct SwapPresentationContext {
         self.validator = validator
     }
 
-    func buttonState(context: SwapPresentationContext, state: OnchainSwapModel) -> SwapButtonState {
+    func buttonState(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapButtonState {
         guard context.isValidPair else {
             return .invalidPair
         }
@@ -30,12 +30,12 @@ struct SwapPresentationContext {
         if let issue = blockingIssue(context: context, state: state) {
             return .blocked(issue)
         }
-        guard state.swapEstimate != nil else {
+        guard state.dexEstimate != nil else {
             return .waitingForEstimate
         }
         if validator.requiresDieselAuthorization(
             input: context.validationInput,
-            swapEstimate: state.swapEstimate,
+            swapEstimate: state.dexEstimate,
             account: context.account
         ) {
             return .authorizeDiesel
@@ -43,13 +43,13 @@ struct SwapPresentationContext {
         return .readyToSwap
     }
 
-    func route(context: SwapPresentationContext, state: OnchainSwapModel) -> SwapRoute? {
-        guard state.swapEstimate != nil else {
+    func route(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapRoute? {
+        guard state.dexEstimate != nil else {
             return nil
         }
         if validator.requiresDieselAuthorization(
             input: context.validationInput,
-            swapEstimate: state.swapEstimate,
+            swapEstimate: state.dexEstimate,
             account: context.account
         ) {
             return .authorizeDiesel
@@ -57,13 +57,13 @@ struct SwapPresentationContext {
         return .confirmSwap(presentCrosschainResult: false)
     }
 
-    private func blockingIssue(context: SwapPresentationContext, state: OnchainSwapModel) -> SwapIssue? {
+    private func blockingIssue(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapIssue? {
         if let estimateIssue = state.estimateIssue {
             return estimateIssue
         }
         return validator.validationIssue(
             input: context.validationInput,
-            swapEstimate: state.swapEstimate,
+            swapEstimate: state.dexEstimate,
             account: context.account
         )
     }
@@ -76,7 +76,7 @@ struct SwapPresentationContext {
         self.validator = validator
     }
 
-    func buttonState(context: SwapPresentationContext, state: CrosschainSwapModel) -> SwapButtonState {
+    func buttonState(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapButtonState {
         guard context.isValidPair else {
             return .invalidPair
         }
@@ -96,12 +96,12 @@ struct SwapPresentationContext {
         return shouldShowContinue ? .readyToContinue : .readyToSwap
     }
 
-    func route(context: SwapPresentationContext, state: CrosschainSwapModel) -> SwapRoute? {
+    func route(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapRoute? {
         guard state.cexEstimate != nil else {
             return nil
         }
-        switch context.swapType {
-        case .crosschainFromWallet:
+        switch context.swapType.cexTopology {
+        case .fromWallet:
             guard let amounts = context.confirmationAmounts else {
                 return nil
             }
@@ -110,16 +110,16 @@ struct SwapPresentationContext {
                 buying: amounts.buying,
                 cexLabel: state.cexEstimate?.cexLabel
             ))
-        case .crosschainToWallet:
+        case .toWallet:
             return .confirmSwap(presentCrosschainResult: true)
-        case .crosschainInsideWallet:
+        case .insideWallet:
             return .confirmSwap(presentCrosschainResult: false)
-        case .onChain:
+        case nil:
             return nil
         }
     }
 
-    private func blockingIssue(context: SwapPresentationContext, state: CrosschainSwapModel) -> SwapIssue? {
+    private func blockingIssue(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapIssue? {
         if let estimateIssue = state.estimateIssue {
             return estimateIssue
         }
@@ -131,7 +131,7 @@ struct SwapPresentationContext {
     }
 
     private func shouldShowContinue(context: SwapPresentationContext) -> Bool {
-        context.swapType == .crosschainFromWallet
+        context.swapType.cexTopology == .fromWallet
             && context.account.supports(chain: context.validationInput.buyingToken.chain) == false
     }
 }

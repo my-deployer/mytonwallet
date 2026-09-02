@@ -78,11 +78,12 @@ function NftInfo({
   }
 
   const name = nft.name || shortenAddress(nft.address);
+  const { thumbnail } = nft;
 
   function renderContent() {
     return (
       <>
-        <img src={nft!.thumbnail} alt={name} className={styles.thumbnail} />
+        {thumbnail && <img src={thumbnail} alt={name} className={styles.thumbnail} />}
 
         <div className={styles.info}>
           <div className={styles.title}>

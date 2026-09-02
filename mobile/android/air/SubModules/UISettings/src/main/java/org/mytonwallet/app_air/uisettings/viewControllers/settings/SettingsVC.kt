@@ -18,13 +18,14 @@ import org.mytonwallet.app_air.uicomponents.base.WNavigationController.Presentat
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.ReversedCornerView
+import org.mytonwallet.app_air.uicomponents.commonViews.UpdateStatusView
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
-import org.mytonwallet.app_air.uicomponents.extensions.setConstraints
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingLocalized
 import org.mytonwallet.app_air.uicomponents.extensions.startActivityCatching
 import org.mytonwallet.app_air.uicomponents.helpers.AccountDialogHelpers
+import org.mytonwallet.app_air.uicomponents.helpers.HomeStatusController
 import org.mytonwallet.app_air.uicomponents.helpers.LinearLayoutManagerAccurateOffset
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WImageButton
@@ -76,8 +77,6 @@ import org.mytonwallet.app_air.walletcore.WalletEvent.AccountChangedInApp
 import org.mytonwallet.app_air.walletcore.api.activateAccount
 import org.mytonwallet.app_air.walletcore.helpers.ExplorerHelpers
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
-import org.mytonwallet.app_air.walletcore.models.MAccount
-import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiUpdate
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 
@@ -93,6 +92,9 @@ class SettingsVC(context: Context) :
     private val moreButtonRipple = WRippleDrawable.create(20f.dp)
 
     companion object {
+        private const val NAV_STATUS_END_PADDING = 80
+        private const val NAV_STATUS_START_SHIFT = 8f
+        private const val NAV_STATUS_TOP_SHIFT = 2.5f
         val HEADER_CELL = WCell.Type(1)
         val SECTION_HEADER_CELL = WCell.Type(2)
         val ACCOUNT_CELL = WCell.Type(3)
@@ -104,11 +106,14 @@ class SettingsVC(context: Context) :
         get() = super.topBarConfiguration.copy(blurRootView = recyclerView, forceSeparator = true)
     override val topBlurViewGuideline: View
         get() = headerView
+    override val shouldDisplayBottomBar: Boolean
+        get() = isPushedOverMainNavigation || super.shouldDisplayBottomBar
 
     private val px104 = 104.dp
     private val px52 = 52.dp
 
-    override val isSwipeBackAllowed: Boolean = false
+    override val isSwipeBackAllowed: Boolean
+        get() = isPushedOverMainNavigation
 
     private val settingsVM = SettingsVM()
     private var pendingReload = false
@@ -165,10 +170,49 @@ class SettingsVC(context: Context) :
     }
 
     private var headerCell: SettingsSpaceCell? = null
+    private val navStatusView: UpdateStatusView by lazy {
+        UpdateStatusView(context, UpdateStatusView.Style.NavigationBar).apply {
+            setPaddingLocalized(0, 0, NAV_STATUS_END_PADDING.dp, 0)
+            translationX = NAV_STATUS_START_SHIFT.dp * if (LocaleController.isRTL) 1 else -1
+            translationY = NAV_STATUS_TOP_SHIFT.dp
+            setAppearance(isShowing = false, animated = false)
+        }
+    }
+    private var isNavStatusAttached = false
+    private val navStatusListener = HomeStatusController.Listener { state, animated ->
+        navStatusView.setState(state, handleAnimation = animated)
+        navStatusView.setAppearance(state !is UpdateStatusView.State.Updated, animated)
+    }
+
+    private fun unclipNavStatusAncestors() {
+        var parent = navStatusView.parent
+        while (parent is ViewGroup) {
+            parent.clipChildren = false
+            if (parent === navigationBar) break
+            parent = parent.parent
+        }
+    }
+
     private val headerView: SettingsHeaderView by lazy {
         val v = SettingsHeaderView(this, navigationController?.getSystemBars()?.top ?: 0)
         v
     }
+
+    private val isPushedOverMainNavigation: Boolean
+        get() {
+            val nav = navigationController ?: return false
+            return WGlobalStorage.areTopTabsEnabled() &&
+                !nav.window.isWideLayout &&
+                nav.tabBarController == null &&
+                nav.viewControllers.firstOrNull() !== this
+        }
+
+    private val settingsNavigationController: WNavigationController?
+        get() {
+            val nav = navigationController ?: return null
+            return nav.tabBarController?.mainNavigationController
+                ?: nav.takeIf { nav.viewControllers.firstOrNull() !== this }
+        }
 
     private val qrButton: WImageButton by lazy {
         val btn = WImageButton(context)
@@ -257,6 +301,8 @@ class SettingsVC(context: Context) :
             toEnd(qrButton, 56f)
         }
 
+        updateMainNavigationBackButton()
+
         updateTheme()
 
         WalletCore.doOnBridgeReady {
@@ -270,6 +316,7 @@ class SettingsVC(context: Context) :
 
     override fun viewWillAppear() {
         super.viewWillAppear()
+        updateMainNavigationBackButton()
         if (pendingReload) {
             visibleSections = computeVisibleSections()
             updatePadding()
@@ -326,6 +373,7 @@ class SettingsVC(context: Context) :
 
     override fun insetsUpdated() {
         super.insetsUpdated()
+        updateMainNavigationBackButton()
         val topInset = navigationController?.getSystemBars()?.top ?: 0
         view.setConstraints {
             toTopPx(moreButton, topInset + ViewConstants.GAP.dp)
@@ -354,6 +402,7 @@ class SettingsVC(context: Context) :
 
     private fun updateScroll(dy: Int) {
         headerView.updateScroll(dy)
+        navStatusView.alpha = 1f - (dy / px52.toFloat()).coerceIn(0f, 1f)
         if (isReparenting) return
         if (dy > 0) {
             if (headerView.parent == headerCell) {
@@ -365,8 +414,8 @@ class SettingsVC(context: Context) :
                     view.setConstraints {
                         toStartPx(headerView, additionalTabletPadding + systemBarStartInset)
                     }
-                    navigationBar?.bringToFront()
                     topBlurViewGuideline.bringToFront()
+                    navigationBar?.bringToFront()
                     moreButton.bringToFront()
                     qrButton.bringToFront()
                 } finally {
@@ -393,6 +442,23 @@ class SettingsVC(context: Context) :
                     }
                 }
             }
+        }
+    }
+
+    private fun updateMainNavigationBackButton() {
+        val shouldShow = isPushedOverMainNavigation
+        setupNavBar(shouldShow)
+        headerView.setBackButtonVisible(shouldShow)
+        if (shouldShow) {
+            if (!isNavStatusAttached) {
+                isNavStatusAttached = true
+                navigationBar?.setTitleView(navStatusView, animated = false)
+                unclipNavStatusAncestors()
+                HomeStatusController.addListener(navStatusListener)
+            }
+            navigationBar?.bringToFront()
+            moreButton.bringToFront()
+            qrButton.bringToFront()
         }
     }
 
@@ -474,43 +540,43 @@ class SettingsVC(context: Context) :
             }
 
             SettingsItem.Identifier.NOTIFICATION_SETTINGS -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     NotificationSettingsVC(context)
                 )
             }
 
             SettingsItem.Identifier.PORTFOLIO -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     PortfolioVC(context)
                 )
             }
 
             SettingsItem.Identifier.APPEARANCE -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     AppearanceVC(context)
                 )
             }
 
             SettingsItem.Identifier.ASSETS_AND_ACTIVITY -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     AssetsAndActivitiesVC(context)
                 )
             }
 
             SettingsItem.Identifier.LANGUAGE -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     LanguageVC(context)
                 )
             }
 
             SettingsItem.Identifier.CONNECTED_APPS -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     ConnectedAppsVC(context)
                 )
             }
 
             SettingsItem.Identifier.SECURITY -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     SecurityVC(context)
                 )
             }
@@ -521,7 +587,7 @@ class SettingsVC(context: Context) :
             }
 
             SettingsItem.Identifier.USE_RESPONSIBILITY -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     UserResponsibilityVC(context)
                 )
             }
@@ -536,7 +602,7 @@ class SettingsVC(context: Context) :
             }
 
             SettingsItem.Identifier.WALLET_VERSIONS -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     WalletVersionsVC(context)
                 )
             }
@@ -571,7 +637,7 @@ class SettingsVC(context: Context) :
             }
 
             SettingsItem.Identifier.ABOUT_MTW -> {
-                navigationController?.tabBarController?.mainNavigationController?.push(
+                settingsNavigationController?.push(
                     AppInfoVC(context)
                 )
             }
@@ -651,7 +717,7 @@ class SettingsVC(context: Context) :
         extraAuthUsages: Int = 0,
         destinationBuilder: (String) -> WViewController
     ) {
-        val nav = navigationController?.tabBarController?.mainNavigationController
+        val nav = settingsNavigationController
         val passcodeConfirmVC = PasscodeConfirmVC(
             context,
             Default(
@@ -740,7 +806,7 @@ class SettingsVC(context: Context) :
 
             VERSION_CELL -> {
                 SettingsVersionCell(window!!) {
-                    navigationController?.tabBarController?.mainNavigationController?.push(
+                    settingsNavigationController?.push(
                         DebugMenuVC(context)
                     )
                 }
@@ -927,6 +993,7 @@ class SettingsVC(context: Context) :
     override fun onDestroy() {
         super.onDestroy()
 
+        HomeStatusController.removeListener(navStatusListener)
         WalletCore.unsubscribeFromApiUpdates(
             ApiUpdate.ApiUpdateWalletVersions::class.java,
             this

@@ -29,7 +29,7 @@ public struct UseAllButton: View {
     public var body: some View {
         WithPerceptionTracking {
             Button(action: onTap) {
-                let label = Text(lang("$max_balance", arg1: ""))
+                let label = Text(L10n.maxBalance(balance: ""))
                     .textStyle(textStyle, scaling: textScaling)
                     .foregroundColor(.air.secondaryLabel)
                 let balance = Text(amount: amount, format: .init(preset: .defaultAdaptive, roundHalfUp: false))

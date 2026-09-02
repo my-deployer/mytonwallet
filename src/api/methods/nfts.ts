@@ -12,12 +12,9 @@ import { getChainConfig } from '../../util/chain';
 import { extractKey } from '../../util/iteratees';
 import { logDebug, logDebugError } from '../../util/logs';
 import chains from '../chains';
-import { parseTonapiioNft } from '../chains/ton/util/metadata';
-import { fetchNftByAddress as fetchRawNftByAddress } from '../chains/ton/util/tonapiio';
 import { fetchStoredWallet } from '../common/accounts';
-import { getNftSuperCollectionsByCollectionAddress } from '../common/addresses';
 import { callBackendPost } from '../common/backend';
-import { publishSignedMfaRequest, refreshMfaState, registerMfaConfirmationHandler } from './mfa';
+import { requireMfaMethods } from './optional';
 import { createLocalTransactions } from './transfer';
 
 let onUpdate: OnApiUpdate;
@@ -80,6 +77,7 @@ export async function submitNftTransfers(
   }
 
   if ('mfaRequest' in result) {
+    const { publishSignedMfaRequest, registerMfaConfirmationHandler } = requireMfaMethods();
     const { mfaRequestHash } = await publishSignedMfaRequest(accountId, chain, result.mfaRequest);
     const realFeePerNft = bigintDivideToNumber(totalRealFee, nfts.length);
 
@@ -126,8 +124,8 @@ export async function submitNftTransfers(
     nft: nfts?.[index],
   })));
 
-  if (chain === 'ton') {
-    void refreshMfaState(accountId, enclaveToken)
+  if (process.env.NO_EXTRA_FEATURES !== '1' && chain === 'ton') {
+    void requireMfaMethods().refreshMfaState(accountId, enclaveToken)
       .then((mfaUpdate) => {
         if (mfaUpdate?.changed) {
           onUpdate({
@@ -148,10 +146,10 @@ export async function submitNftTransfers(
   };
 }
 
-export async function fetchNftByAddress(network: ApiNetwork, nftAddress: string): Promise<ApiNft | undefined> {
-  const rawNft = await fetchRawNftByAddress(network, nftAddress);
-  const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
-  return parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress);
+export function fetchNftByAddress(
+  chain: ApiChain, network: ApiNetwork, nftAddress: string,
+): Promise<ApiNft | undefined> | undefined {
+  return chains[chain]?.fetchNftByAddress?.(network, nftAddress);
 }
 
 export async function checkNftOwnership(chain: ApiChain, accountId: string, nftAddress: string) {

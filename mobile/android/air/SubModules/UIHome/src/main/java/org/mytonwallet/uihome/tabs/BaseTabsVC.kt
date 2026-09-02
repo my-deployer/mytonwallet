@@ -16,6 +16,7 @@ import org.mytonwallet.app_air.uicomponents.base.WNavigationController.Presentat
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.extensions.startActivityCatching
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
+import org.mytonwallet.app_air.uimarket.viewControllers.market.MarketVC
 import org.mytonwallet.app_air.uiportfolio.viewControllers.portfolio.PortfolioVC
 import org.mytonwallet.app_air.uireceive.ReceiveBackgroundCache
 import org.mytonwallet.app_air.uisettings.viewControllers.settings.SettingsVC
@@ -38,8 +39,8 @@ import org.mytonwallet.uihome.home.promotion.PromotionVC
 import org.mytonwallet.uihome.tabs.views.IBottomNavigationView
 
 /**
- * Shared base for the two tab containers (phone [TabsVC] and tablet TabletTabsVC). Owns the four
- * per-tab navigation stacks (Home/Agent/Explore/Settings) and the shared [WalletEvent] routing, and
+ * Shared base for the two tab containers (phone [TabsVC] and tablet TabletTabsVC). Owns the
+ * per-tab navigation stacks and the shared [WalletEvent] routing, and
  * supports transferring the live stacks between containers on a layout swap so each tab's back stack
  * survives. Container-specific chrome (bottom bar, minimize, blur, search, mounting) is left to the
  * subclasses via the [ITabsVC] members they implement.
@@ -64,16 +65,25 @@ abstract class BaseTabsVC(context: Context) :
     /** Hook so a subclass can wire up the Explore VC (search field) once it's created. */
     protected open fun onExploreCreated(exploreVC: ExploreVC) {}
 
+    protected open fun rootTopInsetForTab(id: Int): Int = 0
+
+    private fun configureNavigationStack(id: Int, nav: WNavigationController) {
+        nav.tabBarController = this
+        nav.additionalRootTopInset = rootTopInsetForTab(id)
+    }
+
     /** Detach the live stacks from this container's view tree (called before a transfer). */
     protected abstract fun detachMountedStacks()
 
     protected fun getNavigationStack(id: Int): WNavigationController {
         stackNavigationControllers[id]?.let { return it }
         val nav = WNavigationController(window!!)
-        nav.tabBarController = this
+        configureNavigationStack(id, nav)
         nav.setRoot(
             when (id) {
                 IBottomNavigationView.ID_HOME -> HomeVC(context, MScreenMode.Default)
+
+                IBottomNavigationView.ID_MARKET -> MarketVC(context)
 
                 IBottomNavigationView.ID_AGENT -> AgentVC(context)
 
@@ -95,6 +105,25 @@ abstract class BaseTabsVC(context: Context) :
 
     protected fun navForOrNull(id: Int): WNavigationController? = stackNavigationControllers[id]
 
+    protected fun detachNavigationStack(id: Int): List<WViewController> {
+        val nav = stackNavigationControllers.remove(id) ?: return emptyList()
+        (nav.parent as? ViewGroup)?.removeView(nav)
+        nav.tabBarController = null
+        val detached = nav.detachAll()
+        nav.onDestroy()
+        return detached
+    }
+
+    protected fun replaceNavigationStack(id: Int, stack: List<WViewController>) {
+        if (stack.isEmpty()) return
+        val nav = stackNavigationControllers[id] ?: WNavigationController(window!!).also {
+            configureNavigationStack(id, it)
+            stackNavigationControllers[id] = it
+        }
+        nav.replaceRoot(stack.first())
+        nav.adoptAboveRoot(stack.drop(1))
+    }
+
     fun doOnHomeInitialContentRendered(callback: () -> Unit): Boolean {
         if (mainNavigationController?.viewControllers?.size != 1) return false
         val homeVC = activeNavigationController
@@ -110,6 +139,14 @@ abstract class BaseTabsVC(context: Context) :
             .viewControllers
             .firstOrNull() as? AgentVC ?: return
         agentVC.submitPrompt(prompt)
+    }
+
+    protected fun showAgentMessage(messageId: String?) {
+        if (messageId.isNullOrBlank()) return
+        val agentVC = getNavigationStack(IBottomNavigationView.ID_AGENT)
+            .viewControllers
+            .firstOrNull() as? AgentVC ?: return
+        agentVC.showMessage(messageId)
     }
 
     protected val navStacks: Collection<WNavigationController>
@@ -131,6 +168,8 @@ abstract class BaseTabsVC(context: Context) :
 
     protected open fun restoreSearchText(text: String) {}
 
+    protected open fun selectedTabForExport(selectedItemId: Int): Int = selectedItemId
+
     /**
      * The full-screen VCs currently pushed over this container's main navigation controller, above
      * the tab content. Detached (not destroyed) so the new container can re-host them. Each container
@@ -145,7 +184,7 @@ abstract class BaseTabsVC(context: Context) :
 
     /** Detach the stacks from this container and hand them to the other one (resize swap). */
     fun exportStacks(): TabStacksTransfer {
-        val selected = currentTabId
+        val selected = selectedTabForExport(currentTabId)
         val pushedOverMain = exportPushedOverMain()
         detachMountedStacks()
         for (nav in stackNavigationControllers.values) {
@@ -169,8 +208,8 @@ abstract class BaseTabsVC(context: Context) :
         stackNavigationControllers.putAll(transfer.stacks)
         cachedExploreVC = transfer.exploreVC
         cachedExploreVC?.let { onExploreCreated(it) }
-        for (nav in stackNavigationControllers.values) {
-            nav.tabBarController = this
+        for ((id, nav) in stackNavigationControllers) {
+            configureNavigationStack(id, nav)
         }
         ownsStacks = true
         currentTabId = transfer.selectedItemId
@@ -188,10 +227,13 @@ abstract class BaseTabsVC(context: Context) :
 
     /** Re-host the pushed-over-main VCs once this container's views/main nav exist. */
     protected fun adoptPendingPushedOverMain() {
-        if (pendingPushedOverMain.isEmpty()) return
+        adoptPushedOverMain(takePendingPushedOverMain())
+    }
+
+    protected fun takePendingPushedOverMain(): List<WViewController> {
         val pushed = pendingPushedOverMain
         pendingPushedOverMain = emptyList()
-        adoptPushedOverMain(pushed)
+        return pushed
     }
 
     protected fun destroyStacks() {

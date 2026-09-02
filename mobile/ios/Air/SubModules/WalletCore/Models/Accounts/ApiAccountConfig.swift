@@ -108,9 +108,32 @@ public struct ApiPromotion: Equatable, Hashable, Codable, Sendable {
 #if DEBUG
 public enum DebugPromotionPreset {
     public static let userDefaultsKey = "debug_showAirPromotionPreset"
+    public static let cardMintingUserDefaultsKey = "debug_showCardMintingPromotionPreset"
 
     public static var isEnabled: Bool {
+        airPromotionIsEnabled || cardMintingPromotionIsEnabled
+    }
+
+    public static var airPromotionIsEnabled: Bool {
         UserDefaults.standard.bool(forKey: userDefaultsKey)
+    }
+
+    public static var cardMintingPromotionIsEnabled: Bool {
+        UserDefaults.standard.bool(forKey: cardMintingUserDefaultsKey)
+    }
+
+    public static var activePromotion: ApiPromotion? {
+        if cardMintingPromotionIsEnabled {
+            return cardMintingPromotion
+        }
+        if airPromotionIsEnabled {
+            return airPromotion
+        }
+        return nil
+    }
+
+    public static var cardsInfoOverride: ApiCardsInfo? {
+        cardMintingPromotionIsEnabled ? cardMintingCardsInfo : nil
     }
 
     public static let airPromotion = ApiPromotion(
@@ -144,6 +167,31 @@ public enum DebugPromotionPreset {
     )
 
     public static let airAccountConfig = ApiAccountConfig(activePromotion: airPromotion)
+
+    public static let cardMintingPromotion = ApiPromotion(
+        id: "cardMinting-2026",
+        kind: .cardOverlay,
+        cardOverlay: .init(
+            mascotIcon: .init(
+                url: "https://static.mytonwallet.org/cards/v2/cards/1806.webp",
+                top: 17,
+                right: 5,
+                height: 86,
+                width: 86,
+                rotation: -7
+            ),
+            onClickAction: .openMintCardModal
+        ),
+        modal: nil
+    )
+
+    public static let cardMintingCardsInfo = ApiCardsInfo(byType: [
+        .standard: ApiCardInfo(all: 10_000, notMinted: 6_428, price: 50),
+        .silver: ApiCardInfo(all: 5_000, notMinted: 2_341, price: 100),
+        .gold: ApiCardInfo(all: 2_500, notMinted: 874, price: 250),
+        .platinum: ApiCardInfo(all: 1_000, notMinted: 216, price: 500),
+        .black: ApiCardInfo(all: 250, notMinted: 18, price: 1_000),
+    ])
 }
 #endif
 

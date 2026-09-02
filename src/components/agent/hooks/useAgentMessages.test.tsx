@@ -12,7 +12,7 @@ import {
   saveAgentMessages,
 } from '../../../util/agent/agentStorage';
 import { pause, waitFor } from '../../../util/schedulers';
-import useAgentMessages from './useAgentMessages';
+import { useAgentV1Messages } from './useAgentMessages';
 
 jest.mock('../../../global', () => {
   const actual = jest.requireActual('../../../global');
@@ -255,7 +255,7 @@ describe('useAgentMessages streaming presentation', () => {
 });
 
 function Harness() {
-  latestController = useAgentMessages({ lang });
+  latestController = useAgentV1Messages({ lang });
   return undefined;
 }
 

@@ -44,10 +44,30 @@ public protocol AuthSupportProtocol {
     static func changePasscode(to newPasscode: String, using authorizationToken: EnclaveToken) async throws
     static func enableBiometrics(using authorizationToken: EnclaveToken) async throws -> EnclaveToken
     static func disableBiometrics(using authorizationToken: EnclaveToken) async throws
-    static func authorizeWithPasscode(_ passcode: String, sessionKind: AuthSessionKind) async throws -> EnclaveToken?
-    static func authorizeWithBiometrics(sessionKind: AuthSessionKind) async throws -> EnclaveToken?
+    static func authorizeWithPasscode(
+        _ passcode: String,
+        sessionKind: AuthSessionKind,
+        extraUsages: Int
+    ) async throws -> EnclaveToken?
+    static func authorizeWithBiometrics(
+        sessionKind: AuthSessionKind,
+        extraUsages: Int
+    ) async throws -> EnclaveToken?
     static var accountsSupportAppLock: Bool { get }
     static var cooldownRemaining: TimeInterval? { get }
+}
+
+public extension AuthSupportProtocol {
+    static func authorizeWithPasscode(
+        _ passcode: String,
+        sessionKind: AuthSessionKind
+    ) async throws -> EnclaveToken? {
+        try await authorizeWithPasscode(passcode, sessionKind: sessionKind, extraUsages: 0)
+    }
+
+    static func authorizeWithBiometrics(sessionKind: AuthSessionKind) async throws -> EnclaveToken? {
+        try await authorizeWithBiometrics(sessionKind: sessionKind, extraUsages: 0)
+    }
 }
 
 @MainActor public var AuthSupport: AuthSupportProtocol.Type = AuthSupportImpl.self
@@ -214,7 +234,8 @@ final class AuthSupportImpl: AuthSupportProtocol {
 
     static func authorizeWithPasscode(
         _ passcode: String,
-        sessionKind: AuthSessionKind
+        sessionKind: AuthSessionKind,
+        extraUsages: Int
     ) async throws -> EnclaveToken? {
         do {
             if let waitFor = cooldownRemaining {
@@ -227,7 +248,7 @@ final class AuthSupportImpl: AuthSupportProtocol {
             let enclaveToken = try await authorizeWithEnclave(
                 passcode: passcode,
                 sessionKind: sessionKind,
-                usageCount: 1 + upgradeUsageCount
+                usageCount: 1 + extraUsages + upgradeUsageCount
             )
             if let enclaveToken {
                 failedLoginAttempts = 0
@@ -253,10 +274,11 @@ final class AuthSupportImpl: AuthSupportProtocol {
     }
 
     static func authorizeWithBiometrics(
-        sessionKind: AuthSessionKind
+        sessionKind: AuthSessionKind,
+        extraUsages: Int
     ) async throws -> EnclaveToken? {
         let upgradeUsageCount = await pendingMultichainUpgradeUsageCount()
-        let usageCount = 1 + upgradeUsageCount
+        let usageCount = 1 + extraUsages + upgradeUsageCount
         let enclaveToken: EnclaveToken?
 
         if AuthSupportLegacy.hasLegacyBiometrics {

@@ -15,8 +15,8 @@ private let switchAccountSectionLabelTopPadding: CGFloat = 12
 private let switchAccountSectionLabelBottomPadding: CGFloat = 6
 
 @MainActor
-enum SwitchAccountMenu {
-    static func makeConfiguration() -> ContextMenuConfiguration {
+public enum SwitchAccountMenu {
+    public static func makeConfiguration() -> ContextMenuConfiguration {
         let activeAccount = AccountStore.account
         let otherAccounts = AccountStore.orderedAccounts.filter { $0.id != AccountStore.accountId }
         let visibleOtherAccounts = Array(otherAccounts.prefix(switchAccountMaxAccountsShown))
@@ -137,7 +137,7 @@ enum SwitchAccountMenu {
                 _ = try await AccountStore.activateAccount(accountId: account.id)
                 AppActions.showHome(popToRoot: true)
             } catch {
-                fatalError("failed to activate account: \(account.id)")
+                AppActions.showError(error: error)
             }
         }
     }

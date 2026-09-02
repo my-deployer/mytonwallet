@@ -13,6 +13,8 @@ final class TokenInfoCell: FirstRowCell {
     private var currentHeight = TokenInfoModel.collapsedHeight
     private var heightAnimator: ValueAnimator?
     private var onHeightChange: (() -> Void)?
+    private var onUserToggleAnimationChange: ((Bool) -> Void)?
+    private var isUserToggleAnimationActive = false
 
     override var height: CGFloat? {
         get { currentHeight }
@@ -44,11 +46,16 @@ final class TokenInfoCell: FirstRowCell {
         super.prepareForReuse()
         heightAnimator?.invalidate()
         heightAnimator = nil
+        setUserToggleAnimationActive(false)
         model?.onToggleRequested = nil
         synchronizeHeight(notify: false)
     }
 
-    func configure(model: TokenInfoModel, onHeightChange: @escaping () -> Void) {
+    func configure(
+        model: TokenInfoModel,
+        onHeightChange: @escaping () -> Void,
+        onUserToggleAnimationChange: @escaping (Bool) -> Void
+    ) {
         self.onHeightChange = onHeightChange
         if self.model !== model {
             installHostingView(model: model)
@@ -56,6 +63,8 @@ final class TokenInfoCell: FirstRowCell {
 
         heightAnimator?.invalidate()
         heightAnimator = nil
+        setUserToggleAnimationActive(false)
+        self.onUserToggleAnimationChange = onUserToggleAnimationChange
         model.onToggleRequested = { [weak self] in
             self?.toggleExpanded()
         }
@@ -124,6 +133,7 @@ final class TokenInfoCell: FirstRowCell {
         guard let model, heightAnimator == nil, model.canExpand else { return }
 
         let willExpand = !model.isExpanded
+        setUserToggleAnimationActive(true)
         model.setExpanded(willExpand)
         let targetExpansionProgress = model.targetExpansionProgress
 
@@ -133,6 +143,7 @@ final class TokenInfoCell: FirstRowCell {
                 expansionProgress: targetExpansionProgress,
                 notify: true
             )
+            setUserToggleAnimationActive(false)
             return
         }
 
@@ -173,8 +184,15 @@ final class TokenInfoCell: FirstRowCell {
                 notify: abs(currentHeight - targetHeight) > 0.01
             )
             heightAnimator = nil
+            setUserToggleAnimationActive(false)
         }
         animator.start()
+    }
+
+    private func setUserToggleAnimationActive(_ isActive: Bool) {
+        guard isUserToggleAnimationActive != isActive else { return }
+        isUserToggleAnimationActive = isActive
+        onUserToggleAnimationChange?(isActive)
     }
 
     private func setHeight(

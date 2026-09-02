@@ -197,7 +197,7 @@ public abstract class OverScrollBounceEffectDecoratorBase implements IOverScroll
                             mBounceForwardState.setTarget(mFlingData.scrollDistance - mFlingData.startOffset, mFlingData.totalTime - (new Date().getTime() - mFlingData.timestamp));
                             issueStateTransition(mBounceForwardState);
                         }
-                    } else if (mFlingData.startVelocity > 0 && !recyclerView.canScrollVertically(1)) {
+                    } else if (mFlingData.startVelocity > 0 && mViewAdapter.isInAbsoluteEnd()) {
                         float newOffset = recyclerView.computeVerticalScrollOffset();
                         float scrolledY = newOffset - mFlingData.startOffset;
                         if (mFlingData.scrollDistance > scrolledY) {

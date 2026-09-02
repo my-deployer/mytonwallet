@@ -7,7 +7,6 @@ import type { AnimationLevel, Theme } from '../../global/types';
 import {
   ANIMATION_LEVEL_MAX,
   ANIMATION_LEVEL_MIN,
-  IS_MY_WALLET_BRAND,
 } from '../../config';
 import { selectCurrentAccountSettings } from '../../global/selectors';
 import buildClassName from '../../util/buildClassName';
@@ -156,7 +155,7 @@ function SettingsAppearance({
           </div>
         </div>
 
-        {IS_MY_WALLET_BRAND && !isNftBuyingDisabled && (
+        {!isNftBuyingDisabled && (
           <>
             <p className={styles.blockTitle}>{lang('Palette and Card')}</p>
             <div className={buildClassName(styles.block, styles.settingsBlockWithDescription)}>

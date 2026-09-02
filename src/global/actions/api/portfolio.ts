@@ -5,9 +5,9 @@ import type { GlobalState, PortfolioHistoryBundle, PortfolioPnlChange } from '..
 
 import { areDeepEqual } from '../../../util/areDeepEqual';
 import {
+  buildPortfolioHistoryParams,
   DEFAULT_PORTFOLIO_TIME_RANGE,
   getPortfolioHistorySlot,
-  getTimeRangeStartTs,
 } from '../../../util/portfolio/timeRange';
 import { callApi } from '../../../api';
 import { addActionHandler, getGlobal, setGlobal } from '../../index';
@@ -19,21 +19,6 @@ const HISTORY_REFRESH_MAX_ATTEMPTS = 6;
 // Throttle window for the card's per-tick P&L-change refresh (see `runLoadPortfolioPnlChange`)
 const PNL_CHANGE_THROTTLE_MS = 30_000;
 const PORTFOLIO_UNAVAILABLE_ERROR = 'Unavailable';
-const ALL_TIME_START_ISO = '2020-01-01T00:00:00.000Z';
-const DAY_START_SUFFIX = 'T00:00:00.000Z';
-const DAY_END_SUFFIX = 'T23:59:59.000Z';
-const ISO_DATE_LENGTH = 10;
-
-// Point density per range
-const DENSITY_BY_RANGE: Record<ApiPriceHistoryPeriod, string> = {
-  '1D': '5m',
-  '7D': '1h',
-  '1M': '4h',
-  '3M': '1d',
-  '1Y': '1d',
-  ALL: '1d',
-};
-
 let historyRefreshTimerId: number | undefined;
 let historyRefreshAttempts = 0;
 let historyRefreshAccountId: string | undefined;
@@ -126,7 +111,7 @@ async function runLoadPortfolioHistory(force = false) {
     error: undefined,
   }));
 
-  const params = buildRangeParams(range);
+  const params = buildPortfolioHistoryParams(range);
 
   const [netWorth, pnlCumulative, pnl, pnlChangeResponse] = await Promise.all([
     callApi('fetchPortfolioNetWorthHistory', wallets, baseCurrency, params),
@@ -227,7 +212,7 @@ async function runLoadPortfolioPnlChange(global: GlobalState) {
   lastPnlChangeFetch = { key: throttleKey, at: Date.now() };
 
   const requestId = ++activePnlChangeRequestId;
-  const params = buildRangeParams(range);
+  const params = buildPortfolioHistoryParams(range);
   const pnlChangeResponse = await callApi('fetchPortfolioPnlChange', wallets, baseCurrency, params);
 
   if (requestId !== activePnlChangeRequestId) return;
@@ -284,19 +269,6 @@ function buildPnlChange(
     percent: response.percent,
     startTs: response.startTs,
     endTs: response.endTs,
-  };
-}
-
-function buildRangeParams(range: ApiPriceHistoryPeriod) {
-  const now = new Date();
-  const startTs = getTimeRangeStartTs(range, now.getTime());
-  const toDay = now.toISOString().slice(0, ISO_DATE_LENGTH);
-  return {
-    from: startTs === undefined
-      ? ALL_TIME_START_ISO
-      : `${new Date(startTs).toISOString().slice(0, ISO_DATE_LENGTH)}${DAY_START_SUFFIX}`,
-    to: `${toDay}${DAY_END_SUFFIX}`,
-    density: DENSITY_BY_RANGE[range],
   };
 }
 

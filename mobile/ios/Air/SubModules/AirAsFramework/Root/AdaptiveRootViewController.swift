@@ -37,10 +37,12 @@ enum RootContainerLayout: String {
 }
 
 @MainActor
-final class AdaptiveRootViewController: UIViewController, VisibleContentProviding {
+final class AdaptiveRootViewController: UIViewController, VisibleContentProviding, WalletCoreData.EventsObserver {
     private var activeContentViewController: UIViewController?
+    private weak var activeTopTabsRootViewController: TopTabsRootViewController?
+    private weak var searchOverlayViewController: UIViewController?
     private var activeLayout: RootContainerLayout?
-    private var activeTopTabsVariant: TopTabsNavigationExperiment.Variant = .disabled
+    private var activeShowsActionButtonsRow = WalletActionButtonsSettings.showsActionButtonsRow
 
     var visibleContentProviderViewController: UIViewController {
         activeContentViewController ?? self
@@ -50,20 +52,15 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         super.viewDidLoad()
         view.backgroundColor = .black
         updateLayoutIfNeeded()
+        WalletCoreData.add(eventObserver: self)
 
         AppTabManager.shared.addObserver(self) { [weak self] ids in
             self?.applyTabConfigurationToActiveContainer(ids)
         }
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(topTabsNavigationExperimentDidChange),
-            name: TopTabsNavigationExperiment.didChangeNotification,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(drawerAnimationExperimentDidChange),
-            name: DrawerAnimationExperiment.didChangeNotification,
+            selector: #selector(actionButtonsConfigurationDidChange),
+            name: WalletActionButtonsSettings.didChangeNotification,
             object: nil
         )
     }
@@ -78,6 +75,13 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         updateLayoutIfNeeded()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        if let config = ConfigStore.shared.config {
+            handleConfig(config)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -102,16 +106,19 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         guard width > 0 || traitCollection.horizontalSizeClass != .unspecified else { return }
 
         let layout = RootContainerLayout.preferred(for: traitCollection, fallbackWidth: width)
-        let topTabsVariant: TopTabsNavigationExperiment.Variant =
-            layout == .tab ? TopTabsNavigationExperiment.variant : .disabled
-        guard layout != activeLayout || topTabsVariant != activeTopTabsVariant else { return }
+        let showsActionButtonsRow = WalletActionButtonsSettings.showsActionButtonsRow
+        let actionButtonsSettingChanged = layout == .tab
+            && showsActionButtonsRow != activeShowsActionButtonsRow
+        guard layout != activeLayout || actionButtonsSettingChanged else {
+            return
+        }
 
         let navigationState = activeContentViewController.flatMap(AdaptiveRootNavigationState.init)
-        let contentViewController = makeContentViewController(for: layout, topTabsVariant: topTabsVariant)
+        let contentViewController = makeContentViewController(for: layout)
         contentViewController.loadViewIfNeeded()
         applyTabConfiguration(to: contentViewController, ids: AppTabManager.shared.orderedTabIds)
         navigationState?.apply(to: contentViewController, layout: layout)
-        install(contentViewController, layout: layout, topTabsVariant: topTabsVariant, width: width)
+        install(contentViewController, layout: layout, width: width)
     }
 
     private var currentWidth: CGFloat {
@@ -121,33 +128,11 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         return view.window?.bounds.width ?? RootContainerLayout.fallbackWindowWidth
     }
 
-    private func makeContentViewController(
-        for layout: RootContainerLayout,
-        topTabsVariant: TopTabsNavigationExperiment.Variant
-    ) -> UIViewController {
+    private func makeContentViewController(for layout: RootContainerLayout) -> UIViewController {
         switch layout {
         case .tab:
-            if topTabsVariant.isEnabled {
-                let topTabsRootViewController = TopTabsRootViewController()
-                let mainNavigationController = WNavigationController(
-                    rootViewController: topTabsRootViewController
-                )
-                return DrawerContainerViewController(
-                    mainViewController: mainNavigationController,
-                    drawerViewController: topTabsRootViewController.drawerSettingsViewController,
-                    configuration: DrawerAnimationExperiment.configuration,
-                    openingGesturePriorityRegions: { [weak topTabsRootViewController] in
-                        topTabsRootViewController?.drawerOpeningGesturePriorityRegions ?? []
-                    }
-                )
-            }
-            return HomeTabBarController(
-                navControllerFactory: { [layout] id in
-                    AppTabManager.shared.makeNavigationController(for: id, layout: layout)
-                },
-                tabLabelProvider: { id in
-                    AppTabManager.shared.title(for: id)
-                }
+            return WNavigationController(
+                rootViewController: TopTabsRootViewController()
             )
         case .split:
             return SplitRootViewController()
@@ -157,9 +142,10 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
     private func install(
         _ contentViewController: UIViewController,
         layout: RootContainerLayout,
-        topTabsVariant: TopTabsNavigationExperiment.Variant,
         width: CGFloat
     ) {
+        activeTopTabsRootViewController?.detachSearchOverlayHost()
+        activeTopTabsRootViewController = nil
         if let activeContentViewController {
             activeContentViewController.willMove(toParent: nil)
             activeContentViewController.view.removeFromSuperview()
@@ -167,7 +153,7 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         }
 
         activeLayout = layout
-        activeTopTabsVariant = topTabsVariant
+        activeShowsActionButtonsRow = WalletActionButtonsSettings.showsActionButtonsRow
         activeContentViewController = contentViewController
 
         addChild(contentViewController)
@@ -176,20 +162,48 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         view.addSubview(contentViewController.view)
         contentViewController.didMove(toParent: self)
 
+        let topTabsRootViewController = contentViewController.descendantViewController(
+            of: TopTabsRootViewController.self
+        )
+        activeTopTabsRootViewController = topTabsRootViewController
+        topTabsRootViewController?.attachSearchOverlayHost(self)
+
         StartupTrace.mark(
             "rootContainer.activeRoot.layout",
-            details: "layout=\(layout.rawValue) topTabs=\(topTabsVariant.rawValue) horizontalSizeClass=\(horizontalSizeClassDescription) width=\(Int(width.rounded()))"
+            details: "layout=\(layout.rawValue) horizontalSizeClass=\(horizontalSizeClassDescription) width=\(Int(width.rounded()))"
         )
     }
 
-    @objc private func topTabsNavigationExperimentDidChange() {
+    func installSearchOverlay(_ viewController: UIViewController, below view: UIView) {
+        precondition(viewController.parent == nil)
+        precondition(view.superview === self.view)
+        precondition(searchOverlayViewController == nil)
+
+        searchOverlayViewController = viewController
+        addChild(viewController)
+        viewController.view.translatesAutoresizingMaskIntoConstraints = false
+        self.view.insertSubview(viewController.view, belowSubview: view)
+        NSLayoutConstraint.activate([
+            viewController.view.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            viewController.view.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            viewController.view.topAnchor.constraint(equalTo: self.view.topAnchor),
+            viewController.view.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
+        ])
+        viewController.didMove(toParent: self)
+    }
+
+    func removeSearchOverlay(_ viewController: UIViewController) {
+        guard viewController.parent === self else { return }
+        viewController.willMove(toParent: nil)
+        viewController.view.removeFromSuperview()
+        viewController.removeFromParent()
+        if searchOverlayViewController === viewController {
+            searchOverlayViewController = nil
+        }
+    }
+
+    @objc private func actionButtonsConfigurationDidChange() {
         updateLayoutIfNeeded()
-    }
-
-    @objc private func drawerAnimationExperimentDidChange() {
-        (activeContentViewController as? DrawerContainerViewController)?.applyConfiguration(
-            DrawerAnimationExperiment.configuration
-        )
     }
 
     private var horizontalSizeClassDescription: String {
@@ -207,8 +221,6 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
             return
         }
         switch viewController {
-        case let tbc as HomeTabBarController:
-            tbc.applyTabConfiguration(ids)
         case let split as SplitRootViewController:
             split.applyTabConfiguration(ids)
         default:
@@ -220,6 +232,20 @@ final class AdaptiveRootViewController: UIViewController, VisibleContentProvidin
         guard let vc = activeContentViewController else { return }
         applyTabConfiguration(to: vc, ids: ids)
     }
+
+    func walletCore(event: WalletCoreData.Event) {
+        if case .configChanged = event, let config = ConfigStore.shared.config {
+            handleConfig(config)
+        }
+    }
+
+    private func handleConfig(_ config: ApiUpdate.UpdateConfig) {
+        if config.isAppUpdateRequired == true {
+            AppActions.showToast(message: L10n.updateAppName(appName: APP_NAME), duration: nil) {
+                UIApplication.shared.open(URL(string: APP_INSTALL_URL)!)
+            }
+        }
+    }
 }
 
 /// Captures the navigation stacks of all live tabs when the root layout is about to change
@@ -229,7 +255,7 @@ private struct AdaptiveRootNavigationState {
     let selectedTabId: AppTabId
     let homePath: [AdaptiveRootHomeStackItem]?
     let focusedHomeAccountId: String?
-    let sourceTopTabsVariant: TopTabsNavigationExperiment.Variant?
+    let sourceUsesTopTabs: Bool
     let navigationStacks: [AppTabId: [UIViewController]]
 
     init?(viewController: UIViewController) {
@@ -240,32 +266,11 @@ private struct AdaptiveRootNavigationState {
             return
         }
         switch viewController {
-        case let tabBarController as HomeTabBarController:
-            self = Self(tabBarController: tabBarController)
         case let splitRootViewController as SplitRootViewController:
             self = Self(splitRootViewController: splitRootViewController)
         default:
             return nil
         }
-    }
-
-    private init(tabBarController: HomeTabBarController) {
-        selectedTabId = tabBarController.currentTabId
-        var homePath: [AdaptiveRootHomeStackItem]?
-        var navigationStacks: [AppTabId: [UIViewController]] = [:]
-        for id in AppTabManager.shared.orderedTabIds {
-            if id == .wallet {
-                if let stack = tabBarController.takeNavigationStack(for: id, keepingRoot: true) {
-                    homePath = Self.homePath(from: stack)
-                }
-            } else if let stack = tabBarController.takeNavigationStack(for: id, keepingRoot: false) {
-                navigationStacks[id] = stack
-            }
-        }
-        self.homePath = homePath
-        self.focusedHomeAccountId = Self.focusedAccountId(from: homePath)
-        self.sourceTopTabsVariant = nil
-        self.navigationStacks = navigationStacks
     }
 
     private init(splitRootViewController: SplitRootViewController) {
@@ -283,7 +288,7 @@ private struct AdaptiveRootNavigationState {
         }
         self.homePath = homePath
         self.focusedHomeAccountId = Self.focusedAccountId(from: homePath)
-        self.sourceTopTabsVariant = nil
+        self.sourceUsesTopTabs = false
         self.navigationStacks = navigationStacks
     }
 
@@ -291,7 +296,7 @@ private struct AdaptiveRootNavigationState {
         selectedTabId = topTabsRootViewController.currentTabId
         var homePath: [AdaptiveRootHomeStackItem]?
         var navigationStacks: [AppTabId: [UIViewController]] = [:]
-        for id in [.wallet, .explore, .settings] as [AppTabId] {
+        for id in [.wallet, .market, .explore, .settings] as [AppTabId] {
             if id == .wallet {
                 if let stack = topTabsRootViewController.takeNavigationStack(for: id, keepingRoot: true) {
                     homePath = Self.homePath(from: stack)
@@ -302,7 +307,7 @@ private struct AdaptiveRootNavigationState {
         }
         self.homePath = homePath
         self.focusedHomeAccountId = Self.focusedAccountId(from: homePath)
-        self.sourceTopTabsVariant = .navigationBar
+        self.sourceUsesTopTabs = true
         self.navigationStacks = navigationStacks
     }
 
@@ -310,15 +315,10 @@ private struct AdaptiveRootNavigationState {
         let destinationTopTabsRootViewController = viewController.descendantViewController(
             of: TopTabsRootViewController.self
         )
-        let destinationTopTabsVariant: TopTabsNavigationExperiment.Variant? =
-            destinationTopTabsRootViewController == nil ? nil : .navigationBar
-        let replacesNavigationRoots = sourceTopTabsVariant != destinationTopTabsVariant
+        let replacesNavigationRoots = sourceUsesTopTabs != (destinationTopTabsRootViewController != nil)
 
         if let topTabsRootViewController = destinationTopTabsRootViewController {
-            if let homeStack = homeStack(
-                for: layout,
-                topTabsVariant: .navigationBar
-            ) {
+            if let homeStack = homeStack(for: layout) {
                 topTabsRootViewController.setNavigationStack(homeStack, for: .wallet)
             }
             for (id, stack) in navigationStacks {
@@ -333,21 +333,6 @@ private struct AdaptiveRootNavigationState {
         }
 
         switch viewController {
-        case let tabBarController as HomeTabBarController:
-            if let homeStack = homeStack(for: layout) {
-                tabBarController.setNavigationStack(homeStack, for: .wallet)
-            }
-            for (id, stack) in navigationStacks {
-                if replacesNavigationRoots {
-                    tabBarController.setNavigationPath(Array(stack.dropFirst()), for: id)
-                } else {
-                    tabBarController.setNavigationStack(stack, for: id)
-                }
-            }
-            let orderedIds = AppTabManager.shared.orderedTabIds
-            if let idx = orderedIds.firstIndex(of: selectedTabId) {
-                tabBarController.selectedIndex = idx
-            }
         case let splitRootViewController as SplitRootViewController:
             if let homeStack = homeStack(for: layout) {
                 splitRootViewController.setNavigationStack(homeStack, for: .wallet)
@@ -392,22 +377,17 @@ private struct AdaptiveRootNavigationState {
         return nil
     }
 
-    private func homeStack(
-        for layout: RootContainerLayout,
-        topTabsVariant: TopTabsNavigationExperiment.Variant? = nil
-    ) -> [UIViewController]? {
+    private func homeStack(for layout: RootContainerLayout) -> [UIViewController]? {
         guard let homePath else { return nil }
         return [makeHomeRoot(
             for: layout,
-            accountSource: .current,
-            topTabsVariant: topTabsVariant
+            accountSource: .current
         )] + homePath.map { item in
             switch item {
             case .home(let accountSource):
                 makeHomeRoot(
                     for: layout,
-                    accountSource: accountSource,
-                    topTabsVariant: topTabsVariant
+                    accountSource: accountSource
                 )
             case .viewController(let viewController):
                 viewController
@@ -417,20 +397,14 @@ private struct AdaptiveRootNavigationState {
 
     private func makeHomeRoot(
         for layout: RootContainerLayout,
-        accountSource: AccountSource,
-        topTabsVariant: TopTabsNavigationExperiment.Variant?
+        accountSource: AccountSource
     ) -> UIViewController {
         switch layout {
         case .tab:
-            let rootNavigationStyle: HomeRootNavigationStyle = switch topTabsVariant {
-            case .navigationBar:
-                .topTabsNavigationBar
-            case .disabled, nil:
-                .standard
-            }
             return HomeVC(
                 accountSource: accountSource,
-                rootNavigationStyle: rootNavigationStyle
+                rootNavigationStyle: .topTabsNavigationBar,
+                showsActionsRow: WalletActionButtonsSettings.showsActionButtonsRow
             )
         case .split:
             return SplitHomeVC(accountSource: accountSource)

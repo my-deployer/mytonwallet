@@ -1,6 +1,12 @@
-import React, { memo, useEffect, useRef } from '../../lib/teact/teact';
+import type { TeactNode } from '../../lib/teact/teact';
+import React, {
+  memo, useEffect, useLayoutEffect, useRef, useState,
+} from '../../lib/teact/teact';
 
-import type { AgentHint } from '../../global/types';
+import type { AgentUserQuotaV2 } from '../../api/agentV2/protocol/types';
+
+import { requestMeasure } from '../../lib/fasterdom/fasterdom';
+import buildClassName from '../../util/buildClassName';
 
 import useLang from '../../hooks/useLang';
 import useLastCallback from '../../hooks/useLastCallback';
@@ -13,20 +19,27 @@ import styles from './AgentInputBar.module.scss';
 interface OwnProps {
   inputRef?: React.RefObject<HTMLTextAreaElement | undefined>;
   inputValue: string;
-  hints?: AgentHint[];
+  hints?: readonly { id: string }[];
+  userQuota?: AgentUserQuotaV2;
+  quotaStatus?: TeactNode;
+  statusNotice?: TeactNode;
   onInput: (value: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onSend: NoneToVoidFunction;
   onClearInput: NoneToVoidFunction;
   onHintsToggle: NoneToVoidFunction;
+  onHeightChange?: (height: number) => void;
+  isDisabled?: boolean;
 }
 
 function AgentInputBar({
-  inputRef: externalInputRef, inputValue, hints,
-  onInput, onKeyDown, onSend, onClearInput, onHintsToggle,
+  inputRef: externalInputRef, inputValue, hints, userQuota, quotaStatus, statusNotice,
+  onInput, onKeyDown, onSend, onClearInput, onHintsToggle, onHeightChange, isDisabled,
 }: OwnProps) {
   const lang = useLang();
+  const [isQuotaVisible, setIsQuotaVisible] = useState(false);
   const ownInputRef = useRef<HTMLTextAreaElement>();
+  const wrapperRef = useRef<HTMLDivElement>();
   const inputRef = externalInputRef || ownInputRef;
   const savedScrollRef = useRef({ top: 0, isCaretAtEnd: true });
 
@@ -55,6 +68,24 @@ function AgentInputBar({
     }
   }, [inputRef, inputValue]);
 
+  useLayoutEffect(() => {
+    const element = wrapperRef.current;
+    if (!element || !onHeightChange) return undefined;
+
+    const notifyHeightChange = () => {
+      requestMeasure(() => {
+        if (element.isConnected) {
+          onHeightChange(element.offsetHeight);
+        }
+      });
+    };
+    const observer = new ResizeObserver(notifyHeightChange);
+    observer.observe(element);
+    notifyHeightChange();
+
+    return () => observer.disconnect();
+  }, [onHeightChange]);
+
   const { ref: sendButtonRef } = useShowTransition<HTMLButtonElement>({
     isOpen: !!inputValue,
     noMountTransition: true,
@@ -62,49 +93,89 @@ function AgentInputBar({
   });
 
   const shouldRenderHints = !inputValue && !!hints?.length;
+  const shouldRenderInputAction = !!inputValue || shouldRenderHints;
+
+  const handleQuotaToggle = useLastCallback(() => {
+    setIsQuotaVisible(!isQuotaVisible);
+  });
 
   return (
-    <div className={styles.wrapper}>
-      <div className={styles.pill}>
-        <Input
-          ref={inputRef}
-          isMultiline
-          value={inputValue}
-          placeholder={lang('Ask anything')}
-          className={styles.input}
-          wrapperClassName={styles.inputInnerWrapper}
-          onInput={handleInput}
-          onKeyDown={onKeyDown}
-        />
-        {inputValue ? (
-          <button
-            type="button"
-            className={styles.inputButton}
-            aria-label={lang('Clear')}
-            onClick={onClearInput}
-          >
-            <i className="icon-clear" aria-hidden />
-          </button>
-        ) : shouldRenderHints && (
-          <button
-            type="button"
-            className={styles.inputButton}
-            aria-label={lang('Toggle Hints')}
-            onClick={onHintsToggle}
-          >
-            <i className="icon-agent-actions" aria-hidden />
-          </button>
-        )}
+    <div ref={wrapperRef} className={styles.wrapper}>
+      {statusNotice !== undefined && (
+        <div className={styles.statusSlot}>
+          {statusNotice}
+        </div>
+      )}
+      {isQuotaVisible && quotaStatus !== undefined && (
+        <div className={styles.quotaSlot}>
+          {quotaStatus}
+        </div>
+      )}
+      <div className={styles.inputRow}>
+        <div className={styles.pill}>
+          <Input
+            ref={inputRef}
+            isMultiline
+            value={inputValue}
+            isDisabled={isDisabled}
+            placeholder={lang('Ask anything')}
+            className={buildClassName(
+              styles.input,
+              userQuota && shouldRenderInputAction && styles.inputWithTwoButtons,
+            )}
+            wrapperClassName={styles.inputInnerWrapper}
+            onInput={handleInput}
+            onKeyDown={onKeyDown}
+          />
+          {(shouldRenderInputAction || userQuota) && (
+            <div className={styles.inputButtons}>
+              {inputValue ? (
+                <button
+                  type="button"
+                  className={styles.inputButton}
+                  aria-label={lang('Clear')}
+                  onClick={onClearInput}
+                >
+                  <i className="icon-clear" aria-hidden />
+                </button>
+              ) : shouldRenderHints && (
+                <button
+                  type="button"
+                  className={styles.inputButton}
+                  aria-label={lang('Toggle Hints')}
+                  onClick={onHintsToggle}
+                >
+                  <i className="icon-agent-actions" aria-hidden />
+                </button>
+              )}
+              {userQuota && (
+                <button
+                  type="button"
+                  className={buildClassName(styles.inputButton, isQuotaVisible && styles.inputButtonActive)}
+                  aria-expanded={isQuotaVisible}
+                  aria-label={lang(
+                    '$agent_user_quota_meter',
+                    [userQuota.remaining, userQuota.limit],
+                  ) as string}
+                  onClick={handleQuotaToggle}
+                >
+                  <i className="icon-question" aria-hidden />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <button
+          ref={sendButtonRef}
+          type="submit"
+          className={styles.sendButton}
+          aria-label={lang('Send')}
+          disabled={isDisabled}
+          onClick={onSend}
+        >
+          <i className="icon-send-alt2" aria-hidden />
+        </button>
       </div>
-      <button
-        ref={sendButtonRef}
-        type="submit"
-        className={styles.sendButton}
-        aria-label={lang('Send')}
-        onClick={onSend}
-      >
-        <i className="icon-send-alt2" aria-hidden />
-      </button>
     </div>
   );
 }

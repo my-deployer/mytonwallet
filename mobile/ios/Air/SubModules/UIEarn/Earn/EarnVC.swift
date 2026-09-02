@@ -265,7 +265,7 @@ public class EarnVC: WViewController, WSegmentedControllerContent, WSensitiveDat
         
         if let apy = stakingState?.apy {
             let apyString = formatPercent(apy / 100)
-            emptyView.estimatedAPYLabel.text = "\(lang("Est. %annual_yield%", arg1: apyString))"
+            emptyView.estimatedAPYLabel.text = "\(L10n.estAnnualYield(annualYield: apyString))"
             emptyView.estimatedAPYLabel.isHidden = false
         } else {
             emptyView.estimatedAPYLabel.text = nil

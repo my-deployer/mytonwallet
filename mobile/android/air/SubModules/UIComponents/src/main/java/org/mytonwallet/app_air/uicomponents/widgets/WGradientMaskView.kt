@@ -41,15 +41,27 @@ class WGradientMaskView(child: View) : FrameLayout(child.context) {
         updateGradient()
     }
 
-    var isLoading: Boolean = true
+    var isLoading: Boolean = false
         set(value) {
+            if (field == value) return
             field = value
-            if (value) {
-                startMasking()
-            } else {
-                stopMasking()
-            }
+            updateAnimationState(animated = true)
         }
+
+    var isAnimationAllowed: Boolean = true
+        set(value) {
+            if (field == value) return
+            field = value
+            updateAnimationState(animated = false)
+        }
+
+    private fun updateAnimationState(animated: Boolean) {
+        if (isLoading && isAnimationAllowed) {
+            startMasking(animated)
+        } else {
+            stopMasking(animated)
+        }
+    }
 
     private val animator: ValueAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = AnimationConstants.SLOW_ANIMATION
@@ -88,7 +100,7 @@ class WGradientMaskView(child: View) : FrameLayout(child.context) {
             i.toFloat() / (segments - 1)
         }
 
-        animator.duration = AnimationConstants.SLOW_ANIMATION * segments
+        animator.duration = AnimationConstants.SLOW_ANIMATION * segments * 2
 
         linearGradient = LinearGradient(
             0f,
@@ -104,52 +116,80 @@ class WGradientMaskView(child: View) : FrameLayout(child.context) {
     }
 
     private fun updateShader(progress: Float) {
-        gradientMatrix.setTranslate(progress * _width, 0f)
+        gradientMatrix.setTranslate(progress * 2 * _width, progress * 2 * _height)
         linearGradient?.setLocalMatrix(gradientMatrix)
         invalidate()
     }
 
-    fun startMasking() {
-        if (!isAnimating) {
-            isAnimating = true
-            updateGradient()
+    private var isFadingOut = false
 
-            fadeAnimator?.cancel()
-            fadeAnimator = ValueAnimator.ofFloat(fadeAlpha, 1f).apply {
-                duration = AnimationConstants.VERY_QUICK_ANIMATION
-                addUpdateListener { animation ->
-                    fadeAlpha = animation.animatedValue as Float
-                    invalidate()
-                }
-                addListener(object : AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: Animator) {
-                        animator.start()
-                    }
-                })
-                start()
+    private fun startMasking(animated: Boolean) {
+        if (isAnimating && !isFadingOut) {
+            if (!animated && fadeAlpha < 1f) {
+                cancelFade()
+                fadeAlpha = 1f
+                invalidate()
             }
+            return
+        }
+        isAnimating = true
+        isFadingOut = false
+        updateGradient()
+        if (!animator.isRunning) animator.start()
+        if (animated) {
+            animateFadeTo(1f, onEnd = null)
+        } else {
+            cancelFade()
+            fadeAlpha = 1f
+            invalidate()
         }
     }
 
-    fun stopMasking() {
-        if (isAnimating) {
-            fadeAnimator?.cancel()
-            fadeAnimator = ValueAnimator.ofFloat(fadeAlpha, 0f).apply {
-                duration = AnimationConstants.VERY_QUICK_ANIMATION
-                addUpdateListener { animation ->
-                    fadeAlpha = animation.animatedValue as Float
-                    invalidate()
-                }
+    private fun stopMasking(animated: Boolean) {
+        if (!isAnimating) return
+        if (!animated) {
+            cancelFade()
+            finishStop()
+            return
+        }
+        if (isFadingOut) return
+        isFadingOut = true
+        animateFadeTo(0f) {
+            finishStop()
+        }
+    }
+
+    private fun finishStop() {
+        isFadingOut = false
+        isAnimating = false
+        fadeAlpha = 0f
+        animator.cancel()
+        gradientPaint.shader = null
+        invalidate()
+    }
+
+    private fun cancelFade() {
+        fadeAnimator?.removeAllListeners()
+        fadeAnimator?.cancel()
+        fadeAnimator = null
+    }
+
+    private fun animateFadeTo(target: Float, onEnd: (() -> Unit)?) {
+        cancelFade()
+        fadeAnimator = ValueAnimator.ofFloat(fadeAlpha, target).apply {
+            duration = AnimationConstants.VERY_QUICK_ANIMATION
+            addUpdateListener { animation ->
+                fadeAlpha = animation.animatedValue as Float
+                invalidate()
+            }
+            if (onEnd != null) {
                 addListener(object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
-                        isAnimating = false
-                        animator.cancel()
-                        gradientPaint.shader = null
-                        invalidate()
+                        onEnd()
                     }
                 })
-                start()
             }
+            start()
         }
     }
 

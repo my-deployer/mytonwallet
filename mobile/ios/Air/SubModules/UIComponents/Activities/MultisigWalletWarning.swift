@@ -12,11 +12,7 @@ public struct MultisigWalletWarning: View {
     public var body: some View {
         WarningView(
             header: lang("Multisig Wallet Detected"),
-            text: lang(
-                "$multisig_warning_text",
-                arg1: APP_NAME,
-                arg2: "[\(lang("$multisig_warning_link"))](\(helpUrl.absoluteString))"
-            ),
+            text: L10n.multisigWarningText(appName: APP_NAME, multisigWarningLink: "[\(lang("$multisig_warning_link"))](\(helpUrl.absoluteString))"),
             kind: .error
         )
         .padding(.horizontal, 16)

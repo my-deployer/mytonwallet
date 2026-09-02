@@ -1,6 +1,7 @@
 
 import UIKit
 import ContextMenuKit
+import Perception
 import UIComponents
 import WalletCore
 import WalletContext
@@ -34,13 +35,30 @@ final class ActionsVC: WViewController, WalletCoreData.EventsObserver {
         super.viewDidLoad()
         actionsView.accountContext = $account
         WalletCoreData.add(eventObserver: self)
+        displayedAccountId = account.id
+        hideUnsupportedActions()
+        observeAccount()
     }
-    
-    func setAccountId(accountId: String, animated: Bool)  {
-        self.$account.accountId = accountId
-        hideUnsupportedActions(animated: animated)
+
+    private var displayedAccountId: String?
+
+    private func observeAccount() {
+        withPerceptionTracking {
+            _ = account.id
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.accountChanged()
+                self?.observeAccount()
+            }
+        }
     }
-    
+
+    private func accountChanged() {
+        guard account.id != displayedAccountId else { return }
+        displayedAccountId = account.id
+        hideUnsupportedActions(animated: true)
+    }
+
     private func hideUnsupportedActions(animated: Bool = false) {
         if account.isView {
             view.isUserInteractionEnabled = false
@@ -125,7 +143,8 @@ final class ActionsView: ButtonsToolbar {
         
         addButton = WScalableButton(
             title: lang("Fund"),
-            image: .airBundle("AddIconBold"),
+            image: .airBundle("DepositIconLarge"),
+            imageSize: CGSize(width: 26, height: 26),
             onTap: { [weak self] in
                 guard let accountContext = self?.accountContext else { return }
                 AppActions.showReceive(accountContext: accountContext, chain: nil)

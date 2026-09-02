@@ -23,6 +23,8 @@ class SkeletonCell(context: Context) :
     SkeletonContainer {
 
     companion object {
+        val HEIGHT = 60.dp
+
         val TITLE_WIDTH = arrayOf(80, 120, 100, 90, 120)
         val SUBTITLE_WIDTH = arrayOf(38, 48, 40, 42, 38)
 
@@ -50,7 +52,7 @@ class SkeletonCell(context: Context) :
     override fun setupViews() {
         super.setupViews()
 
-        layoutParams.height = 60.dp
+        layoutParams.height = HEIGHT
 
         addView(circleSkeleton)
         addView(titleSkeleton)
@@ -79,12 +81,9 @@ class SkeletonCell(context: Context) :
         backgroundDrawable.topRadius = if (isFirst) ViewConstants.BLOCK_RADIUS.dp else 0f.dp
         backgroundDrawable.bottomRadius = if (isLast) ViewConstants.BLOCK_RADIUS.dp else 0f.dp
         backgroundDrawable.invalidateSelf()
-        val titleLayoutParams = titleSkeleton.layoutParams
-        titleLayoutParams.width = TITLE_WIDTH[item % TITLE_WIDTH.size].dp
-        titleSkeleton.layoutParams = titleLayoutParams
-        val subtitleLayoutParams = subtitleSkeleton.layoutParams
-        subtitleLayoutParams.width = SUBTITLE_WIDTH[item % SUBTITLE_WIDTH.size].dp
-        subtitleSkeleton.layoutParams = subtitleLayoutParams
+        titleSkeleton.layoutParams.width = TITLE_WIDTH[item % TITLE_WIDTH.size].dp
+        subtitleSkeleton.layoutParams.width = SUBTITLE_WIDTH[item % SUBTITLE_WIDTH.size].dp
+        requestLayout()
     }
 
     private var _isDarkThemeApplied: Boolean? = null

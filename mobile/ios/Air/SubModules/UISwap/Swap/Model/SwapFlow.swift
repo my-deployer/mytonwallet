@@ -18,7 +18,7 @@ struct SwapConfirmationSnapshot {
     let slippage: Double
     let payoutAddress: String?
     let account: SwapAccountSnapshot
-    let flowState: SwapFlowState
+    let estimateState: SwapEstimateModel
 }
 
 struct SwapExecutionResult: Sendable, MfaProtectedActionResult {
@@ -44,14 +44,9 @@ struct SwapMaxAmountContext {
     let fullNetworkFee: MFee.FeeTerms?
 }
 
-struct SwapFlowState {
-    let onchain: OnchainSwapModel
-    let crosschain: CrosschainSwapModel
-}
-
 enum SwapDetailsSection: Equatable {
-    case onchain
-    case crosschain(SwapType)
+    case dex
+    case cex(SwapType)
 }
 
 @MainActor protocol SwapFlow {
@@ -59,8 +54,8 @@ enum SwapDetailsSection: Equatable {
 
     func supports(swapType: SwapType) -> Bool
     func detailsSection(swapType: SwapType) -> SwapDetailsSection
-    func previousNetworkFee(state: SwapFlowState) -> MDouble?
-    func priceImpactWarning(state: SwapFlowState) -> Double?
+    func previousNetworkFee(state: SwapEstimateModel) -> MDouble?
+    func priceImpactWarning(state: SwapEstimateModel) -> Double?
     func estimate(
         _ input: SwapEstimateInput,
         changedFrom: SwapSide,
@@ -71,11 +66,11 @@ enum SwapDetailsSection: Equatable {
         swapType: SwapType,
         sellingToken: ApiToken,
         nativeTokenInBalance: BigInt?,
-        state: SwapFlowState
+        state: SwapEstimateModel
     ) -> SwapMaxAmountContext
-    func buttonState(context: SwapPresentationContext, state: SwapFlowState) -> SwapButtonState
-    func route(context: SwapPresentationContext, state: SwapFlowState) -> SwapRoute?
-    func performSwap(context: SwapExecutionContext, state: SwapFlowState) async throws -> SwapExecutionResult
+    func buttonState(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapButtonState
+    func route(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapRoute?
+    func performSwap(context: SwapExecutionContext, state: SwapEstimateModel) async throws -> SwapExecutionResult
 }
 
 @MainActor struct SwapFlowRouter {

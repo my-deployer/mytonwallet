@@ -14,6 +14,27 @@ private let CEX_SWAP_REFRESH_CONTEXT_LIMIT = 250
 public let ActivityStore = _ActivityStore.shared
 
 public actor _ActivityStore: WalletCoreData.EventsObserver {
+
+    struct InitialMainHistoryProgress: Equatable, Sendable {
+        private(set) var hasMoreByChain: [ApiChain: Bool] = [:]
+
+        mutating func record(chain: ApiChain?, hasMore: Bool?) {
+            guard let chain, let hasMore else { return }
+            hasMoreByChain[chain] = hasMore
+        }
+
+        func isEndReached(supportedChains: Set<ApiChain>) -> Bool {
+            !supportedChains.isEmpty && supportedChains.allSatisfy { hasMoreByChain[$0] == false }
+        }
+
+        func reconciledEndState(current: Bool?, supportedChains: Set<ApiChain>) -> Bool? {
+            guard !supportedChains.isEmpty else { return current }
+            if supportedChains.contains(where: { hasMoreByChain[$0] == true }) {
+                return nil
+            }
+            return isEndReached(supportedChains: supportedChains) ? true : current
+        }
+    }
     
     public static let shared = _ActivityStore()
     
@@ -73,10 +94,15 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     }
     
     private var byAccountId: [String: AccountState] = [:]
+    private var initialMainHistoryProgressByAccountId: [String: InitialMainHistoryProgress] = [:]
     
-    private func withAccountState<T>(_ accountId: String, updates: (inout AccountState) -> T) -> T {
+    private func withAccountState(_ accountId: String, updates: (inout AccountState) -> Void) {
+        guard !removedAccountIds.contains(accountId) else {
+            log.info("ignoring update for removed account accountId=\(accountId, .public)")
+            return
+        }
         defer { save(accountId: accountId) }
-        return updates(&byAccountId[accountId, default: .init(accountId: accountId)])
+        updates(&byAccountId[accountId, default: .init(accountId: accountId)])
     }
     
     func getAccountState(_ accountId: String) -> AccountState {
@@ -96,7 +122,9 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         }
     }
     
-    private var accountIdsObserver: Task<Void, Never>?
+    private var accountsObserver: Task<Void, Never>?
+    private var observedAccountIds: Set<String> = []
+    private var removedAccountIds: Set<String> = []
     private var pendingCexSwapRefreshTask: Task<Void, Never>?
     private var isAppFocused: Bool = true
     private var queuedEvents: [WalletCoreData.Event] = []
@@ -109,7 +137,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     
     // MARK: - Event handling
     
-    private init() {
+    init() {
         // event observer will be added after cache is loaded
         lastApplicationWillEnterForeground = .now
     }
@@ -135,12 +163,18 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     private func handleEvent(_ event: WalletCoreData.Event) async {
         switch event {
         case .initialActivities(let update):
+            guard shouldHandleActivities(accountId: update.accountId) else { return }
             handleInitialActivities(update: update)
         case .newActivities(let update):
+            guard shouldHandleActivities(accountId: update.accountId) else { return }
             await handleNewActivities(update: update)
         case .newLocalActivity(let update):
+            guard shouldHandleActivities(accountId: update.accountId) else { return }
             await handleNewLocalActivities(update: update)
-        case .accountChanged:
+        case .accountChanged(let accountId, _):
+            if reconcileInitialMainHistoryEndState(accountId: accountId) {
+                WalletCoreData.notify(event: .activitiesChanged(accountId: accountId, updatedIds: [], replacedIds: [:]))
+            }
             await refreshPendingCexSwapsForCurrentAccount()
             updatePendingCexSwapRefreshTask()
         case .applicationWillEnterForeground:
@@ -154,17 +188,54 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
             break
         }
     }
+
+    private func shouldHandleActivities(accountId: String) -> Bool {
+        guard !removedAccountIds.contains(accountId) else {
+            log.info("ignoring activities for removed account accountId=\(accountId, .public)")
+            return false
+        }
+        return true
+    }
     
     private func handleInitialActivities(update: ApiUpdate.InitialActivities) {
         log.info("handleInitialActivities \(update.accountId, .public) mainIds=\(update.mainActivities.count)")
+        let previousState = getAccountState(update.accountId)
         addInitialActivities(accountId: update.accountId, mainActivities: update.mainActivities, bySlug: update.bySlug)
         let allActivities = update.mainActivities + update.bySlug.values.flatMap { $0 }
         updatePoisoningCache(accountId: update.accountId, activities: allActivities)
         if let chain = update.chain {
             setIsInitialActivitiesLoadedTrue(accountId: update.accountId, chain: chain);
         }
+        var progress = initialMainHistoryProgressByAccountId[update.accountId, default: .init()]
+        progress.record(chain: update.chain, hasMore: update.mainHistoryHasMore)
+        initialMainHistoryProgressByAccountId[update.accountId] = progress
+        _ = reconcileInitialMainHistoryEndState(accountId: update.accountId)
+        if getAccountState(update.accountId) != previousState {
+            WalletCoreData.notify(event: .activitiesChanged(
+                accountId: update.accountId,
+                updatedIds: unique(allActivities.map(\.id)),
+                replacedIds: [:]
+            ))
+        }
         updatePendingCexSwapRefreshTask()
         log.info("handleInitialActivities \(update.accountId, .public) [done] mainIds=\(update.mainActivities.count)")
+    }
+
+    private func reconcileInitialMainHistoryEndState(accountId: String) -> Bool {
+        guard let account = AccountStore.accountsById[accountId],
+              let progress = initialMainHistoryProgressByAccountId[accountId] else {
+            return false
+        }
+        let current = getAccountState(accountId).isMainHistoryEndReached
+        let reconciled = progress.reconciledEndState(
+            current: current,
+            supportedChains: account.supportedChains
+        )
+        guard reconciled != current else { return false }
+        withAccountState(accountId) {
+            $0.isMainHistoryEndReached = reconciled
+        }
+        return true
     }
     
     private func handleNewActivities(update: ApiUpdate.NewActivities) async {
@@ -189,6 +260,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
                 priorityActivities: update.activities
             )
         )
+        guard shouldHandleActivities(accountId: accountId) else { return }
 
         // Reconciliation identity is SDK-owned. If the bridge is unavailable, apply the raw update without inferring
         // replacements or hiding/removing activities in native code.
@@ -240,6 +312,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
             confirmedActivities: chainActivities,
             pendingActivities: nil
         )
+        guard shouldHandleActivities(accountId: update.accountId) else { return }
         // Fail closed when SDK reconciliation is unavailable: keep local and chain rows separate until a later patch.
         let replacedIds = reconciliation?.patch.replacedIds ?? [:]
         var updatedIds = update.activities.map(\.id)
@@ -289,6 +362,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         var hasMore = true
         while hasMore {
             let result = try await Api.fetchPastActivities(accountId: accountId, limit: limit, tokenSlug: nil, toTimestamp: toTimestamp)
+            guard shouldHandleActivities(accountId: accountId) else { return }
             let activities = result.activities
             let apiHasMore = result.hasMore
             if activities.isEmpty {
@@ -364,6 +438,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         var hasMore = true
         while hasMore {
             let result = try await Api.fetchPastActivities(accountId: accountId, limit: limit, tokenSlug: token.slug, toTimestamp: toTimestamp)
+            guard shouldHandleActivities(accountId: accountId) else { return }
             let activities = result.activities
             let apiHasMore = result.hasMore
             if activities.isEmpty {
@@ -430,6 +505,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     // MARK: - Poisoning cache
     
     func updatePoisoningCache(accountId: String, activities: some Collection<ApiActivity>) {
+        guard !removedAccountIds.contains(accountId) else { return }
         var cache = self.poisoningCacheById[accountId, default: PoisoningCache()]
         cache.update(activities: activities)
         self.poisoningCacheById[accountId] = cache
@@ -491,9 +567,12 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
     func use(db: any DatabaseWriter) {
         self._db = db
         do {
-            let storedAccountStates = try db.read { db in
-                try AccountState.fetchAll(db)
+            let (storedAccountStates, accountIds) = try db.read { db in
+                let accountStates = try AccountState.fetchAll(db)
+                let accountIds = try String.fetchAll(db, sql: "SELECT id FROM accounts")
+                return (accountStates, accountIds)
             }
+            observedAccountIds = Set(accountIds)
             let accountStates = storedAccountStates.map { $0.persistenceSnapshot() }
             if accountStates != storedAccountStates {
                 try db.write { db in
@@ -503,17 +582,17 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
                 }
             }
             updateFromDb(accountStates: accountStates)
-            
+
             let observation = ValueObservation.tracking { db in
-                try String.fetchAll(db, sql: "SELECT accountId FROM account_activities")
+                try String.fetchAll(db, sql: "SELECT id FROM accounts")
             }
-            accountIdsObserver = Task { [weak self] in
+            accountsObserver = Task { [weak self] in
                 do {
                     for try await accountIds in observation.values(in: db) {
                         await self?.updateFromDb(accountIds: accountIds)
                     }
                 } catch {
-                    log.error("accountIdsObserver: \(error, .public)")
+                    log.error("accountsObserver: \(error, .public)")
                 }
             }
         } catch {
@@ -537,15 +616,26 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
             }
         }
     }
-    
+
     private func updateFromDb(accountIds: [String]) {
-        let deletedKeys = Set(byAccountId.keys).subtracting(accountIds)
-        for deletedKey in deletedKeys {
-            byAccountId[deletedKey] = nil
-            poisoningCacheById[deletedKey] = nil
+        let accountIds = Set(accountIds)
+        let deletedAccountIds = observedAccountIds.subtracting(accountIds)
+        let addedAccountIds = accountIds.subtracting(observedAccountIds)
+        observedAccountIds = accountIds
+        removedAccountIds.formUnion(deletedAccountIds)
+        removedAccountIds.subtract(addedAccountIds)
+
+        for accountId in deletedAccountIds {
+            byAccountId[accountId] = nil
+            initialMainHistoryProgressByAccountId[accountId] = nil
+            poisoningCacheById[accountId] = nil
+            WalletCoreData.notify(event: .activitiesChanged(accountId: accountId, updatedIds: [], replacedIds: [:]))
+        }
+        if !deletedAccountIds.isEmpty {
+            updatePendingCexSwapRefreshTask()
         }
     }
-    
+
     func getNewestActivityTimestamps(accountId: String) -> [String: Int64]? {
         getAccountState(accountId).newestActivitiesBySlug?.mapValues(\.timestamp)
     }
@@ -565,6 +655,7 @@ public actor _ActivityStore: WalletCoreData.EventsObserver {
         pendingCexSwapRefreshTask?.cancel()
         pendingCexSwapRefreshTask = nil
         byAccountId = [:]
+        initialMainHistoryProgressByAccountId = [:]
         poisoningCacheById = [:]
         do {
             _ = try db.write { db in

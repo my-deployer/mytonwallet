@@ -444,7 +444,7 @@ function TransferInitial({
 
   function renderButtonText() {
     if (diesel?.status === 'not-authorized') {
-      return lang('Authorize %token% Fee', { token: symbol! });
+      return lang('$authorize_token_fee_capitalized', { token: symbol! });
     }
     if (diesel?.status === 'pending-previous') {
       return lang('Awaiting Previous Fee');

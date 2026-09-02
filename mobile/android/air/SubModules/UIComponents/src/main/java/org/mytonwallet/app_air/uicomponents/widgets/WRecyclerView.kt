@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
 import android.view.ViewConfiguration
+import android.widget.EdgeEffect
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.lang.ref.WeakReference
@@ -154,18 +155,9 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
                     return lm.getDecoratedTop(child) >= paddingTop
                 }
 
-                override fun isInAbsoluteEnd(): Boolean {
-                    if (layoutManager?.canScrollVertically() == false) return false
-                    val lm = layoutManager as? LinearLayoutManager
-                        ?: return super.isInAbsoluteEnd()
-                    val lastIndex = (adapter?.itemCount ?: 0) - 1
-                    if (lastIndex < 0) return true
-                    val last = lm.findLastVisibleItemPosition()
-                    if (last == NO_POSITION) return super.isInAbsoluteEnd()
-                    if (last != lastIndex) return false
-                    val child = lm.findViewByPosition(lastIndex) ?: return super.isInAbsoluteEnd()
-                    return lm.getDecoratedBottom(child) <= height - paddingBottom
-                }
+                // The decorator only bounces at the top; the bottom edge keeps the system
+                // stretch effect.
+                override fun isInAbsoluteEnd(): Boolean = false
             },
             OverScrollBounceEffectDecoratorBase.DEFAULT_DECELERATE_FACTOR
         )
@@ -179,10 +171,44 @@ open class WRecyclerView(context: Context) : RecyclerView(context) {
             ->
             onOverScrollListener?.invoke(isTouchActive, newState, offset, velocity)
         }
+
+        // The decorator disables native over-scroll entirely; re-enable it with the top edge
+        // suppressed so the bottom edge keeps the system stretch effect while the decorator
+        // owns the top.
+        overScrollMode = OVER_SCROLL_ALWAYS
+        if (edgeEffectFactory !== topSuppressedEdgeEffectFactory) {
+            edgeEffectFactory = topSuppressedEdgeEffectFactory
+        }
+    }
+
+    // Suppresses the top edge effect only while the decorator is attached; the factory stays
+    // installed after the decorator is removed, because replacing it destroys glows that may
+    // still be animating a release.
+    private val topSuppressedEdgeEffectFactory = object : EdgeEffectFactory() {
+        override fun createEdgeEffect(view: RecyclerView, direction: Int): EdgeEffect {
+            if (direction != DIRECTION_TOP) return super.createEdgeEffect(view, direction)
+            return object : EdgeEffect(view.context) {
+                override fun onPull(deltaDistance: Float) {
+                    if (!hasOverScroll) super.onPull(deltaDistance)
+                }
+
+                override fun onPull(deltaDistance: Float, displacement: Float) {
+                    if (!hasOverScroll) super.onPull(deltaDistance, displacement)
+                }
+
+                override fun onPullDistance(deltaDistance: Float, displacement: Float): Float =
+                    if (hasOverScroll) 0f else super.onPullDistance(deltaDistance, displacement)
+
+                override fun onAbsorb(velocity: Int) {
+                    if (!hasOverScroll) super.onAbsorb(velocity)
+                }
+            }
+        }
     }
 
     fun removeOverScroll() {
         verticalOverScrollBounceEffectDecorator?.detach()
+        verticalOverScrollBounceEffectDecorator = null
     }
 
     val hasOverScroll: Boolean

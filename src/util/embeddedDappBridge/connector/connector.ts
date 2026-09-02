@@ -177,6 +177,10 @@ export function initConnector(
           version: '1.0.0',
           connect: async (input?: { silent: boolean }): Promise<{ accounts: StandardWalletAddress[] }> => {
             try {
+              if (!input?.silent && this.accounts.length) {
+                return { accounts: this.accounts };
+              }
+
               const metadata = {
                 url: window.origin,
                 name: (document.querySelector<HTMLMetaElement>('meta[property*="og:title"]'))?.content

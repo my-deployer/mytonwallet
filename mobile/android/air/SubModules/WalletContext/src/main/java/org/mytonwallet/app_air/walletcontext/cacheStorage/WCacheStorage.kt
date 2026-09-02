@@ -10,6 +10,8 @@ object WCacheStorage {
     private const val CACHE_PREF_NAME = "airCache"
     private const val CACHE_PREF_TOKENS = "tokens"
     private const val CACHE_PREF_SWAP_ASSETS = "swapAssets"
+    private const val CACHE_PREF_TOKEN_DETAILS = "tokenDetails"
+    private const val CACHE_PREF_MARKET_ASSETS = "marketAssets"
 
     private const val CACHE_PREF_STAKING_DATA = "stakingData."
     private const val CACHE_PREF_NFTS = "nfts."
@@ -42,6 +44,26 @@ object WCacheStorage {
             return
         }
         sharedPreferences.edit { putString(CACHE_PREF_SWAP_ASSETS, value) }
+    }
+
+    fun getTokenDetails(): String? = sharedPreferences.getString(CACHE_PREF_TOKEN_DETAILS, null)
+
+    fun setTokenDetails(value: String?) {
+        sharedPreferences.edit {
+            value?.let {
+                putString(CACHE_PREF_TOKEN_DETAILS, it)
+            } ?: remove(CACHE_PREF_TOKEN_DETAILS)
+        }
+    }
+
+    fun getMarketAssets(): String? = sharedPreferences.getString(CACHE_PREF_MARKET_ASSETS, null)
+
+    fun setMarketAssets(value: String?) {
+        sharedPreferences.edit {
+            value?.let {
+                putString(CACHE_PREF_MARKET_ASSETS, it)
+            } ?: remove(CACHE_PREF_MARKET_ASSETS)
+        }
     }
 
     fun getStakingData(accountId: String): String? =

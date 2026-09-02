@@ -59,7 +59,7 @@ private extension ApiDappUrlTrustStatus {
         case .dangerous:
             LocalizedStringKey(lang("$DappurlTrustStatusDangerousHelp"))
         case .verified, .unknown:
-            langMd("$reopen_in_iab_explore", arg1: lang("Explore"))
+            LocalizedStringKey(L10n.reopenInIabExplore(exploreTab: lang("Explore")))
         }
     }
 

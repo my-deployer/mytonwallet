@@ -823,7 +823,10 @@ class AssetsVC(
         val v = ShowAllView(context)
         v.configure(
             icon = org.mytonwallet.app_air.icons.R.drawable.ic_show_collectibles,
-            text = LocaleController.getFormattedString("Show All %1$@", listOf(title ?: ""))
+            text = LocaleController.getStringWithKeyValues(
+                "Show All %name%",
+                listOf("%name%" to (title ?: ""))
+            )
         )
         v.onTap = {
             val initialSelectionSnapshot = selectionSnapshot()
@@ -1027,6 +1030,12 @@ class AssetsVC(
     private var pendingSelectionSnapshot: SelectionSnapshot? = null
     private var prevSelectedCount = 0
     var onShowAllTapped: (() -> Unit)? = null
+    var onShowAllMenuTapped: ((anchorView: View) -> Unit)? = null
+        set(value) {
+            field = value
+            showAllView.onMenuTap =
+                value?.let { callback -> { anchorView -> callback(anchorView) } }
+        }
     var onSelectionRequested: ((nftAddressToSelect: String?) -> Unit)? = null
     var onAutoClose: (() -> Unit)? = null
     var onExpiringDomainsDataChanged: ((ExpiringDomainsData?) -> Unit)? = null
@@ -1811,7 +1820,11 @@ class AssetsVC(
         showAllView.setCounter(assetsVM.nftsCount)
         if (assetsVM.hasLoadedNfts) {
             setNavSubtitle(
-                LocaleController.getPlural(assetsVM.nftsCount, "%amount% NFTs")
+                LocaleController.getPlural(
+                    assetsVM.nftsCount,
+                    "%amount% NFTs",
+                    placeholder = "%amount%"
+                )
             )
         }
         layoutManager.spanCount = calculateNoOfColumns()

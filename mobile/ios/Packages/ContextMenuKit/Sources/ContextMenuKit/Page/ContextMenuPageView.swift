@@ -2,6 +2,11 @@ import UIKit
 
 @MainActor
 final class ContextMenuPageView: UIView {
+    private struct LayoutResult {
+        let frames: [CGRect]
+        let contentSize: CGSize
+    }
+
     private enum Element {
         case row(ContextMenuPageRowElement)
         case separator(ContextMenuSeparatorView)
@@ -95,10 +100,11 @@ final class ContextMenuPageView: UIView {
     }
 
     func preferredSize(constrainedTo constrainedSize: CGSize) -> CGSize {
-        let clampedWidth = min(self.style.maxWidth, constrainedSize.width)
+        let clampedWidth = max(0.0, min(self.style.maxWidth, constrainedSize.width))
+        let clampedMinWidth = min(self.style.minWidth, clampedWidth)
         let contentSize = self.measuredContentSize(maxWidth: clampedWidth)
         return CGSize(
-            width: min(self.style.maxWidth, max(self.style.minWidth, contentSize.width)).rounded(.up),
+            width: min(clampedWidth, max(clampedMinWidth, contentSize.width)).rounded(.up),
             height: min(constrainedSize.height, contentSize.height).rounded(.up)
         )
     }
@@ -107,34 +113,20 @@ final class ContextMenuPageView: UIView {
         self.scrollView.frame = CGRect(origin: .zero, size: size)
         self.selectionTouchView.frame = self.scrollView.frame
 
-        var contentHeight: CGFloat = 0.0
-        var firstRow = true
-        for element in self.elements {
-            switch element {
-            case let .row(row):
-                if firstRow {
-                    contentHeight += self.style.listVerticalPadding
-                    firstRow = false
-                }
-                let rowSize = row.measuredSize(maxWidth: size.width)
-                let rowFrame = CGRect(x: 0.0, y: contentHeight, width: size.width, height: rowSize.height)
-                row.view.frame = rowFrame
-                row.applyLayout(size: rowFrame.size)
-                contentHeight += rowFrame.height
-            case let .separator(separatorView):
-                let separatorFrame = CGRect(x: 0.0, y: contentHeight, width: size.width, height: self.style.separatorHeight)
-                separatorView.frame = separatorFrame
-                contentHeight += separatorFrame.height
+        let layoutResult = self.layoutResult(width: size.width)
+        for (element, frame) in zip(self.elements, layoutResult.frames) {
+            element.view.frame = frame
+            if case let .row(row) = element {
+                row.applyLayout(size: frame.size)
             }
         }
 
-        if !firstRow {
-            contentHeight += self.style.listVerticalPadding
-        }
-
-        self.contentView.frame = CGRect(x: 0.0, y: 0.0, width: size.width, height: contentHeight)
+        self.contentView.frame = CGRect(origin: .zero, size: layoutResult.contentSize)
         self.scrollView.contentSize = self.contentView.bounds.size
-        self.updateImmediateSelectionAvailability(viewportSize: size, contentHeight: contentHeight)
+        self.updateImmediateSelectionAvailability(
+            viewportSize: size,
+            contentHeight: layoutResult.contentSize.height
+        )
 
         if let highlightedRowIndex {
             self.updateHighlight(index: highlightedRowIndex, animated: false, emitFeedback: false)
@@ -334,6 +326,10 @@ final class ContextMenuPageView: UIView {
     }
 
     private func measuredContentSize(maxWidth: CGFloat) -> CGSize {
+        if case .grid = self.page.layout {
+            return self.layoutResult(width: maxWidth).contentSize
+        }
+
         var width = self.style.minWidth
         var height: CGFloat = 0.0
         var rowIndex = 0
@@ -358,6 +354,114 @@ final class ContextMenuPageView: UIView {
         }
 
         return CGSize(width: width, height: height)
+    }
+
+    private func layoutResult(width: CGFloat) -> LayoutResult {
+        switch self.page.layout {
+        case .list:
+            return self.listLayoutResult(width: width)
+        case let .grid(layout):
+            return self.gridLayoutResult(width: width, layout: layout)
+        }
+    }
+
+    private func listLayoutResult(width: CGFloat) -> LayoutResult {
+        var frames = Array(repeating: CGRect.zero, count: self.elements.count)
+        var contentHeight: CGFloat = 0.0
+        var firstRow = true
+
+        for (index, element) in self.elements.enumerated() {
+            switch element {
+            case let .row(row):
+                if firstRow {
+                    contentHeight += self.style.listVerticalPadding
+                    firstRow = false
+                }
+                let rowSize = row.measuredSize(maxWidth: width)
+                let rowFrame = CGRect(x: 0.0, y: contentHeight, width: width, height: rowSize.height)
+                frames[index] = rowFrame
+                contentHeight += rowFrame.height
+            case .separator:
+                let separatorFrame = CGRect(
+                    x: 0.0,
+                    y: contentHeight,
+                    width: width,
+                    height: self.style.separatorHeight
+                )
+                frames[index] = separatorFrame
+                contentHeight += separatorFrame.height
+            }
+        }
+
+        if !firstRow {
+            contentHeight += self.style.listVerticalPadding
+        }
+        return LayoutResult(
+            frames: frames,
+            contentSize: CGSize(width: width, height: contentHeight)
+        )
+    }
+
+    private func gridLayoutResult(width: CGFloat, layout: ContextMenuGridLayout) -> LayoutResult {
+        var frames = Array(repeating: CGRect.zero, count: self.elements.count)
+        let columns = max(1, layout.columns)
+        let availableWidth = max(
+            0.0,
+            width
+                - layout.contentInsets.left
+                - layout.contentInsets.right
+        )
+        let columnWidth = availableWidth / CGFloat(columns)
+        var contentHeight = layout.contentInsets.top
+        var elementIndex = 0
+
+        while elementIndex < self.elements.count {
+            switch self.elements[elementIndex] {
+            case .separator:
+                frames[elementIndex] = CGRect(
+                    x: layout.contentInsets.left,
+                    y: contentHeight,
+                    width: availableWidth,
+                    height: self.style.separatorHeight
+                )
+                contentHeight += self.style.separatorHeight
+                elementIndex += 1
+            case .row:
+                var rowElementIndices: [Int] = []
+                while elementIndex < self.elements.count,
+                      rowElementIndices.count < columns,
+                      case .row = self.elements[elementIndex] {
+                    rowElementIndices.append(elementIndex)
+                    elementIndex += 1
+                }
+
+                let rowHeight = rowElementIndices.reduce(CGFloat.zero) { partialResult, index in
+                    guard case let .row(row) = self.elements[index] else {
+                        return partialResult
+                    }
+                    return max(partialResult, row.measuredSize(maxWidth: columnWidth).height)
+                }
+                for (column, index) in rowElementIndices.enumerated() {
+                    let visualColumn = self.sourceUserInterfaceLayoutDirection.contextMenuIsRightToLeft
+                        ? columns - column - 1
+                        : column
+                    frames[index] = CGRect(
+                        x: layout.contentInsets.left
+                            + CGFloat(visualColumn) * columnWidth,
+                        y: contentHeight,
+                        width: columnWidth,
+                        height: rowHeight
+                    )
+                }
+                contentHeight += rowHeight
+            }
+        }
+
+        contentHeight += layout.contentInsets.bottom
+        return LayoutResult(
+            frames: frames,
+            contentSize: CGSize(width: width, height: contentHeight)
+        )
     }
 
     private func updateImmediateSelectionAvailability(viewportSize: CGSize, contentHeight: CGFloat) {
@@ -476,13 +580,32 @@ final class ContextMenuPageView: UIView {
             return
         }
 
-        let targetFrame = CGRect(
-            x: self.style.highlightHorizontalInset,
-            y: targetRowFrame.minY,
-            width: max(0.0, self.contentView.bounds.width - self.style.highlightHorizontalInset * 2.0),
-            height: targetRowFrame.height
-        )
-        let targetCornerRadius = min(20.0, targetFrame.height * 0.5)
+        let targetFrame: CGRect
+        let targetCornerRadius: CGFloat
+        switch self.page.layout {
+        case .list:
+            targetFrame = CGRect(
+                x: self.style.highlightHorizontalInset,
+                y: targetRowFrame.minY,
+                width: max(0.0, self.contentView.bounds.width - self.style.highlightHorizontalInset * 2.0),
+                height: targetRowFrame.height
+            )
+            targetCornerRadius = min(20.0, targetFrame.height * 0.5)
+        case let .grid(layout):
+            targetFrame = CGRect(
+                x: targetRowFrame.minX + layout.highlightInsets.left,
+                y: targetRowFrame.minY + layout.highlightInsets.top,
+                width: max(
+                    0.0,
+                    targetRowFrame.width - layout.highlightInsets.left - layout.highlightInsets.right
+                ),
+                height: max(
+                    0.0,
+                    targetRowFrame.height - layout.highlightInsets.top - layout.highlightInsets.bottom
+                )
+            )
+            targetCornerRadius = min(layout.highlightCornerRadius, targetFrame.height * 0.5)
+        }
         let animateIn = self.selectionView.alpha == 0.0
         if animateIn {
             if self.selectionView.layer.animation(forKey: "opacity") == nil {

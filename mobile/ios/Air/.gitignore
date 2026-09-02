@@ -114,6 +114,7 @@ scripts/**/*.json
 *-sdk.js
 *-sdk.js.LICENSE.txt
 
+SubModules/WalletContext/Localization/GeneratedLocalizations.swift
 SubModules/WalletResources/Resources/Strings/Localizable.xcstrings
 # Generated from WalletResources/Resources/Strings/Localizable.xcstrings
 SubModules/WalletResources/Resources/Strings/*.lproj/

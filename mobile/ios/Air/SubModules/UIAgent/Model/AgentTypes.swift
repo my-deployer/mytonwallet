@@ -60,7 +60,7 @@ struct AgentMessage {
         self.action = action
         self.systemStyle = systemStyle
     }
-    
+
     var isDateTimeSystemMessage: Bool {
         if case .dateTime? = systemStyle {
             return true
@@ -84,4 +84,3 @@ struct AgentMessageAction {
 struct AgentTypingIndicator {
     let id: AgentItemID = UUID()
 }
-

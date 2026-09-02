@@ -1,0 +1,45 @@
+.root {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: flex-start;
+
+  max-width: 85%;
+  min-height: 1.5rem;
+  margin-top: 0.625rem;
+  margin-inline-start: 0.5625rem;
+
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--color-gray-1);
+}
+
+.indicator {
+  flex: 0 0 auto;
+
+  width: 0.4375rem;
+  height: 0.4375rem;
+  margin-inline-end: 0.5rem;
+  border-radius: 50%;
+
+  background: var(--color-accent);
+
+  animation: agent-activity-pulse 1.5s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
+.text {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(html.animation-level-0) .indicator { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator { animation: none; }
+}
+
+@keyframes agent-activity-pulse {
+  50% { opacity: 0.35; }
+}

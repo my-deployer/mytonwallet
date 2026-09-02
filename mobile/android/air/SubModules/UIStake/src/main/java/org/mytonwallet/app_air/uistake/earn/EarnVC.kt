@@ -264,7 +264,7 @@ class EarnVC(
         label.setStyle(adaptiveFontSize(), WFont.Medium)
         label.textAlignment = View.TEXT_ALIGNMENT_CENTER
         label.text =
-            LocaleController.getString("Earn up to %1$@ per year from your tokens")
+            LocaleController.getString("Earn up to %apy% per year from your tokens")
         label
     }
 
@@ -575,9 +575,9 @@ class EarnVC(
                 noItemView.visibility = View.VISIBLE
                 updateSkeletonState()
 
-                noItemLabel.text = LocaleController.getFormattedString(
-                    "Earn up to %1$@ per year from your tokens",
-                    listOf("${earnViewModel.apy}%")
+                noItemLabel.text = LocaleController.getStringWithKeyValues(
+                    "Earn up to %apy% per year from your tokens",
+                    listOf("%apy%" to "${earnViewModel.apy}%")
                 )
 
                 animationView.play(R.raw.animation_gem, false, onStart = {

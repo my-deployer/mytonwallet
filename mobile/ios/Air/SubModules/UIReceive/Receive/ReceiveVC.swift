@@ -17,6 +17,7 @@ let headerHeight: CGFloat = 360
 public class ReceiveVC: WViewController {
     
     private let selectedChain: ApiChain?
+    private let buyingToken: String?
     private let isAccountSwitchingAllowed: Bool
     
     private var segmentedController: WSegmentedController!
@@ -29,9 +30,10 @@ public class ReceiveVC: WViewController {
     
     @AccountContext private var account: MAccount
 
-    public init(accountContext: AccountContext, chain: ApiChain? = nil) {
+    public init(accountContext: AccountContext, chain: ApiChain? = nil, buyingToken: String? = nil) {
         self._account = accountContext
         self.selectedChain = chain
+        self.buyingToken = buyingToken
         self.isAccountSwitchingAllowed = accountContext.source == .current
         super.init(nibName: nil, bundle: nil)
     }
@@ -177,9 +179,12 @@ public class ReceiveVC: WViewController {
 
     private func updateChainSelector() {
         let isMultichain = segmentedController.model.items.count > 1
+        let canSwitchAccounts = isAccountSwitchingAllowed
+            && accountSwitcher.hasAlternativeAccounts(selectedAccountId: account.id)
+        let showsChainSelector = canSwitchAccounts || isMultichain
         segmentedController.scrollView.isScrollEnabled = isMultichain
-        segmentedController.segmentedControl.isHidden = !isMultichain
-        if isMultichain {
+        segmentedController.segmentedControl.isHidden = !showsChainSelector
+        if showsChainSelector {
             segmentedController.segmentedControl.embed(in: navigationItem)
         } else {
             segmentedController.segmentedControl.removeFromSuperview()
@@ -215,7 +220,7 @@ public class ReceiveVC: WViewController {
             SegmentedControlItem(
                 id: chain.rawValue,
                 title: chain.title,
-                viewController: ReceiveTableVC(account: _account, chain: chain),
+                viewController: ReceiveTableVC(account: _account, chain: chain, preferredBuyingToken: buyingToken),
             )
         }
     }

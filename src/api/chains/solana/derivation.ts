@@ -1,23 +1,11 @@
 import { getAddressDecoder } from '@solana/kit';
 
-import type { ApiDerivation, ApiDerivationSpec, ApiSolanaWallet } from '../../types';
+import type { ApiDerivation, ApiSolanaWallet } from '../../types';
 
 import { bytesToHex } from '../../common/utils';
-import { SOLANA_DERIVATION_PATHS } from './constants';
+import { SOLANA_DERIVATION_VERSION } from './derivationConstants';
 
-/**
- * Target derivation spec for new Solana wallets.
- * Uses the Phantom path at index 0, which matches `pickBestWallet(isMigration: true)`
- * in auth.ts - so new-user import and chain-upgrade produce identical wallets.
- */
-export const SOLANA_DERIVATION_SPEC: ApiDerivationSpec = {
-  standard: 'bip39',
-  curve: 'ed25519',
-  path: SOLANA_DERIVATION_PATHS.phantom.replace('{index}', '0'),
-};
-
-/** Current target version for Solana derivation. Bump to trigger re-derivation of all stored wallets. */
-export const SOLANA_DERIVATION_VERSION = 1;
+export { SOLANA_DERIVATION_SPEC, SOLANA_DERIVATION_VERSION } from './derivationConstants';
 
 /**
  * Computes a Solana address from a raw ed25519 public key.

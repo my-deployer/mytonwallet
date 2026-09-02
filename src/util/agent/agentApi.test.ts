@@ -2,6 +2,10 @@
 
 import { ReadableStream } from 'node:stream/web';
 
+import type { Account } from '../../global/types';
+
+import { APP_NAME } from '../../config';
+
 jest.mock('./agentStore', () => ({
   __esModule: true,
   default: {
@@ -11,7 +15,7 @@ jest.mock('./agentStore', () => ({
   },
 }));
 
-import { createAgentStream } from './agentApi';
+import { buildRequestContext, createAgentStream } from './agentApi';
 
 describe('createAgentStream', () => {
   const originalFetch = window.fetch;
@@ -38,6 +42,15 @@ describe('createAgentStream', () => {
     await expectStreamCompletion('hello from fetch');
 
     expect(fallbackFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('buildRequestContext', () => {
+  it('includes the current application name', () => {
+    const account = { byChain: {}, type: 'mnemonic' } as Account;
+    const context = buildRequestContext([['account-1', account]], 'account-1');
+
+    expect(context.appName).toBe(APP_NAME);
   });
 });
 

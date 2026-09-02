@@ -5,11 +5,9 @@ import { AppState, AuthState, BiometricsState } from '../../types';
 
 import {
   IS_EXPLORER,
-  IS_FEATURE_LIMITED,
   MNEMONIC_CHECK_COUNT,
   MNEMONIC_COUNT,
   SHOULD_CLEANUP_LEGACY_AUTH,
-  SHOULD_GENERATE_TON_MNEMONIC,
   TEMPORARY_ACCOUNT_NAME,
 } from '../../../config';
 import { generateAccountTitle, generateNextSubwalletTitle, parseAccountId } from '../../../util/account';
@@ -201,7 +199,7 @@ addActionHandler('startCreatingWallet', async (global, actions, payload) => {
   }
 
   const generateMnemonicPromise = callApi(
-    'generateMnemonic', !SHOULD_GENERATE_TON_MNEMONIC && !global.auth.forceAddingTonOnlyAccount,
+    'generateMnemonic', !global.auth.forceAddingTonOnlyAccount,
   );
 
   setGlobal(
@@ -404,13 +402,6 @@ addActionHandler('createAccount', async (global, actions) => {
   const mnemonic = global.auth.mnemonic!;
   const mainNetwork = selectCurrentNetwork(getGlobal());
   const networks: ApiNetwork[] = [mainNetwork];
-
-  // The trimmed product has no way to add an account on demand, so it pre-creates the twin to make the network
-  // toggle work. A full build reaches `startChangingNetwork`, which opens the auth flow when the other network
-  // is empty - pre-creating there would only leave an invisible account holding the same mnemonic.
-  if (IS_FEATURE_LIMITED) {
-    networks.push(mainNetwork === 'testnet' ? 'mainnet' : 'testnet');
-  }
 
   const isPrivateKeyBased = isMnemonicPrivateKey(mnemonic);
   const accounts = isPrivateKeyBased

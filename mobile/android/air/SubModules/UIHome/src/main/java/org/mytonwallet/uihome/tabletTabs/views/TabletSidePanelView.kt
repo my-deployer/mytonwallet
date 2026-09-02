@@ -32,6 +32,7 @@ import org.mytonwallet.app_air.uicomponents.commonViews.HighlightOverlayView
 import org.mytonwallet.app_air.uicomponents.commonViews.PanelAccountItemView
 import org.mytonwallet.app_air.uicomponents.commonViews.ReversedCornerView
 import org.mytonwallet.app_air.uicomponents.commonViews.ReversedCornerViewUpsideDown
+import org.mytonwallet.app_air.uicomponents.commonViews.UpdateStatusView
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderSpaceCell
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
@@ -56,7 +57,6 @@ import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.uihome.home.WalletNameMenuHelper
-import org.mytonwallet.uihome.home.views.UpdateStatusView
 import org.mytonwallet.uihome.home.views.header.HomeHeaderView
 
 @SuppressLint("ViewConstructor")

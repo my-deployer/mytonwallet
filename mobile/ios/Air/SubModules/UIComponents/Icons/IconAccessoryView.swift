@@ -28,6 +28,7 @@ public final class IconAccessoryView: UIView {
             self.verticalOffset = verticalOffset
         }
         
+        public static let forIcon24 = LayoutGeometry(size: 8.4, borderWidth: 0.8, horizontalOffset: 1.8, verticalOffset: 0.6)
         public static let forIcon40 = LayoutGeometry(size: 14.0, borderWidth: 1.333, horizontalOffset: 3.0, verticalOffset: 1.0)
     }
     

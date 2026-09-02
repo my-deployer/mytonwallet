@@ -12,7 +12,7 @@ export default function useInfiniteLoader({ isDisabled, isLoading, loadMore }: O
   const loadingObserver = useRef<IntersectionObserver>();
   const [hasIntersection, setHasIntersection] = useState(false);
 
-  const handleIntersection = useLastCallback((node: HTMLElement | null) => {
+  const handleIntersection = useLastCallback((node: HTMLElement | undefined) => {
     if (isLoading) {
       return;
     }

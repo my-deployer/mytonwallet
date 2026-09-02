@@ -5,16 +5,64 @@ import WalletCore
 
 public enum AgentEntryPoint {
     @MainActor
+    private static var pendingQuery: String?
+
+    @MainActor
     public static func makeRootViewController() -> UIViewController {
-        AgentConsentStore.hasAccepted ? AgentVC() : AgentConsentVC()
+        AgentProtocolRouterVC(overrideConfig: AgentOverrideConfig.current) { version in
+            makeRootViewController(
+                agentProtocolVersion: version,
+                makeAgentV2Client: LiveAgentV2Client.init
+            )
+        }
+    }
+
+    @MainActor
+    static func makeRootViewController(
+        agentProtocolVersion: ApiUpdate.UpdateConfig.AgentProtocolVersion,
+        makeAgentV2Client: () -> AgentV2Client,
+        makeAgentController: () -> UIViewController = { AgentVC() },
+        makeConsentController: () -> UIViewController = { AgentConsentVC() }
+    ) -> UIViewController {
+        guard agentProtocolVersion == .v2 else {
+            return AgentConsentStore.hasAccepted ? makeAgentController() : makeConsentController()
+        }
+        return AgentRootRouterVC(client: makeAgentV2Client())
+    }
+
+    @MainActor
+    public static func enqueueQuery(_ query: String?) {
+        let query = query?.trimmingCharacters(in: .whitespacesAndNewlines)
+        pendingQuery = query?.isEmpty == false ? query : nil
+    }
+
+    @MainActor
+    static func consumePendingQuery() -> String? {
+        defer { pendingQuery = nil }
+        return pendingQuery
+    }
+
+    @MainActor
+    static func clearPendingQuery() {
+        pendingQuery = nil
     }
 
     public static func resetConsentStateForDebug() {
         AgentConsentStore.reset()
     }
+
+    @MainActor
+    public static func resetRootViewControllerForDebug(in navigationController: UINavigationController) {
+        guard let index = navigationController.viewControllers.firstIndex(where: { $0 is AgentProtocolRouterVC }) else {
+            return
+        }
+        var viewControllers = Array(navigationController.viewControllers.prefix(through: index))
+        viewControllers[index] = makeRootViewController()
+        navigationController.setViewControllers(viewControllers, animated: false)
+    }
 }
 
-private enum AgentConsentStore {
+enum AgentConsentStore {
     private static let acceptedKey = "ui_agent.third_party_ai_consent.accepted"
 
     static var hasAccepted: Bool {
@@ -46,7 +94,7 @@ private enum AgentConsentCopy {
         lang("$agent_consent_subtitle")
     }
     static var rowOne: String {
-        lang("$agent_consent_feature_answers", arg1: APP_NAME)
+        L10n.agentConsentFeatureAnswers(appName: APP_NAME)
     }
     static var rowTwo: String {
         lang("$agent_consent_feature_actions")
@@ -58,7 +106,7 @@ private enum AgentConsentCopy {
         lang("Data shared with Agent")
     }
     static var disclosureText: String {
-        lang("$agent_consent_disclosure_text", arg1: APP_NAME)
+        L10n.agentConsentDisclosureText(appName: APP_NAME)
     }
     static var allowButton: String {
         lang("$agent_consent_allow_button")
@@ -68,8 +116,9 @@ private enum AgentConsentCopy {
     }
 }
 
-private final class AgentConsentVC: WViewController {
+final class AgentConsentVC: WViewController {
     private let consentView = AgentConsentView()
+    private var isTransferringPendingQuery = false
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -78,6 +127,16 @@ private final class AgentConsentVC: WViewController {
 
     override func scrollToTop(animated: Bool) {
         consentView.scrollToTop(animated: animated)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard !isTransferringPendingQuery,
+              isMovingFromParent || parent?.isMovingFromParent == true
+                || isBeingDismissed || navigationController?.isBeingDismissed == true else {
+            return
+        }
+        AgentEntryPoint.clearPendingQuery()
     }
 
     private func setupViews() {
@@ -97,15 +156,16 @@ private final class AgentConsentVC: WViewController {
             consentView.topAnchor.constraint(equalTo: view.topAnchor),
             consentView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        
+
         view.backgroundColor = .air.background
         addCustomNavigationBarBackground(color: .air.background)
     }
 
     private func continueToAgent() {
         AgentConsentStore.accept()
+        isTransferringPendingQuery = true
         let agentVC = AgentVC()
-        guard let navigationController else {
+        guard parent == nil, let navigationController else {
             replaceWithEmbeddedAgent(agentVC)
             return
         }
@@ -134,7 +194,7 @@ private final class AgentConsentVC: WViewController {
     }
 }
 
-private final class AgentConsentView: UIView {
+final class AgentConsentView: UIView {
     var onContinue: (() -> Void)?
     var onLearnMore: (() -> Void)?
 
@@ -215,7 +275,7 @@ private final class AgentConsentView: UIView {
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomContainerView.topAnchor, constant: -200),
+            scrollView.bottomAnchor.constraint(equalTo: bottomContainerView.topAnchor),
 
             contentView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             contentView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),

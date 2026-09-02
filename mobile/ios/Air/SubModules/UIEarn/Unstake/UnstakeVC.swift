@@ -34,6 +34,9 @@ public class UnstakeVC: WViewController {
         model.onAmountChanged = { [weak self] amount in
             self?.amountChanged(amount: amount)
         }
+        model.onDraftFailure = { error in
+            AppActions.showError(error: error)
+        }
     }
     
     required init?(coder: NSCoder) {
@@ -46,7 +49,7 @@ public class UnstakeVC: WViewController {
         observe { [weak self] in
             guard let self else { return }
             _ = model.draft
-            _ = model.draftAmount
+            _ = model.draftPhase
             amountChanged(amount: model.amount)
         }
     }
@@ -70,7 +73,7 @@ public class UnstakeVC: WViewController {
         
         let continueButton = addBottomButton()
         self.continueButton = continueButton
-        let title: String = lang("$unstake_asset", arg1: model.baseToken.symbol)
+        let title: String = L10n.unstakeAsset(symbol: model.baseToken.symbol)
         continueButton.setTitle(title, for: .normal)
         continueButton.addTarget(self, action: #selector(continuePressed), for: .touchUpInside)
         continueButton.isEnabled = false
@@ -82,6 +85,7 @@ public class UnstakeVC: WViewController {
         view.addSubview(fakeTextField)
 
         amountChanged(amount: nil)
+        addCustomNavigationBarBackground(color: .air.sheetBackground)
     }
     
     public override func viewDidAppear(_ animated: Bool) {
@@ -90,6 +94,7 @@ public class UnstakeVC: WViewController {
     
     func amountChanged(amount: BigInt?) {
         guard let continueButton else { return }
+        let buttonTitle = L10n.unstakeAsset(symbol: model.baseToken.symbol)
         
         let isLong = getIsLongUnstake(state: stakingState, amount: amount)
         let unlockTime = getUnstakeTime(state: stakingState)
@@ -105,7 +110,8 @@ public class UnstakeVC: WViewController {
             let maxAmount = model.maxAmount
             let calculatedFee = getStakeOperationFee(stakingType: stakingState.type, stakeOperation: .unstake).gas ?? 0
             let nativeBalance = model.nativeBalance
-            let isDraftReady = model.draft != nil && model.draftAmount == amount
+            let isDraftReady = model.draftPhase == .ready
+                && model.draft != nil
             
             if amount > maxAmount {
                 model.insufficientFunds = true
@@ -117,8 +123,40 @@ public class UnstakeVC: WViewController {
                 continueButton.apply(config: .insufficientFee(minAmount: calculatedFee))
             } else {
                 model.insufficientFunds = false
-                continueButton.showLoading = !isDraftReady
-                continueButton.apply(config: .continue(title: title, isEnabled: amount > 0 && isDraftReady))
+                switch model.draftPhase {
+                case .loading:
+                    continueButton.showLoading = true
+                    continueButton.apply(
+                        config: .continue(
+                            title: buttonTitle,
+                            isEnabled: false
+                        )
+                    )
+                case .failed:
+                    continueButton.showLoading = false
+                    continueButton.apply(
+                        config: .continue(
+                            title: lang("Retry"),
+                            isEnabled: model.canRetryDraft
+                        )
+                    )
+                case .ready:
+                    continueButton.showLoading = false
+                    continueButton.apply(
+                        config: .continue(
+                            title: buttonTitle,
+                            isEnabled: amount > 0 && isDraftReady
+                        )
+                    )
+                case .idle:
+                    continueButton.showLoading = false
+                    continueButton.apply(
+                        config: .continue(
+                            title: buttonTitle,
+                            isEnabled: false
+                        )
+                    )
+                }
             }
         } else {
             continueButton.showLoading = false
@@ -128,6 +166,10 @@ public class UnstakeVC: WViewController {
     
     @objc func continuePressed() {
         view.endEditing(true)
+        if model.canRetryDraft {
+            model.retryDraft()
+            return
+        }
         Task {
             do {
                 try await confirmAction(account: account)

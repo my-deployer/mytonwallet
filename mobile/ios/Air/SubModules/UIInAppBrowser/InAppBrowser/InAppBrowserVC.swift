@@ -416,7 +416,7 @@ final class InAppBrowserVC: WViewController, InAppBrowserPageDelegate {
         let shouldShow = pages.count > 1
         tabSwitcherButton.view.isHidden = !shouldShow
         tabSwitcherButton.setImage(Self.tabSwitcherImage(tabCount: pages.count))
-        tabSwitcherButton.view.accessibilityLabel = lang("$iab_tabs_count", arg1: pages.count)
+        tabSwitcherButton.view.accessibilityLabel = L10n.iabTabsCount(count: pages.count)
         if !shouldShow {
             hideTabSwitcher(animated: false)
         }

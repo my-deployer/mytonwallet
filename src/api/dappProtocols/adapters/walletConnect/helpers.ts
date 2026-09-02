@@ -1,7 +1,8 @@
 import type { Verify } from '@walletconnect/types';
 
-import type { ApiDappRequest, ApiDappurlTrustStatusStatus } from '../../../types';
+import type { ApiChain, ApiDappRequest, ApiDappurlTrustStatusStatus, ApiNetwork } from '../../../types';
 import type { DappProtocolError } from '../../errors';
+import type { StoredSessionChain } from '../../storage';
 import type { WalletConnectEip712Params } from './types';
 
 import { parseAccountId } from '../../../../util/account';
@@ -151,4 +152,30 @@ export function urlTrustStatusStatusFromWalletConnectVerify(
     return 'invalid';
   }
   return 'unknown';
+}
+
+export function mergeStoredSessionChains(
+  existing: StoredSessionChain[],
+  incoming: StoredSessionChain[],
+): StoredSessionChain[] {
+  const byKey = new Map<string, StoredSessionChain>();
+
+  for (const chain of existing) {
+    byKey.set(`${chain.chain}:${chain.network}:${chain.address.toLowerCase()}`, chain);
+  }
+
+  for (const chain of incoming) {
+    byKey.set(`${chain.chain}:${chain.network}:${chain.address.toLowerCase()}`, chain);
+  }
+
+  return [...byKey.values()];
+}
+
+export function getMissingInjectedRequestedChains(
+  existing: StoredSessionChain[],
+  requested: Array<{ chain: ApiChain; network: ApiNetwork }>,
+): Array<{ chain: ApiChain; network: ApiNetwork }> {
+  return requested.filter((req) =>
+    !existing.some((row) => row.chain === req.chain && row.network === req.network),
+  );
 }

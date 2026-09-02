@@ -238,7 +238,7 @@ open class RecoveryPhraseVC(
 
         setNavTitle(
             LocaleController.getPluralOrFormat(
-                if (isShowingPrivateKey) "Private Key" else "%1\$d Secret Words",
+                if (isShowingPrivateKey) "Private Key" else "%count% Secret Words",
                 wordsCount
             ) + network.localizedIdentifier
         )

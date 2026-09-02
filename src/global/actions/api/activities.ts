@@ -1,6 +1,6 @@
 import type { ApiActivity } from '../../../api/types';
 
-import { getIsHiddenNftActivity } from '../../../util/activities';
+import { getActivityContinuationTimestamp, getIsHiddenNftActivity } from '../../../util/activities';
 import { mergeSortedActivities } from '../../../util/activities/order';
 import { getIsTransactionWithPoisoning } from '../../../util/poisoningHash';
 import { throttle, waitFor } from '../../../util/schedulers';
@@ -97,7 +97,16 @@ async function fetchPastActivities(accountId: string, slug?: string) {
         filteredResult.length < PAST_ACTIVITY_BATCH
         && fetchedActivities.length < PAST_ACTIVITY_BATCH
       );
-    toTimestamp = activities[activities.length - 1].timestamp;
+    const nextTimestamp = getActivityContinuationTimestamp(activities, (activity) => activity);
+    // The cursor must move backwards on every iteration. Upstream is asked for activities mined
+    // before it, so a page can only push it back; a cursor that fails to move means the next
+    // request would repeat this page forever. Stopping defers at most one page - the next trigger
+    // resumes from the stored anchor - while spinning here is unbounded.
+    if (nextTimestamp === undefined || (toTimestamp !== undefined && nextTimestamp >= toTimestamp)) {
+      break;
+    }
+
+    toTimestamp = nextTimestamp;
   }
 
   global = addPastActivities(global, accountId, slug, fetchedActivities, isEndReached);

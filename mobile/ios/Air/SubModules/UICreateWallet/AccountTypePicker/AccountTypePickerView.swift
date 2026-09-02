@@ -2,17 +2,44 @@ import SwiftUI
 import WalletContext
 import WalletCore
 import UIComponents
-import UIPasscode
 import Perception
+
+enum AccountTypePickerAuthorizationAction: Equatable {
+    case createWallet
+    case createSubwallet
+    case importWallet
+}
+
+@Perceptible @MainActor
+final class AccountTypePickerAuthorizationState {
+    private(set) var action: AccountTypePickerAuthorizationAction?
+
+    var isAuthorizing: Bool {
+        action != nil
+    }
+
+    @discardableResult
+    func begin(_ action: AccountTypePickerAuthorizationAction) -> Bool {
+        guard self.action == nil else { return false }
+        self.action = action
+        return true
+    }
+
+    func reset() {
+        action = nil
+    }
+}
 
 struct AccountTypePickerView: View {
 
     var network: ApiNetwork
+    var authorizationState: AccountTypePickerAuthorizationState
     var onHeightChange: (CGFloat) -> ()
+    var onCreate: () -> ()
+    var onCreateSubwallet: () -> ()
+    var onImport: () -> ()
     var onViewAddress: () -> ()
     var onLedger: () -> ()
-
-    @Environment(\.dismiss) var dismiss
 
     var body: some View {
         WithPerceptionTracking {
@@ -24,6 +51,7 @@ struct AccountTypePickerView: View {
                             title: lang("New Wallet"),
                             subtitle: lang("From new secret words"),
                             showsDivider: canCreateSubwallet,
+                            isLoading: authorizationState.action == .createWallet,
                             onTap: onCreate
                         )
 
@@ -32,6 +60,7 @@ struct AccountTypePickerView: View {
                                 icon: "NewSubwalletIcon30",
                                 title: lang("New Subwallet"),
                                 subtitle: lang("From current secret words"),
+                                isLoading: authorizationState.action == .createSubwallet,
                                 onTap: onCreateSubwallet
                             )
                         }
@@ -45,6 +74,7 @@ struct AccountTypePickerView: View {
                             title: lang("$secret_words"),
                             subtitle: localizedIntegerDigits(in: lang("Restore wallet from 12 or 24 words")),
                             showsDivider: network == .mainnet,
+                            isLoading: authorizationState.action == .importWallet,
                             onTap: onImport
                         )
                         if network == .mainnet {
@@ -69,6 +99,7 @@ struct AccountTypePickerView: View {
                 }
                 .padding(.top, 20)
                 .padding(.bottom, 24)
+                .allowsHitTesting(!authorizationState.isAuthorizing)
                 .onGeometryChange(for: CGFloat.self, of: \.size.height) { height in
                     onHeightChange(height)
                 }
@@ -88,63 +119,4 @@ struct AccountTypePickerView: View {
         }
     }
 
-    private func onCreate() {
-        dismiss()
-        if let vc = topViewController() {
-            UnlockVC.presentAuth(on: vc, onDone: { enclaveToken in
-                Task { @MainActor in
-                    do {
-                        let words = try await Api.generateMnemonic()
-                        let introModel = IntroModel(network: network, authMode: IntroAuthMode(enclaveToken: enclaveToken), words: words)
-                        let addAccountVC = WordDisplayVC(introModel: introModel, wordList: words)
-                        let navVC = WNavigationController(rootViewController: addAccountVC)
-                        topViewController()?.present(navVC, animated: true)
-                    } catch {
-                        AppActions.showError(error: error)
-                    }
-                }
-            }, cancellable: true)
-        }
-    }
-
-    private func onCreateSubwallet() {
-        dismiss()
-        if let vc = topViewController() {
-            UnlockVC.presentAuth(on: vc, onDone: { enclaveToken in
-                Task { @MainActor in
-                    guard let enclaveToken else { return }
-                    do {
-                        let account = try await AccountStore.createSubWallet(enclaveToken: enclaveToken)
-                        AppActions.showHome(popToRoot: true)
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                            AppActions.showToast(
-                                style: .large,
-                                icon: .symbolImage("plus"),
-                                message: lang("Subwallet Created"),
-                                actionTitle: lang("Set Name")
-                            ) {
-                                AppActions.showRenameAccount(accountId: account.id)
-                            }
-                        }
-                    } catch {
-                        AppActions.showError(error: error)
-                    }
-                }
-            }, cancellable: true)
-        }
-    }
-
-    private func onImport() {
-        dismiss()
-        if let vc = topViewController() {
-            UnlockVC.presentAuth(on: vc, onDone: { enclaveToken in
-                Task { @MainActor in
-                    let introModel = IntroModel(network: network, authMode: IntroAuthMode(enclaveToken: enclaveToken))
-                    let importWalletVC = ImportWalletVC(introModel: introModel)
-                    let navVC = WNavigationController(rootViewController: importWalletVC)
-                    topViewController()?.present(navVC, animated: true)
-                }
-            }, cancellable: true)
-        }
-    }
 }

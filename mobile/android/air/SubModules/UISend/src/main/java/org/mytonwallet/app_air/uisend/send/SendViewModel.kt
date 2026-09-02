@@ -1117,9 +1117,9 @@ class SendViewModel :
                     if (draft.dieselStatus == MDieselStatus.NOT_AUTHORIZED) {
                         return ButtonState(
                             ButtonStatus.AuthorizeDiesel,
-                            LocaleController.getFormattedString(
-                                "Authorize %1$@ fee",
-                                listOf(draft.request.token.symbol ?: "")
+                            LocaleController.getStringWithKeyValues(
+                                "Authorize %token% fee",
+                                listOf("%token%" to (draft.request.token.symbol ?: ""))
                             )
                         )
                     }
@@ -1162,9 +1162,9 @@ class SendViewModel :
                     if (draft.dieselStatus == MDieselStatus.NOT_AUTHORIZED) {
                         return ButtonState(
                             ButtonStatus.AuthorizeDiesel,
-                            LocaleController.getFormattedString(
-                                "Authorize %1$@ fee",
-                                listOf(draft.request.token.symbol ?: "")
+                            LocaleController.getStringWithKeyValues(
+                                "Authorize %token% fee",
+                                listOf("%token%" to (draft.request.token.symbol ?: ""))
                             )
                         )
                     }

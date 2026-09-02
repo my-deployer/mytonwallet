@@ -41,7 +41,6 @@ import {
   checkHasScamLink,
   checkIsTrustedCollection,
   getHasTrustedCollections,
-  getNftSuperCollectionsByCollectionAddress,
 } from '../../../common/addresses';
 import { buildTokenSlug } from '../../../common/tokens';
 import { base64ToString, sha256 } from '../../../common/utils';
@@ -57,8 +56,8 @@ import {
   SingleNominatorOpCode,
   VestingV1OpCode,
 } from '../constants';
+import { fetchNftByAddress } from '../toncenter/nfts';
 import { fixAddressFormat } from '../toncenter/other';
-import { fetchNftItems } from './tonapiio';
 import {
   getDnsItemDomain, getJettonMinterData, resolveTokenAddress, toBase64Address,
 } from './tonCore';
@@ -113,7 +112,6 @@ const jettonOnChainMetadataSpec: {
   uri: 'ascii',
   name: 'utf8',
   description: 'utf8',
-  image: 'ascii',
   symbol: 'utf8',
   decimals: 'utf8',
   custom_payload_api_uri: 'ascii',
@@ -122,8 +120,9 @@ const jettonOnChainMetadataSpec: {
 export async function fetchJettonMetadata(
   network: ApiNetwork,
   address: string,
+  signal?: AbortSignal,
 ): Promise<JettonMetadata | { error: ApiAnyDisplayError }> {
-  const minterData = await getJettonMinterData(network, address);
+  const minterData = await getJettonMinterData(network, address, signal);
   if ('error' in minterData) return minterData;
 
   let metadata: JettonMetadata;
@@ -137,13 +136,13 @@ export async function fetchJettonMetadata(
   if (prefix === OFFCHAIN_CONTENT_PREFIX) {
     const bytes = readSnakeBytes(slice);
     const contentUri = bytes.toString('utf-8');
-    metadata = await fetchJettonOffchainMetadata(contentUri);
+    metadata = await fetchJettonOffchainMetadata(contentUri, signal);
   } else {
     // On-chain content
     metadata = await parseJettonOnchainMetadata(slice);
     if (metadata.uri) {
       // Semi-chain content
-      const offchainMetadata = await fetchJettonOffchainMetadata(metadata.uri);
+      const offchainMetadata = await fetchJettonOffchainMetadata(metadata.uri, signal);
       metadata = { ...offchainMetadata, ...metadata };
     }
   }
@@ -168,14 +167,13 @@ export async function parseJettonOnchainMetadata(slice: Slice): Promise<JettonMe
   return res as JettonMetadata;
 }
 
-export async function fetchJettonOffchainMetadata(uri: string): Promise<JettonMetadata> {
-  const metadata = await fetchJsonWithProxy(uri);
+export async function fetchJettonOffchainMetadata(uri: string, signal?: AbortSignal): Promise<JettonMetadata> {
+  const metadata = await fetchJsonWithProxy(uri, undefined, { signal });
   return pick(metadata, [
     'name',
     'description',
     'symbol',
     'decimals',
-    'image',
     'image_data',
     'custom_payload_api_uri',
   ]);
@@ -280,14 +278,7 @@ export async function parsePayloadSlice(
         const forwardPayload = readForwardPayloadCell(slice);
         const comment = forwardPayload ? readComment(forwardPayload.asSlice()) : undefined;
 
-        let nft: ApiNft | undefined;
-        if (shouldLoadItems) {
-          const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
-          const [rawNft] = await fetchNftItems(network, [address]);
-          if (rawNft) {
-            nft = parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress);
-          }
-        }
+        const nft = shouldLoadItems ? await fetchNftByAddress(network, address) : undefined;
 
         return {
           type: 'nft:transfer',
@@ -308,14 +299,7 @@ export async function parsePayloadSlice(
         const forwardPayload = readForwardPayloadCell(slice);
         const comment = forwardPayload ? readComment(forwardPayload.asSlice()) : undefined;
 
-        let nft: ApiNft | undefined;
-        if (shouldLoadItems) {
-          const nftSuperCollectionsByCollectionAddress = await getNftSuperCollectionsByCollectionAddress();
-          const [rawNft] = await fetchNftItems(network, [address]);
-          if (rawNft) {
-            nft = parseTonapiioNft(network, rawNft, nftSuperCollectionsByCollectionAddress);
-          }
-        }
+        const nft = shouldLoadItems ? await fetchNftByAddress(network, address) : undefined;
 
         return {
           type: 'nft:ownership-assigned',

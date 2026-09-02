@@ -1,7 +1,13 @@
 package org.mytonwallet.app_air.uiassets.viewControllers.token
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -12,9 +18,14 @@ import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.widget.LinearLayout
+import androidx.core.animation.doOnEnd
 import androidx.core.view.isVisible
 import androidx.core.view.setPadding
 import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
+import androidx.dynamicanimation.animation.FloatValueHolder
+import androidx.dynamicanimation.animation.SpringAnimation
+import androidx.dynamicanimation.animation.SpringForce
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.lang.ref.WeakReference
@@ -27,6 +38,7 @@ import org.mytonwallet.app_air.uiagent.viewControllers.agent.AgentVC
 import org.mytonwallet.app_air.uiassets.viewControllers.token.cells.TokenChartCell
 import org.mytonwallet.app_air.uiassets.viewControllers.token.cells.TokenInfoCell
 import org.mytonwallet.app_air.uiassets.viewControllers.token.views.TokenHeaderView
+import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
@@ -53,6 +65,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WProtectedView
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
+import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uireceive.ReceiveVC
 import org.mytonwallet.app_air.uisend.send.MultisendLauncher
 import org.mytonwallet.app_air.uisend.send.SellWithCardLauncher
@@ -67,6 +80,7 @@ import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.isSameDayAs
+import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.models.MToken
@@ -76,6 +90,8 @@ import org.mytonwallet.app_air.walletcore.moshi.MApiTransaction
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.BalanceStore
 import org.mytonwallet.app_air.walletcore.stores.ConfigStore
+import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
+import org.mytonwallet.app_air.walletcore.stores.ExploreHistoryStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
 
 @SuppressLint("ViewConstructor")
@@ -100,6 +116,7 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     override val displayedAccount =
         DisplayedAccount(account.accountId, AccountStore.isPushedTemporary)
 
+    private val topTabsEnabled = WGlobalStorage.areTopTabsEnabled()
     private val px232 = 232.dp
     private val px116 = 116.dp
 
@@ -122,13 +139,21 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
         const val LOADING_SECTION = 3
 
         const val LARGE_INT = 10000
+
+        private const val REMOVE_ANIMATION_FALLBACK_MS = 1500L
     }
 
     private var tokenChartCell: TokenChartCell? = null
     private var tokenInfoCell: TokenInfoCell? = null
 
     private val tokenVM by lazy {
-        TokenVM(context, account.accountId, token, WeakReference(this))
+        TokenVM(
+            context,
+            account.accountId,
+            token,
+            account.isChainSupported(token.chain),
+            WeakReference(this)
+        )
     }
 
     private val areTradeActionsAvailable: Boolean
@@ -289,10 +314,68 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
 
     private var headerCell: HeaderSpaceCell? = null
 
+    // Paints the card's bottom corners over whatever row currently ends the card, so they
+    // follow height animations instead of jumping with cell rebinds.
+    private val activityCardBottomCornerDecoration = object : RecyclerView.ItemDecoration() {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val stripPath = Path()
+        private val cardPath = Path()
+
+        override fun onDrawOver(canvas: Canvas, parent: RecyclerView, state: RecyclerView.State) {
+            super.onDrawOver(canvas, parent, state)
+            if (!topTabsEnabled) return
+            val cardRowCount = recyclerViewNumberOfItems(parent, TRANSACTION_SECTION) +
+                recyclerViewNumberOfItems(parent, EMPTY_VIEW_SECTION)
+            if (cardRowCount == 0) return
+            val firstCardPosition = tokenInfoRow + 1
+            val lastCardPosition = firstCardPosition + cardRowCount
+            var lastCardChild: View? = null
+            var lastCardChildPosition = -1
+            for (i in 0 until parent.childCount) {
+                val child = parent.getChildAt(i)
+                val position = parent.getChildAdapterPosition(child)
+                if (position in firstCardPosition..lastCardPosition &&
+                    position > lastCardChildPosition
+                ) {
+                    lastCardChild = child
+                    lastCardChildPosition = position
+                }
+            }
+            if (lastCardChild == null) return
+            val radius = ViewConstants.BLOCK_RADIUS.dp
+            val bottom = lastCardChild.bottom + lastCardChild.translationY
+            val left = lastCardChild.left.toFloat()
+            val right = lastCardChild.right.toFloat()
+            if (bottom - radius >= parent.height || right <= left) return
+            stripPath.reset()
+            stripPath.addRect(left, bottom - radius, right, bottom, Path.Direction.CW)
+            cardPath.reset()
+            cardPath.addRoundRect(
+                left,
+                bottom - 2 * radius,
+                right,
+                bottom,
+                radius,
+                radius,
+                Path.Direction.CW
+            )
+            stripPath.op(cardPath, Path.Op.DIFFERENCE)
+            paint.color = WColor.SecondaryBackground.color
+            canvas.drawPath(stripPath, paint)
+        }
+    }
+
     private val recyclerView = WRecyclerView(context).apply {
         adapter = rvAdapter
+        addItemDecoration(activityCardBottomCornerDecoration)
         val layoutManager = object : LinearLayoutManagerAccurateOffset(context) {
             override fun canScrollVertically(): Boolean = !skeletonView.isVisible
+
+            override fun onLayoutCompleted(state: RecyclerView.State) {
+                super.onLayoutCompleted(state)
+                updateEmptyCellHeight()
+                updateCollapseGap()
+            }
         }
         layoutManager.isSmoothScrollbarEnabled = true
         setLayoutManager(layoutManager)
@@ -374,6 +457,9 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
 
     private fun tradeButtonsBottomMargin(): Int = 10.dp + (window?.systemBars?.bottom ?: 0)
 
+    override val additionalBottomGradientHeight: Int
+        get() = if (areTradeActionsAvailable) 60.dp else 0
+
     private fun updateTradeButtonsLayout() {
         if (tradeButtonsView.parent == null) return
         val horizontalMargin = ViewConstants.HORIZONTAL_PADDINGS.dp + 10.dp
@@ -387,12 +473,44 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
         }
     }
 
+    private var sellButtonShown = true
+    private var sellButtonProgress = 1f
+    private var sellButtonAnimator: ValueAnimator? = null
+
+    private fun applySellButtonProgress(progress: Float) {
+        sellButtonProgress = progress
+        sellButton.alpha = progress
+        sellButton.updateLayoutParams<LinearLayout.LayoutParams> {
+            weight = progress
+            marginStart = (12.dp * progress).roundToInt()
+        }
+    }
+
     private fun updateTradeButtons() {
-        sellButton.isVisible =
+        val shouldShow =
             (
                 BalanceStore.getBalances(account.accountId)?.get(token.slug)
                     ?: BigInteger.ZERO
                 ) > BigInteger.ZERO
+        if (shouldShow == sellButtonShown) return
+        sellButtonShown = shouldShow
+        sellButtonAnimator?.cancel()
+        if (!tradeButtonsView.isLaidOut || !WGlobalStorage.getAreAnimationsActive()) {
+            sellButton.isVisible = shouldShow
+            applySellButtonProgress(if (shouldShow) 1f else 0f)
+            return
+        }
+        sellButton.isVisible = true
+        sellButtonAnimator =
+            ValueAnimator.ofFloat(sellButtonProgress, if (shouldShow) 1f else 0f).apply {
+                duration = AnimationConstants.QUICK_ANIMATION
+                addUpdateListener { applySellButtonProgress(it.animatedValue as Float) }
+                doOnEnd {
+                    sellButtonAnimator = null
+                    if (!shouldShow) sellButton.isVisible = false
+                }
+                start()
+            }
     }
 
     override fun setupViews() {
@@ -452,6 +570,9 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
 
     override fun viewDidAppear() {
         super.viewDidAppear()
+        if (topTabsEnabled) {
+            ExploreHistoryStore.saveTokenVisit(account.accountId, token.slug)
+        }
         heavyAnimationDone()
     }
 
@@ -491,13 +612,9 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     }
 
     private fun pauseBlurViews() {
+        cancelBottomBlurSettle()
         topBlurReversedCornerView.pauseBlurring(false)
-        bottomReversedCornerView?.pauseBlurring()
-        if (navigationController?.tabBarController?.activeNavigationController ==
-            navigationController
-        ) {
-            navigationController?.tabBarController?.pauseBlurring()
-        }
+        pauseBottomBlurViews()
     }
 
     private fun resumeBlurViews() {
@@ -628,8 +745,19 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                     }
                 }
             }
-            resumeBlurViews()
+            if (recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE &&
+                !recyclerView.canScrollVertically(1)
+            ) {
+                topBlurReversedCornerView.resumeBlurring()
+                pauseBottomBlurViewsUntilSettled {
+                    recyclerView.scrollState == RecyclerView.SCROLL_STATE_IDLE
+                }
+            } else {
+                cancelBottomBlurSettle()
+                resumeBlurViews()
+            }
         } else {
+            cancelBottomBlurSettle()
             if (recyclerView.scrollState != RecyclerView.SCROLL_STATE_IDLE) {
                 pauseBlurViews()
             }
@@ -667,7 +795,7 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
             }
 
             EMPTY_VIEW_SECTION -> {
-                return if (showingTransactions?.size == 0) 1 else 0
+                return if (showingTransactions?.size == 0 || removingEmptyCell) 1 else 0
             }
 
             LOADING_SECTION -> {
@@ -894,7 +1022,8 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                             ),
                             isLastInDay = isFirstInDay,
                             isLast =
-                                indexPath.row == showingTransactions!!.size - 1 &&
+                                !topTabsEnabled &&
+                                    indexPath.row == showingTransactions!!.size - 1 &&
                                     tokenVM.activityLoader?.loadedAll != false,
                             isAdded = isApplyingUpdate &&
                                 oldTransactions?.contains(transaction.getStableId()) == false,
@@ -905,7 +1034,8 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                                             !transaction.dt.isSameDayAs(
                                                 oldTransactionsFirstDt!!
                                             )
-                                        )
+                                        ),
+                            revealsFromZero = topTabsEnabled
                         )
                     )
                 } else {
@@ -918,11 +1048,27 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
 
             EMPTY_VIEW_SECTION -> {
                 (cellHolder.cell as EmptyCell).let { cell ->
+                    if (topTabsEnabled) {
+                        cell.updateTheme()
+                        cell.setBackgroundColor(
+                            WColor.Background.color,
+                            if ((showingTransactions?.size ?: 0) > 0) {
+                                0f
+                            } else {
+                                ViewConstants.BLOCK_RADIUS.dp
+                            },
+                            ViewConstants.BLOCK_RADIUS.dp,
+                            true
+                        )
+                        if (removingEmptyCell) {
+                            collapseEmptyCell(cell)
+                            return@let
+                        }
+                        emptyCellCollapseAnimation?.cancel()
+                        cell.emptyView.alpha = 1f
+                    }
                     cell.layoutParams = cell.layoutParams.apply {
-                        height = (this@TokenVC.view.parent as View).height - (
-                            (navigationController?.getSystemBars()?.bottom ?: 0) +
-                                headerView.contentHeight
-                            )
+                        height = emptyCellHeight()
                     }
                 }
             }
@@ -931,14 +1077,12 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
                 (cellHolder.cell as SkeletonCell).apply {
                     configure(indexPath.row, false, isLast = true)
                     updateTheme()
-                    visibility =
-                        if (tokenVM.activityLoader?.showingTransactions == null ||
-                            tokenVM.activityLoader?.loadedAll == true
-                        ) {
-                            INVISIBLE
-                        } else {
-                            VISIBLE
-                        }
+                    val isHidden = tokenVM.activityLoader?.showingTransactions == null ||
+                        tokenVM.activityLoader?.loadedAll == true
+                    visibility = if (isHidden) INVISIBLE else VISIBLE
+                    layoutParams = layoutParams.apply {
+                        height = if (isHidden) 0 else SkeletonCell.HEIGHT
+                    }
                 }
             }
         }
@@ -968,15 +1112,122 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     override fun updateProtectedView() {
     }
 
+    // Bottom padding that lets short content scroll far enough to collapse the header.
+    private var baseBottomPadding = 0
+    private var collapseGap = 0
+
+    private fun updateCollapseGap() {
+        val gap = if (topTabsEnabled) computeCollapseGap() else 0
+        if (gap == collapseGap) return
+        collapseGap = gap
+        recyclerView.updatePadding(bottom = baseBottomPadding + collapseGap)
+    }
+
+    private var removingEmptyCell = false
+    private var emptyCellCollapseAnimation: SpringAnimation? = null
+    private val removalFallbackHandler = Handler(Looper.getMainLooper())
+    private var removalFallback: Runnable? = null
+
+    private fun collapseEmptyCell(cell: EmptyCell) {
+        if (emptyCellCollapseAnimation?.isRunning == true) return
+        val startHeight = if (cell.height > 0) cell.height else cell.layoutParams.height
+        if (startHeight <= 0) {
+            finishRemovingEmptyCell()
+            return
+        }
+        val fadeStartHeight = 0.7f * startHeight
+        val fadeRange = startHeight - fadeStartHeight
+        emptyCellCollapseAnimation = SpringAnimation(FloatValueHolder()).apply {
+            setStartValue(startHeight.toFloat())
+            spring = SpringForce(0f).apply {
+                stiffness = 500f
+                dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
+            }
+            setMinValue(0f)
+            addUpdateListener { _, value, _ ->
+                cell.updateLayoutParams { height = value.toInt().coerceAtLeast(0) }
+                cell.emptyView.alpha = ((value - fadeStartHeight) / fadeRange).coerceIn(0f, 1f)
+            }
+            addEndListener { _, _, _, _ ->
+                emptyCellCollapseAnimation = null
+                finishRemovingEmptyCell()
+            }
+            start()
+        }
+    }
+
+    private fun finishRemovingEmptyCell() {
+        removalFallback?.let { removalFallbackHandler.removeCallbacks(it) }
+        removalFallback = null
+        if (!removingEmptyCell) return
+        removingEmptyCell = false
+        rvAdapter.reloadData()
+    }
+
+    private fun emptyCellHeight(): Int {
+        val layoutManager = recyclerView.layoutManager as? LinearLayoutManagerAccurateOffset
+        val occupiedHeight =
+            (navigationController?.getSystemBars()?.top ?: 0) +
+                TokenHeaderView.navDefaultHeight +
+                headerView.contentHeight - px232 +
+                (layoutManager?.getItemHeight(1) ?: 0) +
+                (tokenChartCell?.height ?: 0) +
+                (tokenInfoCell?.height?.takeIf { it > 0 } ?: TokenInfoCell.collapsedCellHeight) +
+                (if (tokenVM.activityLoader?.loadedAll == false) SkeletonCell.HEIGHT else 0) +
+                baseBottomPadding
+        return (recyclerView.height - occupiedHeight).coerceAtLeast(160.dp)
+    }
+
+    private fun updateEmptyCellHeight() {
+        if (showingTransactions?.size != 0 || recyclerView.height <= 0) return
+        val layoutManager =
+            recyclerView.layoutManager as? LinearLayoutManagerAccurateOffset ?: return
+        val cell = layoutManager.findViewByPosition(tokenInfoRow + 1) as? EmptyCell ?: return
+        if (cell.layoutParams.height == emptyCellHeight()) return
+        recyclerView.post {
+            if (showingTransactions?.size != 0) return@post
+            val attachedCell = (recyclerView.layoutManager as? LinearLayoutManagerAccurateOffset)
+                ?.findViewByPosition(tokenInfoRow + 1) as? EmptyCell ?: return@post
+            val height = emptyCellHeight()
+            if (attachedCell.layoutParams.height != height) {
+                attachedCell.layoutParams = attachedCell.layoutParams.apply {
+                    this.height = height
+                }
+            }
+        }
+    }
+
+    private fun computeCollapseGap(): Int {
+        val layoutManager =
+            recyclerView.layoutManager as? LinearLayoutManagerAccurateOffset ?: return 0
+        val itemCount = rvAdapter.itemCount
+        if (itemCount == 0 || recyclerView.height <= 0) return 0
+        var contentBottom = layoutManager.findViewByPosition(itemCount - 1)?.let {
+            layoutManager.getDecoratedBottom(it)
+        } ?: layoutManager.estimateContentBottom(itemCount) ?: return 0
+        if (removingEmptyCell) {
+            val emptyPosition = tokenInfoRow + 1 + (showingTransactions?.size ?: 0)
+            layoutManager.findViewByPosition(emptyPosition)?.let {
+                contentBottom -= it.height
+            }
+        }
+        val currentOffset = recyclerView.computeVerticalScrollOffset()
+        val contentTop = recyclerView.paddingTop - currentOffset
+        val scrollable = contentBottom - contentTop +
+            recyclerView.paddingTop + baseBottomPadding - recyclerView.height
+        val collapseOffset = recyclerView.paddingTop + px232
+        return (max(collapseOffset, currentOffset) - scrollable).coerceAtLeast(0)
+    }
+
     override fun insetsUpdated() {
         super.insetsUpdated()
-        val bottomInset = (navigationController?.bottomInset ?: 0) +
+        baseBottomPadding = (navigationController?.bottomInset ?: 0) +
             if (areTradeActionsAvailable) 60.dp else 0
         recyclerView.setPaddingLocalized(
             ViewConstants.HORIZONTAL_PADDINGS.dp + additionalTabletPadding + systemBarStartInset,
             0,
             ViewConstants.HORIZONTAL_PADDINGS.dp + systemBarEndInset,
-            bottomInset
+            baseBottomPadding + collapseGap
         )
         skeletonRecyclerView.setPaddingLocalized(
             ViewConstants.HORIZONTAL_PADDINGS.dp + additionalTabletPadding + systemBarStartInset,
@@ -1013,6 +1264,7 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
         rvSkeletonAdapter.notifyItemChanged(0)
         actionsView?.insetsUpdated()
         updateTradeButtonsLayout()
+        if (tradeButtonsView.parent != null) tradeButtonsView.bringToFront()
     }
 
     private fun onTransactionTap(transaction: MApiTransaction) {
@@ -1040,8 +1292,19 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     private var isApplyingUpdate = false
 
     override fun dataUpdated(isUpdateEvent: Boolean) {
-        showingTransactions = tokenVM.activityLoader?.showingTransactions
+        showingTransactions = tokenVM.showingTransactions
         updateSkeletonState()
+        if (topTabsEnabled &&
+            isUpdateEvent &&
+            oldTransactions?.isEmpty() == true &&
+            (showingTransactions?.size ?: 0) > 0
+        ) {
+            removingEmptyCell = true
+            removalFallback?.let { removalFallbackHandler.removeCallbacks(it) }
+            val fallback = Runnable { finishRemovingEmptyCell() }
+            removalFallback = fallback
+            removalFallbackHandler.postDelayed(fallback, REMOVE_ANIMATION_FALLBACK_MS)
+        }
         isApplyingUpdate = isUpdateEvent && oldTransactions != null
         rvAdapter.reloadData()
         view.post {
@@ -1127,6 +1390,9 @@ class TokenVC(context: Context, private val account: MAccount, var token: MToken
     override fun onDestroy() {
         buyButton.setOnClickListener(null)
         sellButton.setOnClickListener(null)
+        removalFallbackHandler.removeCallbacksAndMessages(null)
+        emptyCellCollapseAnimation?.cancel()
+        sellButtonAnimator?.cancel()
         super.onDestroy()
         dataSource = null
         recyclerView.removeOnScrollListener(scrollListener)

@@ -2,6 +2,7 @@ package org.mytonwallet.app_air.uireceive
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Shader
@@ -18,6 +19,7 @@ import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.unspecified
+import org.mytonwallet.app_air.uicomponents.helpers.SpannableHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.adaptiveFontSize
 import org.mytonwallet.app_air.uicomponents.helpers.typeface
@@ -33,6 +35,9 @@ import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletbasecontext.utils.getDrawableCompat
 import org.mytonwallet.app_air.walletcontext.helpers.AddressHelpers
+import org.mytonwallet.app_air.walletcore.WalletCore
+import org.mytonwallet.app_air.walletcore.WalletEvent
+import org.mytonwallet.app_air.walletcore.helpers.ExplorerHelpers
 import org.mytonwallet.app_air.walletcore.models.blockchain.MBlockchain
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.TokenStore
@@ -123,7 +128,7 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
         clipToast =
             LocaleController.getString("%chain% Address Copied")
                 .replace("%chain%", chain.displayName)
-        setText(walletAddress, walletAddress)
+        setText(SpannableHelpers.addressSpan(walletAddress), walletAddress)
     }
 
     private val titleLabel = HeaderCell(context, startMargin = 24f).apply {
@@ -156,6 +161,22 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
         }
     }
 
+    private val explorerButton = AppCompatImageView(context).apply {
+        id = View.generateViewId()
+        setImageDrawable(
+            context.getDrawableCompat(org.mytonwallet.app_air.icons.R.drawable.ic_world)
+        )
+        contentDescription = LocaleController.getString("Open in Explorer")
+        setOnClickListener {
+            val config = ExplorerHelpers.createAddressExplorerConfig(
+                chain,
+                AccountStore.activeAccount?.network ?: return@setOnClickListener,
+                walletAddress
+            ) ?: return@setOnClickListener
+            WalletCore.notifyEvent(WalletEvent.OpenUrlWithConfig(config))
+        }
+    }
+
     val addressView = WView(context).apply {
         setPadding(20.dp, 6.dp, 20.dp, 14.dp)
 
@@ -163,6 +184,7 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
             addressLabel,
             LayoutParams(LayoutParams.MATCH_CONSTRAINT, WRAP_CONTENT)
         )
+        addView(explorerButton, LayoutParams(28.dp, 28.dp))
         addView(
             warningLabel,
             LayoutParams(LayoutParams.MATCH_CONSTRAINT, WRAP_CONTENT)
@@ -170,7 +192,10 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
 
         setConstraints {
             toTop(addressLabel)
-            toCenterX(addressLabel)
+            toStart(addressLabel)
+            endToStart(addressLabel, explorerButton, 7f)
+            toEnd(explorerButton, 5f)
+            centerYToCenterY(explorerButton, addressLabel)
             topToBottom(warningLabel, addressLabel, 11f)
             toCenterX(warningLabel, 4f)
         }
@@ -215,6 +240,7 @@ class QRCodeVC(context: Context, val chain: MBlockchain, private val onQrLoaded:
 
         view.setBackgroundColor(Color.TRANSPARENT)
         addressLabel.setTextColor(WColor.PrimaryText.color)
+        explorerButton.imageTintList = ColorStateList.valueOf(WColor.Tint.color)
         titleLabel.updateTheme()
         warningLabel.setTextColor(WColor.SecondaryText.color)
         addressView.setBackgroundColor(

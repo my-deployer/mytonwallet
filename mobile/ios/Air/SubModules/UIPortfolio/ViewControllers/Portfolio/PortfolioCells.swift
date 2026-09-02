@@ -487,7 +487,7 @@ final class PortfolioChartTileCell: PortfolioTileCell {
         hidesVerticalAxisLabels: Bool
     ) {
         let signature = "\(kind.rawValue):\(presentation.json)"
-        
+
         let isNewSignature = chartSignature != signature
         let isRangeSwitch = pendingRangeReset && isNewSignature
         if isNewSignature,

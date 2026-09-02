@@ -26,7 +26,6 @@ import org.mytonwallet.app_air.uisend.sendNft.sendNftConfirm.ConfirmNftVC
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
-import org.mytonwallet.app_air.walletbasecontext.utils.ApplicationContextHolder
 import org.mytonwallet.app_air.walletbasecontext.utils.x
 import org.mytonwallet.app_air.walletcontext.WalletContextManager
 import org.mytonwallet.app_air.walletcontext.globalStorage.WGlobalStorage
@@ -192,12 +191,8 @@ object CollectionsMenuHelpers {
             NftStore.getHasHiddenNft(showingAccountId) ||
                 currentNftData?.blacklistedNftAddresses?.isNotEmpty() == true
         val collections = NftStore.getCollections(showingAccountId)
-        val mtwCardsCollection = if (ApplicationContextHolder.isGramApp) {
-            null
-        } else {
-            collections.firstOrNull {
-                it.chain == MBlockchain.ton.name && it.address == MTW_CARDS_COLLECTION
-            }
+        val mtwCardsCollection = collections.firstOrNull {
+            it.chain == MBlockchain.ton.name && it.address == MTW_CARDS_COLLECTION
         }
         // Extract telegram gifts
         val telegramGifts = currentNftData?.cachedNfts?.filter {

@@ -87,13 +87,15 @@ const SERVER_ERRORS_MAP = {
   'Too small amount': SwapErrorType.TooSmallAmount,
 };
 
-function buildSwapBuildRequest(global: GlobalState): ApiSwapBuildTransactionRequest {
+export function buildSwapBuildRequest(global: GlobalState): ApiSwapBuildTransactionRequest {
   const {
     dexLabel,
     dexRouterLabel,
     amountIn,
     amountOut,
+    quotedAmountOut,
     amountOutMin,
+    inputSource,
     slippage,
     networkFee,
     swapFee,
@@ -121,8 +123,11 @@ function buildSwapBuildRequest(global: GlobalState): ApiSwapBuildTransactionRequ
     from,
     to,
     fromAmount: amountIn!,
-    toAmount: amountOut!,
+    // The estimate's own figure rather than the one in the form: they differ when the user fixed the
+    // output, and it is the estimate that the routes travelling with this request were priced for.
+    toAmount: quotedAmountOut ?? amountOut!,
     toMinAmount: amountOutMin!,
+    swapMode: inputSource === SwapInputSource.Out ? 'exact_out' : 'exact_in',
     slippage,
     fromAddress: account?.byChain[tokenIn.chain as ApiChain]?.address ?? historyAddress,
     historyAddress,
@@ -767,6 +772,7 @@ async function estimateSwap(global: GlobalState, shouldStop: () => boolean): Pro
         ? { amountOut: currentEstimate.toAmount }
         : { amountIn: currentEstimate.fromAmount }
       ),
+      quotedAmountOut: currentEstimate.toAmount,
       ...(isFromAmountMax ? {
         amountIn: currentEstimate.fromAmount,
         maxAmountFromBackend: currentEstimate.fromAmount,

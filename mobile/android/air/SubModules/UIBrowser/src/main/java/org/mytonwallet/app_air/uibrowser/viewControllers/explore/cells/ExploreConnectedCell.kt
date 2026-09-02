@@ -10,9 +10,15 @@ import androidx.recyclerview.widget.RecyclerView
 import java.lang.ref.WeakReference
 import org.mytonwallet.app_air.uicomponents.base.WRecyclerViewAdapter
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.extensions.setPaddingLocalized
 import org.mytonwallet.app_air.uicomponents.widgets.WCell
 import org.mytonwallet.app_air.uicomponents.widgets.WRecyclerView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
+import org.mytonwallet.app_air.uicomponents.widgets.WView
+import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
+import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
+import org.mytonwallet.app_air.walletbasecontext.theme.WColor
+import org.mytonwallet.app_air.walletbasecontext.theme.color
 import org.mytonwallet.app_air.walletcontext.utils.IndexPath
 import org.mytonwallet.app_air.walletcore.moshi.ApiDapp
 
@@ -26,52 +32,50 @@ class ExploreConnectedCell(
     WThemedView {
 
     companion object {
-        val SMALL_CONNECTED_CELL = Type(1)
-        val LARGE_CONNECTED_CELL = Type(2)
-        val CONFIGURE_CELL = Type(3)
-
-        const val MAX_DAPPS_IN_SMALL_VIEW = 3
+        val CONNECTED_CELL = Type(1)
     }
 
     private val rvAdapter =
-        WRecyclerViewAdapter(
-            WeakReference(this),
-            arrayOf(SMALL_CONNECTED_CELL, LARGE_CONNECTED_CELL, CONFIGURE_CELL)
-        )
+        WRecyclerViewAdapter(WeakReference(this), arrayOf(CONNECTED_CELL))
 
     private val recyclerView = WRecyclerView(context).apply {
         layoutManager = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
         adapter = rvAdapter
-        setPadding(4.dp, 0, 4.dp, 8.dp)
+        setPaddingLocalized(10.dp, 0, 10.dp, 12.dp)
         clipToPadding = false
     }
 
-    init {
-        addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+    private val containerView = WView(context).apply {
+        addView(recyclerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         setConstraints { allEdges(recyclerView) }
+    }
+
+    init {
+        setPaddingLocalized(
+            ViewConstants.HORIZONTAL_PADDINGS.dp,
+            0,
+            ViewConstants.HORIZONTAL_PADDINGS.dp,
+            12.dp
+        )
+        addView(containerView, ViewGroup.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        setConstraints { allEdges(containerView) }
         updateTheme()
     }
 
     private var connectedApps: Array<ApiDapp> = emptyArray()
     fun configure(dApps: Array<ApiDapp>) {
         this.connectedApps = dApps
-        recyclerView.setPadding(
-            if (showLargeConnectedApps) 10.dp else 4.dp,
-            0,
-            4.dp,
-            8.dp
-        )
         rvAdapter.reloadData()
         updateTheme()
     }
 
     override fun updateTheme() {
+        containerView.setBackgroundColor(
+            WColor.Background.color,
+            0f,
+            ViewConstants.BLOCK_RADIUS.dp
+        )
     }
-
-    val showLargeConnectedApps: Boolean
-        get() {
-            return connectedApps.size > MAX_DAPPS_IN_SMALL_VIEW
-        }
 
     override fun recyclerViewNumberOfSections(rv: RecyclerView): Int = 2
 
@@ -80,60 +84,20 @@ class ExploreConnectedCell(
         else -> 1
     }
 
-    override fun recyclerViewCellType(rv: RecyclerView, indexPath: IndexPath): Type =
-        if (indexPath.section == 0 || showLargeConnectedApps) {
-            if (showLargeConnectedApps) LARGE_CONNECTED_CELL else SMALL_CONNECTED_CELL
-        } else {
-            CONFIGURE_CELL
-        }
+    override fun recyclerViewCellType(rv: RecyclerView, indexPath: IndexPath): Type = CONNECTED_CELL
 
-    override fun recyclerViewCellView(rv: RecyclerView, cellType: Type): WCell = when (cellType) {
-        SMALL_CONNECTED_CELL -> {
-            ExploreConnectedItemCell(context) {
-                dAppPressed(it)
-            }
+    override fun recyclerViewCellView(rv: RecyclerView, cellType: Type): WCell =
+        ExploreLargeConnectedItemCell(context, 72.dp) {
+            if (it != null) dAppPressed(it) else configurePressed()
         }
-
-        LARGE_CONNECTED_CELL -> {
-            ExploreLargeConnectedItemCell(context, 72.dp) {
-                dAppPressed(it)
-            }
-        }
-
-        else -> {
-            ExploreConfigureCell(context) {
-                configurePressed()
-            }
-        }
-    }
 
     override fun recyclerViewConfigureCell(
         rv: RecyclerView,
         cellHolder: Holder,
         indexPath: IndexPath
     ) {
-        when (cellHolder.cell) {
-            is ExploreConnectedItemCell -> {
-                (cellHolder.cell as ExploreConnectedItemCell).configure(
-                    connectedApps[indexPath.row]
-                )
-            }
-
-            is ExploreLargeConnectedItemCell -> {
-                (cellHolder.cell as ExploreLargeConnectedItemCell).configure(
-                    if (indexPath.section ==
-                        0
-                    ) {
-                        connectedApps[indexPath.row]
-                    } else {
-                        null
-                    }
-                )
-            }
-
-            is ExploreConfigureCell -> {
-                (cellHolder.cell as ExploreConfigureCell).configure()
-            }
-        }
+        (cellHolder.cell as ExploreLargeConnectedItemCell).configure(
+            if (indexPath.section == 0) connectedApps[indexPath.row] else null
+        )
     }
 }

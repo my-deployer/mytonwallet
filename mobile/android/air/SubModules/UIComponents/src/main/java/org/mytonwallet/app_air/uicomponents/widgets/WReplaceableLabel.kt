@@ -1,6 +1,7 @@
 package org.mytonwallet.app_air.uicomponents.widgets
 
 import android.animation.ValueAnimator
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import android.text.TextUtils
@@ -21,13 +22,20 @@ import org.mytonwallet.app_air.walletbasecontext.utils.requireDrawableCompat
 import org.mytonwallet.app_air.walletbasecontext.utils.startsWithRtlChar
 import org.mytonwallet.app_air.walletcontext.utils.AnimUtils.Companion.lerp
 
-class WReplaceableLabel(context: Context) :
-    WFrameLayout(context),
+@SuppressLint("ViewConstructor")
+class WReplaceableLabel(
+    context: Context,
+    private val drawableSize: Int = 13.dp,
+    progressStrokeWidthDp: Float = 1f.dp,
+    private val useMarquee: Boolean = true
+) : WFrameLayout(context),
     WThemedView {
 
-    private val drawableSize = 13.dp
     private val expandSize = 14.dp
-    private val roundDrawable = RoundProgressDrawable(drawableSize.toFloat(), 1f.dp)
+    private val roundDrawable = RoundProgressDrawable(drawableSize.toFloat(), progressStrokeWidthDp)
+
+    private val progressInset = (progressStrokeWidthDp.dp / 2f).roundToInt()
+    private var isStartAligned = false
 
     private var animator: ValueAnimator? = null
     private var animationProgress: Float = 0f
@@ -35,16 +43,16 @@ class WReplaceableLabel(context: Context) :
 
     private val prevLabel = WLabel(context).apply {
         setSingleLine()
-        isHorizontalFadingEdgeEnabled = true
-        ellipsize = TextUtils.TruncateAt.MARQUEE
+        isHorizontalFadingEdgeEnabled = useMarquee
+        ellipsize = if (useMarquee) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
         gravity = Gravity.CENTER
         useCustomEmoji = true
     }
 
     private val currentLabel = WLabel(context).apply {
         setSingleLine()
-        isHorizontalFadingEdgeEnabled = true
-        ellipsize = TextUtils.TruncateAt.MARQUEE
+        isHorizontalFadingEdgeEnabled = useMarquee
+        ellipsize = if (useMarquee) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
         gravity = Gravity.CENTER
         useCustomEmoji = true
     }
@@ -83,10 +91,13 @@ class WReplaceableLabel(context: Context) :
         val isExpandable: Boolean,
         val textColor: WColor,
         val textSize: Float,
-        val font: WFont
+        val font: WFont,
+        val progressColor: WColor = WColor.SecondaryText
     )
 
     fun setGravity(newGravity: Int) {
+        isStartAligned =
+            newGravity and Gravity.HORIZONTAL_GRAVITY_MASK != Gravity.CENTER_HORIZONTAL
         prevLabel.layoutParams = (prevLabel.layoutParams as LayoutParams).apply {
             gravity = newGravity
         }
@@ -120,11 +131,12 @@ class WReplaceableLabel(context: Context) :
     }
 
     override fun updateTheme() {
-        roundDrawable.color = WColor.SecondaryText.color
         expandDrawable.setTint(WColor.PrimaryText.color)
+        invalidate()
     }
 
     private fun scheduleSelection() {
+        if (!useMarquee) return
         prevLabel.removeCallbacks(selectRunnable)
         prevLabel.isSelected = false
         prevLabel.postDelayed(selectRunnable, selectDelayMs)
@@ -157,7 +169,7 @@ class WReplaceableLabel(context: Context) :
         expandVisibility: Float,
         text: CharSequence?
     ) {
-        val progressPadding = (progressVisibility * 24.dp).roundToInt()
+        val progressPadding = (progressVisibility * (drawableSize + 11.dp)).roundToInt()
         val expandPadding = (expandVisibility * expandSize).roundToInt()
         val indicatorLeft = indicatorOnLeft()
         val expandLeft = expandOnLeft(text)
@@ -202,11 +214,14 @@ class WReplaceableLabel(context: Context) :
         super.onDraw(canvas)
 
         val progressVisibility = if (configs.size > 1) {
-            lerp(
-                if (configs.firstOrNull()?.isLoading == true) 1f else 0f,
-                if (configs.getOrNull(1)?.isLoading == true) 1f else 0f,
-                animationProgress
-            )
+            val prevLoading = configs.firstOrNull()?.isLoading == true
+            val nextLoading = configs.getOrNull(1)?.isLoading == true
+            when {
+                prevLoading && nextLoading -> 1f
+                prevLoading -> 1f - labelAlphaOut(animationProgress)
+                nextLoading -> labelAlphaIn(animationProgress)
+                else -> 0f
+            }
         } else {
             if (configs.firstOrNull()?.isLoading == true) 1f else 0f
         }
@@ -233,18 +248,20 @@ class WReplaceableLabel(context: Context) :
         drawExpand(canvas, widthValue, expandVisibility)
     }
 
+    private fun labelAlphaOut(progress: Float) = (progress * 10 / 7f).coerceIn(0f, 1f)
+
+    private fun labelAlphaIn(progress: Float) = ((progress - 0.3f) * 10 / 7f).coerceIn(0f, 1f)
+
     private fun configLabels() {
         configs.firstOrNull()?.let { config ->
-            val animationProgressOut = (animationProgress * 10 / 7f).coerceIn(0f, 1f)
-            prevLabel.alpha = 1f - animationProgressOut
+            prevLabel.alpha = 1f - labelAlphaOut(animationProgress)
             prevLabel.translationY = -lerp(0f, textOffset, animationProgress)
         } ?: run {
             prevLabel.alpha = 0f
         }
 
         configs.getOrNull(1)?.let { config ->
-            val animationProgressIn = ((animationProgress - 0.3f) * 10 / 7f).coerceIn(0f, 1f)
-            currentLabel.alpha = animationProgressIn
+            currentLabel.alpha = labelAlphaIn(animationProgress)
             currentLabel.translationY = lerp(textOffset, 0f, animationProgress)
         } ?: run {
             currentLabel.alpha = 0f
@@ -252,30 +269,36 @@ class WReplaceableLabel(context: Context) :
     }
 
     private fun drawProgress(canvas: Canvas, widthValue: Int, progressVisibility: Float) {
-        val alpha = (progressVisibility * 255).toInt().coerceIn(0, 255)
-        roundDrawable.alpha = alpha
         if (progressVisibility > 0f) invalidate() else return
 
-        val top = 7f.dp.roundToInt()
+        val top = 7f.dp.roundToInt() + (13.dp - drawableSize) / 2
         val indicatorLeft = indicatorOnLeft()
+        val prevConfigIsLoading = configs.firstOrNull()?.isLoading == true
+        val loadingConfig = if (prevConfigIsLoading) configs.firstOrNull() else configs.getOrNull(1)
+        roundDrawable.color = (loadingConfig?.progressColor ?: WColor.SecondaryText).color
+        roundDrawable.alpha = (progressVisibility * 255).toInt().coerceIn(0, 255)
         if (progressVisibility == 1f) {
-            val textLeft = (measuredWidth - widthValue) / 2
+            val textLeft = when {
+                !isStartAligned -> (measuredWidth - widthValue) / 2
+                LocaleController.isRTL -> measuredWidth - widthValue
+                else -> 0
+            }
             val left = if (indicatorLeft) textLeft else textLeft + widthValue - drawableSize
             roundDrawable.setBounds(
-                left,
-                top,
-                left + drawableSize,
-                top + drawableSize
+                left + progressInset,
+                top + progressInset,
+                left + drawableSize - progressInset,
+                top + drawableSize - progressInset
             )
         } else {
-            val prevConfigIsLoading = configs.firstOrNull()?.isLoading == true
             val label = if (prevConfigIsLoading) prevLabel else currentLabel
             val left = if (indicatorLeft) label.left else label.right - drawableSize
+            val shiftedTop = top + label.translationY.roundToInt()
             roundDrawable.setBounds(
-                left,
-                top + label.translationY.roundToInt(),
-                left + drawableSize,
-                top + label.translationY.roundToInt() + drawableSize
+                left + progressInset,
+                shiftedTop + progressInset,
+                left + drawableSize - progressInset,
+                shiftedTop + drawableSize - progressInset
             )
         }
         roundDrawable.draw(canvas)

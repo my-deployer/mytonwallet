@@ -20,14 +20,18 @@ extension SwapButtonTitle {
         switch self {
         case .swap(let sellingToken, let buyingToken):
             .swap(
-                template: lang("$swap_from_to"),
+                template: L10n.swapFromTo(
+                    from: "{{from}}",
+                    icon: "{{icon}}",
+                    to: "{{to}}"
+                ),
                 sellingSymbol: sellingToken.symbol,
                 buyingSymbol: buyingToken.symbol
             )
         case .continue:
             .text(lang("Continue"))
         case .authorizeDiesel(let token):
-            .text(lang("Authorize %token% Fee", arg1: token.symbol))
+            .text(L10n.authorizeTokenFeeCapitalized(token: token.symbol))
         case .issue(let issue):
             .text(issue.buttonTitle)
         }
@@ -49,12 +53,19 @@ struct SwapButtonConfiguration {
     let title: SwapButtonTitle
     let isEnabled: Bool
     let showLoading: Bool
+    let delaysDisabledAppearance: Bool
     private let presentationIdentity: SwapButtonPresentationIdentity
 
-    init(title: SwapButtonTitle, isEnabled: Bool, showLoading: Bool) {
+    init(
+        title: SwapButtonTitle,
+        isEnabled: Bool,
+        showLoading: Bool,
+        delaysDisabledAppearance: Bool = false
+    ) {
         self.title = title
         self.isEnabled = isEnabled
         self.showLoading = showLoading
+        self.delaysDisabledAppearance = delaysDisabledAppearance
         self.presentationIdentity = title.presentationIdentity
     }
 
@@ -62,9 +73,10 @@ struct SwapButtonConfiguration {
         presentationIdentity == other.presentationIdentity
             && isEnabled == other.isEnabled
             && showLoading == other.showLoading
+            && delaysDisabledAppearance == other.delaysDisabledAppearance
     }
 
-    @MainActor func apply(to button: WButton) {
+    @MainActor func applyContent(to button: WButton) {
         switch title {
         case .swap(let sellingToken, let buyingToken):
             button.configureTitle(sellingToken: sellingToken, buyingToken: buyingToken)
@@ -75,8 +87,81 @@ struct SwapButtonConfiguration {
         case .issue(let issue):
             button.configureTitle(issue: issue)
         }
-        button.isEnabled = isEnabled
         button.showLoading = showLoading
+    }
+}
+
+@MainActor
+final class SwapButtonPresentationController {
+    typealias DisabledAppearanceScheduler = (
+        _ update: @escaping @MainActor () -> Void
+    ) -> Task<Void, Never>
+
+    private let button: WButton
+    private let scheduleDisabledAppearance: DisabledAppearanceScheduler
+    private var configuration: SwapButtonConfiguration?
+    private var disabledAppearanceTask: Task<Void, Never>?
+
+    init(
+        button: WButton,
+        disabledAppearanceDelay: Duration = .seconds(1)
+    ) {
+        self.button = button
+        self.scheduleDisabledAppearance = { update in
+            Task { @MainActor in
+                try? await Task.sleep(for: disabledAppearanceDelay)
+                guard !Task.isCancelled else { return }
+                update()
+            }
+        }
+    }
+
+    init(
+        button: WButton,
+        scheduleDisabledAppearance: @escaping DisabledAppearanceScheduler
+    ) {
+        self.button = button
+        self.scheduleDisabledAppearance = scheduleDisabledAppearance
+    }
+
+    deinit {
+        disabledAppearanceTask?.cancel()
+    }
+
+    func apply(_ configuration: SwapButtonConfiguration) {
+        guard self.configuration?.hasSamePresentation(as: configuration) != true else {
+            return
+        }
+        self.configuration = configuration
+        configuration.applyContent(to: button)
+
+        // Interaction follows the real draft state even while the disabled appearance is delayed.
+        button.isUserInteractionEnabled = configuration.isEnabled
+        if configuration.isEnabled {
+            cancelDelayedDisable()
+            button.isEnabled = true
+        } else if disabledAppearanceTask != nil {
+            // Keep the original invalidation deadline while applying newer loading/error content.
+        } else if button.isEnabled, configuration.delaysDisabledAppearance {
+            scheduleDelayedDisable()
+        } else {
+            button.isEnabled = false
+        }
+    }
+
+    private func scheduleDelayedDisable() {
+        disabledAppearanceTask = scheduleDisabledAppearance { [weak self] in
+            guard let self, self.configuration?.isEnabled == false else {
+                return
+            }
+            self.button.isEnabled = false
+            self.disabledAppearanceTask = nil
+        }
+    }
+
+    private func cancelDelayedDisable() {
+        disabledAppearanceTask?.cancel()
+        disabledAppearanceTask = nil
     }
 }
 
@@ -84,12 +169,27 @@ struct SwapButtonConfiguration {
     func configuration(for state: SwapButtonState, sellingToken: ApiToken, buyingToken: ApiToken) -> SwapButtonConfiguration {
         switch state {
         case .invalidPair:
-            return SwapButtonConfiguration(title: .issue(.invalidPair), isEnabled: false, showLoading: false)
+            return SwapButtonConfiguration(
+                title: .issue(.invalidPair),
+                isEnabled: false,
+                showLoading: false,
+                delaysDisabledAppearance: true
+            )
         case .emptyAmount, .waitingForEstimate:
-            return SwapButtonConfiguration(title: .swap(sellingToken, buyingToken), isEnabled: false, showLoading: false)
+            return SwapButtonConfiguration(
+                title: .swap(sellingToken, buyingToken),
+                isEnabled: false,
+                showLoading: false,
+                delaysDisabledAppearance: true
+            )
         case .estimating(let showContinue):
             let title: SwapButtonTitle = showContinue ? .continue : .swap(sellingToken, buyingToken)
-            return SwapButtonConfiguration(title: title, isEnabled: false, showLoading: true)
+            return SwapButtonConfiguration(
+                title: title,
+                isEnabled: false,
+                showLoading: true,
+                delaysDisabledAppearance: true
+            )
         case .blocked(let issue):
             return SwapButtonConfiguration(title: .issue(issue), isEnabled: false, showLoading: false)
         case .authorizeDiesel:
@@ -106,28 +206,24 @@ extension WButton {
     func configureTitle(sellingToken: ApiToken, buyingToken: ApiToken) {
         let sellingSymbol = sellingToken.symbol.leftToRightIsolated
         let buyingSymbol = buyingToken.symbol.leftToRightIsolated
-        let containsChevron = lang("$swap_from_to").contains("%3$@")
-        if containsChevron {
-            let s = lang("$swap_from_to", arg1: sellingSymbol, arg2: "{{chevron}}", arg3: buyingSymbol)
-            let a = s.split(separator: "{{chevron}}")
-            guard a.count >= 2 else { return }
-            let attr = NSMutableAttributedString()
-            attr.append(NSAttributedString(string: String(a[0])))
+        let chevronPlaceholder = "{{chevron}}"
+        let title = L10n.swapFromTo(from: sellingSymbol, icon: chevronPlaceholder, to: buyingSymbol)
+        let components = title.components(separatedBy: chevronPlaceholder)
+        let attr = NSMutableAttributedString()
+
+        if components.count == 2 {
+            attr.append(NSAttributedString(string: components[0]))
             let config = UIImage.SymbolConfiguration(font: WButton.font, scale: .small)
             if let image = UIImage(systemName: "chevron.forward", withConfiguration: config) {
                 let attachment = NSTextAttachment(image: image)
                 attr.append(NSAttributedString(attachment: attachment))
             }
-            attr.append(NSAttributedString(string: String(a[1])))
-            attr.addAttribute(.font, value: WButton.font, range: NSRange(location: 0, length: attr.length))
-            setAttributedTitle(attr, for: .normal)
+            attr.append(NSAttributedString(string: components[1]))
         } else {
-            let s = lang("$swap_from_to", arg1: sellingSymbol, arg2: buyingSymbol)
-            let attr = NSMutableAttributedString()
-            attr.append(NSAttributedString(string: s))
-            attr.addAttribute(.font, value: WButton.font, range: NSRange(location: 0, length: attr.length))
-            setAttributedTitle(attr, for: .normal)
+            attr.append(NSAttributedString(string: title))
         }
+        attr.addAttribute(.font, value: WButton.font, range: NSRange(location: 0, length: attr.length))
+        setAttributedTitle(attr, for: .normal)
     }
     
     func configureTitleContinue() {
@@ -137,7 +233,7 @@ extension WButton {
     }
     
     func configureTitleAuthorizeDiesel(sellingToken: ApiToken) {
-        let attr = NSMutableAttributedString(string: lang("Authorize %token% Fee", arg1: sellingToken.symbol))
+        let attr = NSMutableAttributedString(string: L10n.authorizeTokenFeeCapitalized(token: sellingToken.symbol))
         attr.addAttribute(.font, value: WButton.font, range: NSRange(location: 0, length: attr.length))
         setAttributedTitle(attr, for: .normal)
     }

@@ -2,7 +2,7 @@ $auth_intro: |
   دارایی‌های رمزارزی را **به‌صورت امن** ذخیره کنید و پرداخت‌های بلاک‌چینی را
   **با سرعت نور** انجام دهید.
 Create New Wallet: ساخت کیف پول جدید
-Import From %1$d Secret Words: افزودن با %1$d کلمه محرمانه
+Import From %count% Secret Words: افزودن با %count% کلمه محرمانه
 More about %app_name%: اطلاعات بیشتر درباره %app_name%
 Creating Wallet...: در حال ساخت کیف پول...
 On the count of three...: با شمارش تا سه...
@@ -41,7 +41,7 @@ Insecure Password: رمز عبور ناامن
 Your have entered an insecure password, which can be easily guessed by scammers.: شما رمز عبوری ناامن وارد کرده‌اید که می‌تواند به‌راحتی توسط کلاهبرداران حدس زده شود.
 Continue or change password to something more secure?: ادامه می‌دهید یا رمز عبور را به گزینه‌ای امن‌تر تغییر می‌دهید؟
 Change: تغییر
-"%1$d Secret Words": "%1$d کلمه محرمانه"
+"%count% Secret Words": "%count% کلمه محرمانه"
 Secret Words: کلمات محرمانه
 $auth_import_mnemonic_description: |
   می‌توانید با وارد کردن **%counts% کلمه محرمانه‌ای** که هنگام ساخت کیف پول یادداشت کرده‌اید، دسترسی به کیف پول خود را بازیابی کنید.
@@ -140,6 +140,7 @@ Toggle Hide Tiny Transfers: تغییر وضعیت پنهان کردن انتقا
 Network: شبکه
 Developer Options: گزینه‌های توسعه‌دهنده
 All Wallet Versions: همه نسخه‌های کیف پول
+Create TON-Only Wallet: ساخت کیف پول فقط TON
 Confirmation: تأیید
 Signing Data: امضای داده
 Contract Initialization Data: داده مقداردهی اولیه قرارداد
@@ -168,6 +169,7 @@ View address on %explorer_name%: مشاهده آدرس در %explorer_name%
 You have just created a new wallet: شما به‌تازگی یک کیف پول جدید ساختید
 Assets: دارایی‌ها
 Activity: فعالیت
+$home_activity: فعالیت
 NFT: NFT
 No NFTs yet: هنوز NFTی وجود ندارد
 No hidden NFTs.: هیچ NFT پنهانی وجود ندارد.
@@ -198,7 +200,7 @@ Insufficient Balance: موجودی ناکافی
 $seed_phrase_scam_warning: "این کیف پول موجودی کافی برای پوشش کارمزدهای برداشت توکن ندارد.\n\nاین به نظر یک **کلاهبرداری** رایج می‌رسد که در آن از شما خواسته می‌شود برای پوشش کارمزدها، دارایی‌های خود را واریز کنید.\n\n**دارایی‌های خود را واریز نکنید**، چرا که ممکن است آن‌ها را از دست بدهید!\_درباره این و دیگر کلاهبرداری‌ها در %help_center_link% ما بیشتر بدانید.\n"
 $help_center_prepositional: مرکز راهنمایی
 Optional: اختیاری
-$send_token_symbol: ارسال %1$s
+$send_token_symbol: ارسال %symbol%
 Is it all ok?: آیا همه‌چیز درست است؟
 Receiving Address: آدرس دریافت
 Fee: کارمزد
@@ -233,7 +235,7 @@ Dark: تیره
 System: سیستم
 $stake_asset: استیک %symbol%
 Add Stake: افزودن استیک
-Earn from your tokens while holding them: از نگهداری توکن‌های خود درآمد کسب کنید
+Earn from your tokens while holding them: از نگهداری %symbol% درآمد کسب کنید
 Current APY: بازده سالانه فعلی
 Est. Yearly Earnings: درآمد سالانه تخمینی
 Staking Details: جزئیات استیکینگ
@@ -276,6 +278,7 @@ Action Partially Completed: عملیات تا حدی تکمیل شد
 $action_partially_completed_description: "%completed% از %total% عملیات تکمیل شد. عملیات باقی‌مانده تکمیل نشد. پیش از تلاش دوباره، فعالیت‌های خود را بررسی کنید."
 Action Status Unknown: وضعیت عملیات نامشخص است
 $action_status_unknown_description: "وضعیت تکمیل قابل تأیید نبود. پیش از تلاش دوباره، فعالیت‌ها و موجودی خود را بررسی کنید؛ تلاش دوباره در حال حاضر ممکن است باعث شود عملیات دو بار ارسال شود."
+$action_will_continue_in_background: عملیات در پس‌زمینه ادامه خواهد یافت.
 Invalid amount: مبلغ نامعتبر
 Invalid address: آدرس نامعتبر
 Domain is not connected to a wallet: دامنه به کیف پولی متصل نیست
@@ -299,8 +302,8 @@ You may need to reconnect your wallet from the dapp if this keeps happening.: ا
 Payload: محموله
 $many_transactions:
   zeroValue: بدون انتقال
-  oneValue: "%1$d انتقال"
-  otherValue: "%1$d انتقال"
+  oneValue: "%count% انتقال"
+  otherValue: "%count% انتقال"
 Total Amount: مبلغ کل
 $unstaking_short: در حال برداشت استیک
 Handle ton:// links: مدیریت لینک‌های ton://
@@ -310,6 +313,7 @@ Install our native app or browser extension.: اپلیکیشن بومی یا ا�
 Scam: کلاهبرداری
 Scam comment is hidden.: نظر کلاهبرداری پنهان شده است.
 Display: نمایش
+Nested Transaction: تراکنش تودرتو
 Disconnect All Apps: قطع اتصال همه اپلیکیشن‌ها
 Disconnect: قطع اتصال
 Disconnect App: قطع اتصال اپلیکیشن
@@ -341,7 +345,7 @@ Asset Mix: ترکیب دارایی
 No asset balances: موجودی دارایی وجود ندارد
 No staked assets: دارایی استیک‌شده‌ای وجود ندارد
 Entire Period: کل دوره
-"Asset %1$@": "دارایی %1$@"
+"Asset %asset%": "دارایی %asset%"
 Assets & Activity: دارایی‌ها و فعالیت
 Token Settings: تنظیمات توکن
 Add Token: افزودن توکن
@@ -356,14 +360,14 @@ Connecting to your Ledger...: در حال اتصال به لجر شما...
 Failed to connect: اتصال ناموفق بود
 Ledger Connected!: لجر متصل شد!
 Select Ledger Wallets: انتخاب کیف پول‌های لجر
-"%1$d Selected": "%1$d انتخاب‌شده"
+"%count% Selected": "%count% انتخاب‌شده"
 Add: افزودن
 Try Again: تلاش دوباره
 Driver: درایور
 Unlock it and open the %chain% App: آن را باز کنید و اپلیکیشن %chain% را اجرا کنید
 Maybe you need to check the password or change the driver.: شاید لازم باشد رمز عبور را بررسی یا درایور را تغییر دهید.
 Confirm via Ledger: تأیید از طریق لجر
-$ledger_confirm_progress: "تأیید %1$d از %2$d"
+$ledger_confirm_progress: "تأیید %current% از %total%"
 Declined: رد شد
 Switch to the newly opened tab to connect Ledger.: برای اتصال لجر به تب تازه باز شده بروید.
 Once connected, switch back to this window to proceed.: پس از اتصال، برای ادامه به این پنجره بازگردید.
@@ -445,9 +449,7 @@ Please provide an address of your wallet in %blockchain% blockchain to receive b
 The time for sending coins is over.: زمان ارسال کوین‌ها به پایان رسیده است.
 You have not sent the coins to the specified address.: شما کوین‌ها را به آدرس مشخص‌شده ارسال نکرده‌اید.
 $swap_cex_to_wallet_description: مبلغ %value% را ظرف %time% به این آدرس در بلاک‌چین %blockchain% ارسال کنید
-$swap_changelly_to_wallet_description1: مبلغ %value% را ظرف %time% به این آدرس در بلاک‌چین %blockchain% ارسال کنید
 Exchange failed and coins were refunded to your wallet.: مبادله ناموفق بود و کوین‌ها به کیف پول شما بازپرداخت شدند.
-$swap_changelly_kyc_security: "لطفاً با **%email%** تماس بگیرید و **شناسه تراکنش** را برای گذراندن فرآیند KYC ارائه دهید:"
 Swap Expired: مبادله منقضی شد
 Address for %blockchain% transfer: آدرس برای انتقال %blockchain%
 Cross-chain exchange provided by %provider%: مبادله بین‌زنجیره‌ای ارائه‌شده توسط %provider%
@@ -456,13 +458,9 @@ $swap_cex_privacy_policy: سیاست حفظ حریم خصوصی
 $swap_cex_aml_kyc_policy: AML/KYC
 $swap_cex_legal_message: "با ادامه دادن، شما با %terms% و %policy% موافقت می‌کنید."
 $swap_cex_legal_message_with_aml: با ادامه دادن، شما با %terms% و %policy% موافقت می‌کنید و می‌پذیرید که انتقال ممکن است طبق %aml% فرآیند تأیید را آغاز کند.
-Cross-chain exchange provided by Changelly: مبادله بین‌زنجیره‌ای ارائه‌شده توسط Changelly
-$swap_changelly_terms_of_use: شرایط استفاده
-$swap_changelly_privacy_policy: سیاست حفظ حریم خصوصی
 Password must contain %length% digits.: رمز عبور باید شامل %length% رقم باشد.
 Deposit Link: لینک واریز
 $swap_cex_from_wallet_description: "توکن‌ها به‌زودی به آدرس شما در بلاک‌چین %blockchain% ارسال خواهند شد:"
-$swap_changelly_from_wallet_description: "توکن‌ها به‌زودی به آدرس شما در بلاک‌چین %blockchain% ارسال خواهند شد:"
 Please note that it may take up to a few hours for tokens to appear in your wallet.: لطفاً توجه داشته باشید که ممکن است چند ساعت طول بکشد تا توکن‌ها در کیف پول شما ظاهر شوند.
 Minimum amount: حداقل %value%
 Maximum amount: حداکثر %value%
@@ -548,7 +546,6 @@ Wallet is imported!: کیف پول وارد شد!
 Create a code to protect it: برای محافظت از آن یک رمز عبور بسازید
 Enter your code again: رمز عبور خود را دوباره وارد کنید
 Code set successfully: رمز عبور با موفقیت تنظیم شد
-Use Biometrics: استفاده از بیومتریک
 Use Touch ID: استفاده از Touch ID
 Use Face ID: استفاده از Face ID
 Connect Touch ID: اتصال Touch ID
@@ -628,7 +625,6 @@ $dapp_liquid_staking_vote_payload: رأی "%vote%" برای پیشنهاد %voti
 $dapp_single_nominator_change_validator_payload: تغییر آدرس اعتبارسنج قرارداد استیکینگ SingleNominator به %address%
 $dapp_single_nominator_withdraw_payload: برداشت %amount% از قرارداد استیکینگ SingleNominator
 $dapp_vesting_add_whitelist_payload: افزودن %address% به فهرست سفید کیف پول وستینگ
-Connecting apps is not yet supported by Ledger.: اتصال اپلیکیشن‌ها هنوز توسط لجر پشتیبانی نمی‌شود.
 Time synchronization issue. Please ensure your device's time settings are correct.: مشکل همگام‌سازی زمان. لطفاً مطمئن شوید که تنظیمات زمان دستگاه شما صحیح است.
 Data Copied: داده کپی شد
 URL Copied: آدرس کپی شد
@@ -642,10 +638,6 @@ Insufficient %token% for fee.%fee%: مقدار %token% برای کارمزد ن�
 Send NFT: ارسال NFT
 Send Collectible: ارسال کالکتیبل
 Send Collectibles: ارسال کالکتیبل‌ها
-$nfts_sent:
-  zeroValue: "%1$d NFT ارسال شد!"
-  oneValue: "%1$d NFT ارسال شد!"
-  otherValue: "%1$d NFT ارسال شدند!"
 $nfts_burned:
   zeroValue: "%count% NFT سوزانده شد"
   oneValue: "%count% NFT سوزانده شد"
@@ -674,9 +666,9 @@ $multi_burn_nft_warning: |
 
   این NFTها برای همیشه از بین خواهند رفت.
 $duration_minutes:
-  zeroValue: "%1$d دقیقه"
-  oneValue: "%1$d دقیقه"
-  otherValue: "%1$d دقیقه"
+  zeroValue: "%count% دقیقه"
+  oneValue: "%count% دقیقه"
+  otherValue: "%count% دقیقه"
 $multi_send_nft_warning: این فرآیند ممکن است حدود %duration% دقیقه طول بکشد. لطفاً تا پایان کار اپلیکیشن را نبندید و حساب‌ها را تغییر ندهید.
 Burn NFT: سوزاندن NFT
 Burn Collectibles: سوزاندن کالکتیبل‌ها
@@ -684,14 +676,14 @@ Burn: سوزاندن
 Private Key: کلید خصوصی
 "%amount% NFTs":
   zeroValue: بدون NFT
-  oneValue: "%1$d NFT"
-  otherValue: "%1$d NFT"
+  oneValue: "%amount% NFT"
+  otherValue: "%amount% NFT"
 1 NFT: ۱ NFT
 1 NFT Selected: ۱ NFT انتخاب شد
 "%amount% NFTs Selected":
   zeroValue: هیچ NFT انتخاب نشد
-  oneValue: "%1$d NFT انتخاب شد"
-  otherValue: "%1$d NFT انتخاب شدند"
+  oneValue: "%amount% NFT انتخاب شد"
+  otherValue: "%amount% NFT انتخاب شدند"
 For sale. Cannot be sent and burned: برای فروش. قابل ارسال و سوزاندن نیست
 Select: انتخاب
 Send All: ارسال همه
@@ -705,8 +697,6 @@ $swap_cex_support: "در صورت بروز مشکل، با %support% تماس ب
 $swap_cex_hold_support: "لطفاً با %support% تماس بگیرید و این **شناسه صرافی خارجی** را برای گذراندن بررسی ارائه‌دهنده ارائه دهید:"
 $swap_cex_provider_support: "پشتیبانی %provider%"
 Email: ایمیل
-$swap_changelly_support: "در صورت بروز هرگونه مشکل، لطفاً با %livechat% یا %email% تماس بگیرید و **شناسه تراکنش** را ارائه دهید:"
-Changelly Live Chat: چت زنده Changelly
 Your %blockchain% Address: آدرس %blockchain% شما
 My %blockchain% Address: آدرس %blockchain% من
 "%blockchain% Address": "آدرس %blockchain%"
@@ -723,7 +713,7 @@ Unfrozen: رفع انجماد شده
 Missed: از دست رفته
 Frozen: منجمد
 until %date%: تا %date%
-Until %date%: تا %date%
+$until_date_capitalized: تا %date%
 "%volume% in %amount% parts": "%volume% در %amount% بخش"
 Unfreeze: رفع انجماد
 Claim: دریافت
@@ -788,7 +778,7 @@ Untitled: بدون عنوان
 Multichain: چندزنجیره‌ای
 $swap_too_small_amount: مبلغ بیش از حد کوچک
 $swap_slippage_violation: شبیه‌سازی مبادله به دلیل نقض لغزش قیمت ناموفق بود. لطفاً دوباره تلاش کنید.
-Not enough %symbol%: مقدار %symbol% کافی نیست
+$not_enough_symbol_lowercase: مقدار %symbol% کافی نیست
 Enter Secret Words: کلمات محرمانه را وارد کنید
 Turn this off so you can manually download updates and verify signatures.: این را خاموش کنید تا بتوانید به‌صورت دستی به‌روزرسانی‌ها را دانلود و امضاها را تأیید کنید.
 InvalidMnemonic: کلمات بازیابی شما نامعتبر هستند
@@ -937,8 +927,8 @@ Please top up your %token% balance.: لطفاً موجودی %token% خود را
 Remember Passcode: به‌خاطر سپردن رمز عبور
 Remember Password: به‌خاطر سپردن رمز عبور
 Not available with biometrics.: با بیومتریک در دسترس نیست.
-App will not ask for signature for %1$d minutes after last entry.: اپلیکیشن تا %1$d دقیقه پس از آخرین ورود، درخواست امضا نخواهد کرد.
-Remember for %1$d minutes: به‌خاطر سپردن برای %1$d دقیقه
+App will not ask for signature for %minutes% minutes after last entry.: اپلیکیشن تا %minutes% دقیقه پس از آخرین ورود، درخواست امضا نخواهد کرد.
+Remember for %minutes% minutes: به‌خاطر سپردن برای %minutes% دقیقه
 Preview: پیش‌نمایش
 $preview_not_guaranteed: نتیجه پیش‌نمایش **تضمین‌شده نیست** و **می‌تواند توسط سرویس جعل شود**.
 Unverified Source: منبع تأییدنشده
@@ -976,13 +966,13 @@ Reset: بازنشانی
 Tabs: تب‌ها
 Tap or drag to add tabs.: برای افزودن تب‌ها ضربه بزنید یا بکشید.
 $iab_tabs_count:
-  zeroValue: "%1$d تب"
-  oneValue: "%1$d تب"
-  otherValue: "%1$d تب"
-$domains_amount %1$d:
+  zeroValue: "%count% تب"
+  oneValue: "%count% تب"
+  otherValue: "%count% تب"
+$domains_amount %count%:
   zeroValue: بدون دامنه
-  oneValue: "%1$d دامنه"
-  otherValue: "%1$d دامنه"
+  oneValue: "%count% دامنه"
+  otherValue: "%count% دامنه"
 Stake: استیک
 Manage Tokens: مدیریت توکن‌ها
 Claim Rewards: دریافت پاداش‌ها
@@ -1002,9 +992,9 @@ $domains_expire:
   oneValue: "**دامنه %domain%** %days% منقضی می‌شود"
   otherValue: "**دامنه‌های %domain%** %days% منقضی می‌شوند"
 $in_days:
-  zeroValue: در %1$d روز
-  oneValue: در %1$d روز
-  otherValue: در %1$d روز
+  zeroValue: در %count% روز
+  oneValue: در %count% روز
+  otherValue: در %count% روز
 $domain_was_expired: "**%domain%** منقضی شده است"
 $domains_was_expired:
   zeroValue: هیچ دامنه‌ای منقضی نشده است
@@ -1079,7 +1069,7 @@ $wallet_create_done: انجام شد! شما یک کیف پول ساختید.
 $wallet_import_done:
   zeroValue: انجام شد! شما یک کیف پول افزودید.
   oneValue: انجام شد! شما یک کیف پول افزودید.
-  otherValue: انجام شد! شما %1$d کیف پول افزودید.
+  otherValue: انجام شد! شما %count% کیف پول افزودید.
 $wallet_done_description: اکنون می‌توانید کوین‌ها و دیگر دارایی‌های دیجیتال را به‌صورت امن ذخیره، دریافت و ارسال کنید.
 Security Warning: هشدار امنیتی
 Go back to Words: بازگشت به کلمات
@@ -1096,14 +1086,15 @@ $ledger_connection_broken: اتصال لجر قطع شده است. لطفاً د
 $ledger_wrong_device: حساب فعلی با کلمات محرمانه یا عبارت عبور متفاوت لجر راه‌اندازی شده، یا روی دستگاه لجر دیگری ذخیره شده است
 Show More: نمایش بیشتر
 Search app or enter address: جستجوی اپلیکیشن یا وارد کردن آدرس
+Search or Ask: جستجو کنید یا بپرسید
 Connected Apps: اپلیکیشن‌های متصل
 Connected Sites: سایت‌های متصل
 Popular Apps: اپلیکیشن‌های محبوب
 Popular Sites: سایت‌های محبوب
 $wallets_amount:
   zeroValue: بدون کیف پول
-  oneValue: "%1$d کیف پول"
-  otherValue: "%1$d کیف پول"
+  oneValue: "%count% کیف پول"
+  otherValue: "%count% کیف پول"
 $total_balance: "مجموع %balance%"
 No wallets: بدون کیف پول
 View as List: نمایش به‌صورت فهرست
@@ -1172,7 +1163,7 @@ $saved_addresses_header: ذخیره‌شده
 confirm an action in My Wallet: تأیید یک اقدام در My Wallet
 Timed out waiting for account to be ready: زمان انتظار برای آماده شدن حساب به پایان رسید
 $connected_apps:
-  otherValue: "%1$d متصل"
+  otherValue: "%count% متصل"
 Night Mode, Palette, Card: حالت شب، پالت، کارت
 Back Up, Passcode, Auto-Lock: پشتیبان‌گیری، رمز عبور، قفل خودکار
 Back Up, Password, Auto-Lock: پشتیبان‌گیری، رمز عبور، قفل خودکار
@@ -1211,7 +1202,6 @@ Transfer in progress: انتقال در حال انجام
 Please confirm transfer on your Ledger: لطفاً انتقال را روی لجر خود تأیید کنید
 Please confirm action on your Ledger: لطفاً اقدام را روی لجر خود تأیید کنید
 Not all transfers were sent successfully: همه انتقال‌ها با موفقیت ارسال نشدند
-$swap_changelly_agreement_message: با ادامه دادن، شما با %terms% و %policy% موافقت می‌کنید و می‌پذیرید که انتقال ممکن است طبق %kyc% فرآیند تأیید را آغاز کند.
 Please confirm transfer using biometrics: لطفاً انتقال را با استفاده از بیومتریک تأیید کنید
 $transfer_inactive_contract_error: |
   شما آدرسی در قالب "EQ..." وارد کرده‌اید، اما این آدرس فعال نیست، بنابراین انتقال انجام نخواهد شد.
@@ -1243,8 +1233,388 @@ $agent_consent_feature_answers: پاسخ‌هایی درباره %app_name%، ت
 $agent_consent_feature_actions: اقدامات پشتیبانی‌شده مانند ارسال، دریافت و استیکینگ را آماده کنید.
 $agent_consent_feature_context: از زمینه کیف پول استفاده کنید تا پاسخ‌ها بتوانند به دارایی‌ها و آدرس‌های مرتبط ارجاع دهند.
 $agent_consent_disclosure_text: با ضربه زدن روی اجازه دادن به عامل، به %app_name% اجازه می‌دهید که پیام‌های عامل و زمینه مرتبط کیف پول شما را به %app_name% Agent (agent.mywallet.io) و Anthropic Claude API، ارائه‌دهنده هوش مصنوعی شخص ثالث ما، برای پردازش درخواست‌های شما ارسال کند. زمینه کیف پول ممکن است شامل آدرس‌های کیف پول، موجودی‌ها، توکن‌ها، فعالیت و جزئیات اقدام درخواست‌شده باشد. داده‌ها تنها برای ارائه پاسخ‌های عامل و آماده‌سازی اقداماتی که درخواست می‌کنید استفاده می‌شوند.
+$agent_consent_search_disclosure_text: برای جست‌وجوی وب، فقط عبارت‌های جست‌وجو ممکن است به Serper ارسال شوند؛ زمینه کیف پول و تاریخچه گفت‌وگو ارسال نمی‌شوند.
 $agent_consent_debug_reset_button: بازنشانی وضعیت رضایت عامل
 $agent_consent_debug_reset_footer: هنگام باز کردن تب عامل، صفحه رضایت عامل را دوباره نمایش می‌دهد.
+$settings_token_change_threshold: آستانه تغییر %
+$settings_token_change_threshold_description: تغییرات درصدی ۲۴ ساعته کمتر از آستانه انتخاب‌شده را پنهان می‌کند.
+$settings_token_change_threshold_off: خاموش
+$settings_hide_action_buttons: پنهان کردن دکمه‌های عملیات
+$settings_hide_action_buttons_description: ردیف دکمه‌های عملیات را در صفحه کیف پول پنهان می‌کند.
+Retry: تلاش دوباره
+$agent_chat_running: در حال اجرا در پس‌زمینه
+$agent_connection_interrupted: اتصال عامل قطع شد. دوباره تلاش کنید.
+$agent_history_unavailable: امکان بارگذاری تاریخچه چت وجود ندارد. دوباره تلاش کنید.
+$agent_activity_analyzing_request: در حال تحلیل درخواست شما…
+$agent_activity_wallet: در حال خواندن اطلاعات کیف پول…
+$agent_activity_transactions: در حال بررسی فعالیت کیف پول…
+$agent_activity_portfolio: در حال بارگذاری اطلاعات پرتفوی…
+$agent_activity_assets: در حال جستجوی دارایی‌ها…
+$agent_activity_addresses: در حال بررسی آدرس‌های ذخیره شده…
+$agent_activity_transfer: در حال آماده‌سازی انتقال…
+$agent_activity_market_quote: در حال خواندن آخرین قیمت توکن…
+$agent_activity_planning: در حال برنامه‌ریزی پاسخ…
+$agent_activity_planning_completed: برنامه پاسخ آماده است
+$agent_activity_web_searching: در حال جستجو در وب…
+$agent_activity_web_searching_completed: منابع مرتبط یافت شدند
+$agent_activity_web_reading_sources: در حال بررسی منابع…
+$agent_activity_web_reading_sources_completed: "منابع بررسی شدند: %count%"
+$agent_activity_web_reading_sources_completed_generic: منابع بررسی شدند
+$agent_activity_market_data: در حال بررسی داده‌های بازار…
+$agent_activity_market_data_completed: داده‌های بازار بررسی شدند
+$agent_activity_checking_freshness: در حال بررسی تازگی داده‌ها…
+$agent_activity_checking_freshness_completed: تازگی داده‌ها بررسی شد
+$agent_activity_computing: در حال انجام محاسبات…
+$agent_activity_computing_completed: محاسبات کامل شد
+$agent_activity_writing: در حال نوشتن پاسخ…
+$agent_activity_writing_completed: پاسخ آماده است
+$agent_activity_preparing_response: در حال آماده‌سازی پاسخ شما…
+$agent_receive_tokens: دریافت توکن
+$agent_portfolio_total: ارزش کل سبد
+$agent_portfolio_value_is: ارزش سبد شما
+$agent_portfolio_24h_change: تغییر ۲۴ ساعته
+$agent_portfolio_top_contributor: بیشترین سهم امروز
+$agent_portfolio_open_tracker: باز کردن سبد
+$agent_portfolio_analysis: تحلیل سبد
+$agent_portfolio_insufficient: داده کافی برای تحلیل کامل سبد وجود ندارد.
+$agent_portfolio_partial: بخشی از داده‌های سبد در دسترس نیست و تحلیل ناقص است.
+$agent_portfolio_current_only: ساختار فعلی پرتفوی موجود است. عملکرد تاریخی در حال حاضر در دسترس نیست.
+$agent_portfolio_stale: ممکن است داده‌های سبد قدیمی باشند.
+$agent_portfolio_summary_up: ارزش سبد شما در ۲۴ ساعت گذشته افزایش یافته است.
+$agent_portfolio_summary_down: ارزش سبد شما در ۲۴ ساعت گذشته کاهش یافته است.
+$agent_portfolio_summary_flat: ارزش سبد شما در ۲۴ ساعت گذشته ثابت بوده است.
+$agent_portfolio_summary_ready: تحلیل سبد شما آماده است.
+$agent_portfolio_chart_title: ارزش سبد در گذر زمان
+$agent_portfolio_largest_positions: بزرگ‌ترین موقعیت‌ها
+$agent_portfolio_asset: دارایی
+$agent_portfolio_position_value: ارزش
+$agent_portfolio_share: سهم
+$agent_portfolio_observations: چه چیزی برجسته است
+$agent_portfolio_insight_performance_title: حرکت پرتفوی
+$agent_portfolio_insight_performance_text: بررسی کنید که ارزش پرتفوی در دوره انتخابی چگونه حرکت کرده است.
+$agent_portfolio_insight_concentration_title: تمرکز
+$agent_portfolio_insight_concentration_text: تمرکز در تخصیص موجود را بررسی کنید؛ دارایی‌های حذف شده ممکن است تصویر کل پرتفوی را تغییر دهند.
+$agent_portfolio_insight_chain_split_title: توزیع شبکه
+$agent_portfolio_insight_chain_split_text: میزان در معرض بودن شبکه را در تخصیص موجود بررسی کنید؛ دارایی‌های حذف شده ممکن است تصویر کل پرتفوی را تغییر دهند.
+$agent_portfolio_insight_data_quality_title: کیفیت داده‌ها
+$agent_portfolio_insight_data_quality_text: هنگام تفسیر این تحلیل، پوشش داده‌ها و تازگی آن را در نظر بگیرید.
+$agent_hint_portfolio_title: عملکرد پرتفوی
+$agent_hint_portfolio_prompt: عملکرد پرتفوی من را تحلیل کنید.
+$agent_hint_swap_title: سواپ‌ها چگونه کار می‌کنند
+$agent_hint_swap_prompt: توضیح دهید که سواپ توکن‌ها چگونه کار می‌کند.
+$agent_hint_staking_title: استیکینگ چیست
+$agent_hint_staking_prompt: استیکینگ را از پایه توضیح دهید، انگار که من هرگز از رمز ارز استفاده نکرده‌ام.
+$agent_hint_security_title: امنیت کیف پول
+$agent_hint_security_prompt: نشان دهید چگونه کیف پولم را امن نگه دارم.
+$agent_hint_receive_title: دریافت توکن‌ها
+$agent_hint_receive_prompt: به من کمک کنید تا توکن‌ها را دریافت کنم.
+$agent_action_review_transfer: بررسی انتقال
+$agent_action_open_receive: باز کردن دریافت
+$agent_action_open_send: باز کردن ارسال
+$agent_action_open_staking: باز کردن استیکینگ
+$agent_action_open_swap: باز کردن سواپ
+$agent_activity_swap: در حال آماده‌سازی سواپ
+$agent_action_hide_spam: پنهان کردن دارایی‌های اسپم
+$agent_action_open_link: باز کردن لینک
+$agent_action_open_agent: باز کردن عامل
+$agent_action_open_token: باز کردن توکن در کیف پول
+$agent_action_open_transaction: باز کردن تراکنش
+$agent_input_asset: وارد کردن دارایی
+$agent_input_timeframe: وارد کردن بازه زمانی
+$agent_input_amount: وارد کردن مقدار
+$agent_input_recipient: وارد کردن گیرنده
+$agent_input_swap_details: وارد کردن جزئیات سواپ
+$agent_notice_agent_unavailable: عامل در حال حاضر در دسترس نیست. لطفاً بعداً دوباره تلاش کنید.
+$agent_notice_analysis_unavailable: نتوانستیم این تحلیل را کامل کنیم. لطفاً دوباره تلاش کنید.
+$agent_notice_analysis_planning_unavailable: نتوانستیم به اندازه کافی از درخواست را تفسیر کنیم تا تحلیل را آماده کنیم.
+$agent_notice_analysis_source_unavailable: داده‌های مورد نیاز برای این تحلیل در حال حاضر در دسترس نیست.
+$agent_notice_analysis_stale_evidence: داده‌های موجود خیلی قدیمی هستند تا بتوان این تحلیل را به‌طور ایمن انجام داد.
+$agent_notice_analysis_inconsistent_snapshot: داده‌های مورد نیاز در طول تحلیل تغییر کردند. لطفاً دوباره تلاش کنید.
+$agent_notice_analysis_compute_failed: نتوانستیم محاسبه درخواست شده را انجام دهیم.
+$agent_notice_analysis_deadline_exceeded: تحلیل بیش از حد طول کشید تا تکمیل شود. لطفاً دوباره تلاش کنید.
+$agent_notice_analysis_result_too_large: نتیجه تحلیل خیلی بزرگ است تا بتوان آن را به‌طور ایمن ارائه داد.
+$agent_notice_analysis_answer_generation_failed: ما داده‌ها را جمع‌آوری کردیم اما نتوانستیم پاسخ را آماده کنیم. لطفاً دوباره تلاش کنید.
+$agent_notice_asset_not_found: دارایی درخواستی پیدا نشد.
+$agent_notice_clarification_required: اطلاعات بیشتری برای ادامه نیاز است.
+$agent_notice_clarification_asset: مشخص کنید که کدام دارایی رمزنگاری را می‌خواهید استفاده کنید.
+$agent_notice_clarification_network: مشخص کنید که کدام شبکه بلاک‌چین را می‌خواهید استفاده کنید.
+$agent_notice_clarification_query: مطمئن نیستم که درخواست را درست متوجه شده باشم. بگویید چه چیزی می‌خواهید بدانید یا انجام دهید.
+$agent_notice_clarification_quote_currency: از چه ارز نقل‌قولی باید استفاده کنم؟
+$agent_notice_clarification_staking_product: از چه محصول استیکینگ باید استفاده کنم؟
+$agent_notice_clarification_time_horizon: از چه افق زمانی باید استفاده کنم؟
+$agent_notice_clarification_price_assumption: از چه فرض قیمت باید استفاده کنم؟
+$agent_notice_repair_unrecognized_input: نمی‌توانم این پیام را بفهمم. بگویید چه چیزی می‌خواستید بدانید یا انجام دهید و من تلاش می‌کنم کمک کنم.
+$agent_notice_repair_ambiguous_request: مطمئن نیستم درخواست را درست متوجه شده باشم. چه چیزی می‌خواهید بدانید یا انجام دهید؟
+$agent_notice_repair_multiple_requests: چندین درخواست در آن پیام مشاهده می‌کنم. با کدام یک باید شروع کنیم؟
+$agent_notice_consent_required: دسترسی به داده‌های کیف پول را برای ادامه مجاز کنید.
+$agent_notice_content_over_budget: نتیجه خیلی بزرگ است و نمی‌توان آن را به طور کامل نمایش داد.
+$agent_notice_empty_result: نتایج مطابقتی یافت نشد.
+$agent_notice_market_unavailable: داده‌های بازار در حال حاضر در دسترس نیست.
+$agent_notice_market_analysis_unavailable: نتوانستیم تحلیل بازار را آماده کنیم. لطفاً دوباره تلاش کنید.
+$agent_notice_market_analysis_asset_unsupported: تحلیل این سکه در حال حاضر پشتیبانی نمی‌شود.
+$agent_notice_market_analysis_timeframe_unsupported: تحلیل برای این دوره در حال حاضر پشتیبانی نمی‌شود.
+$agent_notice_market_quote_resolved: "%asset% در حال حاضر معادل %price% %currency% ارزش دارد. تغییر ۲۴ ساعته: %change%%."
+$agent_notice_market_quote_price_unavailable: قیمت فعلی برای %asset% در دسترس نیست.
+$agent_notice_market_quote_ambiguous: "چندین توکن مطابقت دارند: %assets%. شبکه یا آدرس قرارداد را مشخص کنید."
+$agent_notice_market_quote_not_found: هیچ توکن مطابقتی برای این درخواست قیمت یافت نشد.
+$agent_notice_market_quote_planning_unavailable: درخواست قیمت قابل تفسیر نبود.
+$agent_notice_market_quote_capability_unavailable: جستجوی قیمت در این برنامه در دسترس نیست.
+$agent_notice_market_quote_wallet_context_unavailable: زمینه کیف پول مورد نیاز برای این جستجوی قیمت در دسترس نیست.
+$agent_notice_market_quote_currency_unsupported: ارز منتخب برای نقل قول برای این جستجوی قیمت پشتیبانی نمی‌شود.
+$agent_notice_market_quote_unavailable: قیمت فعلی برای این توکن در دسترس نیست.
+$agent_notice_market_quote_wallet_context_changed: کیف پول فعال قبل از اینکه جستجوی قیمت کامل شود تغییر کرد.
+$agent_notice_market_quote_timeout: جستجوی قیمت زمان‌بندی آن به پایان رسید.
+$agent_notice_market_quote_tool_failed: سرویس قیمت نتوانست جستجو را کامل کند.
+$agent_notice_market_quote_invalid_result: پاسخ قیمت قابل تأیید نبود.
+$agent_notice_market_quote_cancelled: جستجوی قیمت لغو شد.
+$agent_notice_portfolio_unavailable: داده‌های پرتفوی در حال حاضر در دسترس نیست.
+$agent_notice_receive_details_required: رمزارز و شبکه مورد نظر برای واریز را مشخص کنید.
+$agent_notice_receive_asset_required: رمزارز مورد نظر برای واریز را مشخص کنید.
+$agent_notice_receive_network_required: شبکه مورد نظر برای واریز را مشخص کنید.
+$agent_notice_receive_ready: صفحه دریافت شما آماده باز شدن است.
+$agent_notice_receive_memo_not_required: هنگام تأمین مالی آدرس My Wallet خود، یادداشت لازم نیست — فیلد را خالی بگذارید.
+$agent_notice_receive_unavailable: دریافت برای این کیف پول در دسترس نیست.
+$agent_notice_receive_planning_unavailable: درخواست دریافت قابل تفسیر نبود. آن را دوباره بیان کنید یا دریافت را باز کنید.
+$agent_notice_receive_active_account_unavailable: کیف پول فعال در دسترس نیست. کیف پول را تغییر دهید و دوباره امتحان کنید.
+$agent_notice_receive_client_unavailable: دریافت از طریق عامل در این برنامه در دسترس نیست. به جای آن دریافت را باز کنید.
+$agent_notice_receive_chain_unsupported: این کیف پول از %requested_network% پشتیبانی نمی‌کند. شبکه فعال %active_network% است.
+$agent_notice_receive_active_network_mismatch: شبکه فعال %active_network% است. برای دریافت، به %requested_network% تغییر دهید.
+$agent_notice_retry_required: لطفاً دوباره درخواست را امتحان کنید.
+$agent_notice_send_details_required: جزئیات انتقال گمشده را اضافه کنید تا ادامه دهید.
+$agent_notice_send_form_amount_required: ارسال را باز کنید، سپس مقدار را در فرم انتقال وارد کنید.
+$agent_notice_send_ready: البته — انتقال آماده است. قبل از ارسال جزئیات را مرور کنید.
+$agent_notice_send_ready_inferred_asset: به نظر می‌رسد منظور شما %symbol% بوده است. انتقال را آماده کرده‌ام — قبل از ارسال جزئیات را مرور کنید.
+$agent_notice_send_missing_amount: می‌خواهید چقدر ارسال کنید؟
+$agent_notice_send_missing_asset: می‌خواهید کدام ارز را ارسال کنید؟
+$agent_notice_send_missing_recipient: می‌خواهید آن را به چه کسی ارسال کنید؟
+$agent_notice_send_no_sendable_balance: کیف پول فعال در حال حاضر موجودی قابل دسترسی برای ارسال ندارد.
+$agent_notice_send_unavailable: انتقال به‌طور ایمن قابل آماده‌سازی نبود. از ارسال استفاده کنید یا بعداً دوباره تلاش کنید.
+$agent_notice_staking_ready: استیکینگ آماده باز شدن است.
+$agent_notice_staking_unavailable: استیکینگ از طریق عامل در حال حاضر در دسترس نیست. به جای آن استیکینگ را از کیف پول باز کنید.
+$agent_notice_staking_planning_unavailable: درخواست استیکینگ قابل تفسیر نبود. آن را دوباره بیان کنید یا استیکینگ را باز کنید.
+$agent_notice_staking_active_account_unavailable: کیف پول فعال در دسترس نیست. کیف پول‌ها را تغییر دهید و دوباره تلاش کنید.
+$agent_notice_staking_view_only: استیکینگ برای کیف پول فقط مشاهده‌ای در دسترس نیست. به کیف پولی که می‌توانید با آن امضا کنید، تغییر دهید.
+$agent_notice_staking_client_unavailable: استیکینگ از طریق عامل در این برنامه در دسترس نیست. به جای آن استیکینگ را از کیف پول باز کنید.
+$agent_notice_staking_asset_unavailable: استیکینگ این دارایی در کیف پول فعال در دسترس نیست. یک دارایی استیکینگ موجود دیگر را انتخاب کنید.
+$agent_notice_staking_amount_invalid: مقدار استیکینگ درخواست شده قابل استفاده نیست. مقدار دیگری را در استیکینگ وارد کنید.
+$agent_notice_staking_wallet_context_changed: گزینه‌های استیکینگ کیف پول فعال تغییر کرده‌اند. از عامل بخواهید دوباره استیکینگ را آماده کند.
+$agent_notice_swap_ready_indicative: "برآورد تقریبی: %from_amount% %from_symbol% ≈ %to_amount% %to_symbol%. قیمت اجرایی، کارمزدها، لغزش و تأثیر قیمت در بخش مبادله بارگذاری خواهند شد."
+$agent_notice_swap_ready_price_unavailable: قیمت تقریبی محلی برای %from_symbol% → %to_symbol% در دسترس نیست. برای بارگذاری قیمت اجرایی، کارمزدها و لغزش، بخش مبادله را باز کنید.
+$agent_notice_swap_details_source_asset: دارایی رمزنگاری برای مبادله را مشخص کنید.
+$agent_notice_swap_details_destination_asset: دارایی رمزنگاری برای دریافت را مشخص کنید.
+$agent_notice_swap_details_amount: یک مقدار مثبت رمزنگاری مشخص کنید.
+$agent_notice_swap_details_direction: برای ادامه، دارایی منبع، دارایی مقصد و مقدار را مشخص کنید.
+$agent_notice_swap_details_candidates: "منطبق با %prompt%: %candidates%."
+$agent_notice_swap_unavailable: آماده‌سازی مبادله از طریق عامل در حال حاضر در دسترس نیست. به جای آن بخش مبادله را از کیف پول باز کنید.
+$agent_notice_swap_planning_unavailable: درخواست مبادله قابل تفسیر نبود. هر دو دارایی رمزنگاری و یک مقدار را مشخص کنید.
+$agent_notice_swap_active_account_unavailable: کیف پول فعال در دسترس نیست. کیف پول‌ها را تغییر داده و دوباره تلاش کنید.
+$agent_notice_swap_view_only: آماده‌سازی مبادله برای کیف پول فقط نمایشی در دسترس نیست. به کیف پولی که می‌توانید با آن امضا کنید، تغییر دهید.
+$agent_notice_swap_client_unavailable: آماده‌سازی مبادله از طریق عامل در این برنامه در دسترس نیست. به جای آن بخش مبادله را از کیف پول باز کنید.
+$agent_notice_swap_wallet_context_changed: کیف پول فعال قبل از تکمیل آماده‌سازی مبادله تغییر کرد. دوباره امتحان کنید.
+$agent_notice_swap_timeout: آماده‌سازی مبادله زمان‌بندی آن به اتمام رسید. دوباره امتحان کنید.
+$agent_notice_swap_tool_failed: کیف پول نتوانست این مبادله را آماده کند. دوباره امتحان کنید یا مبادله را باز کنید.
+$agent_notice_swap_invalid_result: مبادله آماده‌شده قابل تأیید نبود. دوباره امتحان کنید.
+$agent_notice_send_asset_not_held: این دارایی در کیف پول فعال موجود نیست. دارایی یا کیف پول دیگری انتخاب کنید.
+$agent_notice_send_insufficient_balance: برای این انتقال موجودی کافی نیست. مقدار را کاهش دهید یا کیف پول را تغییر دهید.
+$agent_notice_send_recipient_not_found: هیچ کیف پول خودی یا آدرس ذخیره شده‌ای مطابق پیدا نشد.
+$agent_notice_send_recipient_not_found_named: هیچ کیف پول خودی یا آدرس ذخیره شده‌ای با نام “%recipient%” پیدا نشد.
+$agent_notice_send_recipient_ambiguous: بیش از یک کیف پول یا مخاطب ممکن است مطابق باشد. گیرنده را مشخص کنید.
+$agent_notice_send_address_book_unavailable: دفترچه آدرس فعلی قابل بارگذاری نبود. دوباره امتحان کنید یا در ارسال مخاطب را انتخاب کنید.
+$agent_notice_send_recipient_matching_unavailable: دفترچه آدرس موجود است، اما عامل نتوانست نام گیرنده را به طور واضح مطابقت دهد. نام را مشخص کنید یا در ارسال مخاطب را انتخاب کنید.
+$agent_notice_send_intent_extraction_unavailable: کدام دارایی را می‌خواهید ارسال کنید؟
+$agent_notice_send_intent_provider_unavailable: خدمت پردازش فرمان به طور موقت در دسترس نیست. دوباره امتحان کنید یا از ارسال استفاده کنید.
+$agent_notice_send_invalid_recipient: آدرس گیرنده نامعتبر است.
+$agent_notice_send_recipient_unresolved: گیرنده قابل شناسایی نبود.
+$agent_notice_send_recipient_inactive: حساب گیرنده غیرفعال است.
+$agent_notice_send_memo_required: این انتقال به یادداشت نیاز دارد.
+$agent_notice_send_wallet_not_initialized: کیف پول گیرنده راه‌اندازی نشده است.
+$agent_notice_send_active_account_unavailable: کیف پول فعال در دسترس نیست. کیف پول‌ها را تغییر دهید.
+$agent_notice_send_chain_unsupported: این کیف پول نمی‌تواند در شبکه انتخاب شده ارسال انجام دهد. شبکه یا کیف پول را تغییر دهید.
+$agent_notice_send_client_unavailable: انتقال از طریق عامل در این برنامه در دسترس نیست. از گزینه ارسال استفاده کنید.
+$agent_notice_send_view_only: یک کیف پول فقط برای مشاهده نمی‌تواند وجه ارسال کند. کیف پول را تغییر دهید.
+$agent_notice_send_offline: برای آماده‌سازی این انتقال به اینترنت متصل شوید.
+$agent_notice_send_wallet_context_changed: کیف پول فعال تغییر کرده است. دوباره انتقال را آماده کنید.
+$agent_notice_send_source_wallet_selection_required: عامل فقط می‌تواند این انتقال را از کیف پول فعلی آماده کند. به کیف پول نام‌برده تغییر دهید و دوباره تلاش کنید.
+$agent_notice_send_validation_failed: جزئیات انتقال، اعتبارسنجی کیف پول را گذر نکرد.
+$agent_notice_tool_unavailable: این عملیات در مشتری فعلی در دسترس نیست.
+$agent_notice_wallet_unavailable: داده‌های کیف پول در حال حاضر در دسترس نیستند.
+$agent_notice_wallet_filter_ambiguous: یک کیف پول یا دارایی را انتخاب کنید تا درخواست محدودتر شود.
+$agent_notice_web_unavailable: جستجوی وب در حال حاضر در دسترس نیست.
+$agent_notice_web_capability_unavailable: جستجوی وب توسط پیکربندی فعلی عامل پشتیبانی نمی‌شود.
+$agent_notice_web_planning_failed: عامل نتوانست پرس‌وجوی جستجو را آماده کند.
+$agent_notice_web_budget_denied: حد جستجوی وب به پایان رسیده است. لطفاً دوباره بعداً تلاش کنید.
+$agent_notice_web_provider_rate_limited: ارائه‌دهنده جستجو به طور موقت درخواست‌ها را محدود کرده است. لطفاً بعداً دوباره تلاش کنید.
+$agent_notice_web_provider_unavailable: ارائه‌دهنده جستجو پاسخ نداد. لطفاً بعداً دوباره تلاش کنید.
+$agent_notice_web_no_results: جستجو انجام شد، اما نتیجه مرتبطی یافت نشد.
+$agent_notice_web_invalid_sources: نتایج جستجو دریافت شدند، اما از بررسی‌های ایمنی عبور نکردند.
+$agent_notice_web_synthesis_timeout: نتایجی یافت شدند، اما پردازش آن‌ها زمان زیادی طول کشید.
+$agent_notice_web_synthesis_invalid: نتایجی پیدا شد، اما عامل نتوانست یک خلاصه معتبر تولید کند.
+$agent_notice_web_synthesis_unavailable: نتایجی پیدا شد، اما مدل خلاصه‌سازی در حال حاضر در دسترس نیست.
+$agent_notice_web_policy_rejected: خلاصه تولید شد، اما از بررسی کیفیت عبور نکرد.
+$agent_error_session: جلسه عامل شما منقضی شده است. عامل را دوباره باز کنید و دوباره امتحان کنید.
+$agent_error_limit: درخواست قابل تکمیل نیست، زیرا سقف استفاده از عامل پر شده است.
+$agent_error_tool: یک عملیات کیف پول نمی‌تواند تکمیل شود. لطفاً دوباره تلاش کنید.
+$agent_error_conversation_updated: گفتگو به‌روز شد. لطفاً دوباره درخواست را امتحان کنید.
+$agent_error_generic: عامل نتوانست درخواست را تکمیل کند. لطفاً دوباره تلاش کنید.
+$agent_error_update_required: برای ادامه برنامه را به‌روزرسانی کنید.
+$agent_semantic_transactions: تراکنش‌ها
+$agent_semantic_positions: موقعیت‌ها
+$agent_semantic_market: نمای کلی بازار
+$agent_market_analysis_title: تحلیل بازار
+$agent_market_as_of: تا تاریخ
+$agent_market_closed_1d: آخرین کندل روزانه بسته‌شده
+$agent_market_thesis: فرضیه تکنیکی
+$agent_market_fear_greed_sentiment: احساسات بازار مبتنی بر بیت‌کوین
+$agent_market_fear_greed_index: شاخص ترس و طمع (0–100)
+$agent_market_fear_greed_sma_30: SMA 30
+$agent_market_fear_greed_sma_365: SMA 365
+$agent_market_fear_greed_regime: رژیم بازار
+$agent_market_fear_greed_risk_on: احساسات ریسک‌پذیر
+$agent_market_fear_greed_risk_off: احساسات ریسک‌گریز
+$agent_market_fear_greed_neutral: احساسات خنثی
+$agent_market_fear_greed_source: منبع
+$agent_market_timeframes: ساختار بازار
+$agent_market_structure_bullish: اوج‌های بالاتر و کف‌های بالاتر
+$agent_market_structure_bearish: اوج‌های پایین‌تر و کف‌های پایین‌تر
+$agent_market_structure_range: محدوده
+$agent_market_structure_transition: انتقال
+$agent_market_structure_unavailable: ساختار موجود نیست
+$agent_market_event_none: شکست تایید نشده
+$agent_market_event_break_up: شکست بالای ساختار
+$agent_market_event_break_down: شکست پایین ساختار
+$agent_market_event_retest_up: بازآزمایی صعودی
+$agent_market_event_retest_down: بازآزمایی نزولی
+$agent_market_live_approaching_upper: نزدیک شدن به مرز بالایی
+$agent_market_live_approaching_lower: نزدیک شدن به مرز پایین
+$agent_market_level_map: سطوح کلیدی
+$agent_market_level_primary: سطح اولیه
+$agent_market_level_secondary: سطح ثانویه
+$agent_market_level_context: سطح زمینه
+$agent_market_levels_unavailable: سطوح ساختاری تایید شده در دسترس نیستند.
+$agent_market_profile_poc_full: مرکز حجم (POC)
+$agent_market_profile_value_area_full: مرزهای ناحیه ارزش (VAL/VAH)
+$agent_market_profile_hvn_full: ناحیه حجم بالا (HVN)
+$agent_market_profile_lvn_full: راهروی حجم پایین (LVN)
+$agent_market_profile_current_day: روز فعلی UTC
+$agent_market_profile_previous_day: روز گذشته UTC
+$agent_market_profile_previous_week: هفته گذشته UTC
+$agent_market_profile_rolling_30d: 30 جلسه گذشته UTC
+$agent_market_profile_above: قیمت بالاتر از ناحیه ارزش
+$agent_market_profile_inside: قیمت درون ناحیه ارزش
+$agent_market_profile_below: قیمت پایین‌تر از ناحیه ارزش
+$agent_market_factors: عوامل کلیدی
+$agent_market_factor_structure: "ساختار روزانه: %direction%"
+$agent_market_factor_levels: مناطق حمایت %supports% و مقاومت %resistances% برای این افق تأیید شده‌اند.
+$agent_market_factor_profile: "توزیع حجم: %position%."
+$agent_market_factor_profile_unavailable: نمایه حجم در دسترس نیست؛ سناریو بر اساس ساختار قیمت است.
+$agent_market_factor_timeframe_alignment: "ساختار بازه زمانی — 1D: %daily%; 4H: %fourHour%; 1H: %hourly%."
+$agent_market_factor_current_scenario: "رژیم فعلی: %active%. سناریوی شرطی: %conditional% پس از %activation%."
+$agent_market_factor_no_active_scenario: "هیچ سناریویی تأیید نشده است. سناریوی شرطی: %conditional% پس از %activation%."
+$agent_market_primary_scenario: سناریوی اصلی
+$agent_market_current_regime: رژیم تأیید شده فعلی
+$agent_market_conditional_scenario: سناریوی شرطی
+$agent_market_no_active_scenario: در حال حاضر هیچ سناریویی تأیید نشده است.
+$agent_market_calculated_fallback: "تحلیل محاسبه شده: توضیح مدل به طور موقت در دسترس نیست."
+$agent_market_other_horizons: افق‌های درخواست شده دیگر
+$agent_market_horizon_3d: 3 روز
+$agent_market_horizon_7d: 7 روز
+$agent_market_horizon_30d: 30 روز
+$agent_market_scenario_bullish: شکست صعودی
+$agent_market_scenario_range: تعادل بازه
+$agent_market_scenario_bearish: شکست نزولی
+$agent_market_scenario_unavailable: سناریوی ساختاری برای این افق در دسترس نیست.
+$agent_market_confidence: اطمینان
+$agent_market_confidence_low: کم
+$agent_market_confidence_medium: متوسط
+$agent_market_activation: فعال‌سازی
+$agent_market_path: مسیر
+$agent_market_terminal: منطقه نهایی
+$agent_market_invalidation: باطل‌سازی
+$agent_market_expected_range: دامنه سناریو
+$agent_market_rationale: دلیل
+$agent_market_condition_above: بسته شدن بالاتر
+$agent_market_condition_below: بسته شدن پایین‌تر
+$agent_market_condition_inside: بسته شدن در داخل
+$agent_market_condition_outside: بسته شدن در خارج
+$agent_market_condition_waiting: در انتظار تأیید
+$agent_market_condition_approaching: در حال نزدیک شدن
+$agent_market_condition_triggered: تأیید شده
+$agent_market_scenario_zone: منطقه سناریو
+$agent_market_expected_move: پوشش نوسان
+$agent_market_volatility_envelope: پوشش نوسان کلی
+$agent_market_expected_move_note: حرکت مشروط، نه یک احتمال
+$agent_market_risk_caveat: سناریوها مشروط هستند و توصیه معاملاتی محسوب نمی‌شوند.
+$agent_market_partial_coverage: بخشی از شواهد بازار در دسترس نیست؛ اعتماد محدود است.
+$agent_market_thesis_bullish: ساختار تأیید شده ادامه حرکت بالای مقاومت را ترجیح می‌دهد در حالی که باطل‌سازی زیر نزدیک‌ترین حمایت باقی می‌ماند.
+$agent_market_thesis_bearish: ساختار تأیید شده ادامه حرکت پایین‌تر از حمایت را ترجیح می‌دهد در حالی که باطل‌سازی بالای نزدیک‌ترین مقاومت باقی می‌ماند.
+$agent_market_thesis_range: قیمت بین حمایت و مقاومت تأیید شده متعادل باقی مانده است.
+$agent_market_thesis_mixed: چارچوب‌های زمانی تناقض دارند، بنابراین تأیید در مرز ساختاری از شاخص‌های جهت‌دار مهم‌تر است.
+$agent_market_thesis_insufficient: شواهد موجود برای تأیید یک ساختار جهت‌دار کافی نیست.
+$agent_market_thesis_unconfirmed: هیچ سناریویی تأیید نشده است؛ قبل از اتخاذ یک موقعیت جهت‌دار منتظر بسته شدن مرز ساختاری باشید.
+$agent_semantic_asset_search: جستجوی دارایی
+$agent_semantic_web_digest: نتایج وب
+$agent_semantic_no_results: هیچ نتیجه‌ای یافت نشد
+$agent_semantic_wallets: کیف پول‌ها
+$agent_semantic_wallet: کیف پول
+$agent_semantic_balance: موجودی
+$agent_semantic_balance_unavailable: —
+$agent_semantic_access_regular: معمولی
+$agent_semantic_access_view_only: فقط مشاهده
+$agent_semantic_wallets_unpriced: موقعیت‌های %amount% در مجموع‌های نمایش داده شده لحاظ نشده‌اند زیرا قیمتی ندارند.
+$agent_semantic_wallets_stale: برخی از موجودی‌های کیف پول ممکن است قدیمی باشند.
+$agent_semantic_wallets_unavailable: برخی از موجودی‌های کیف پول در دسترس نیستند.
+$agent_semantic_wallets_partial: برخی از داده‌های کیف پول ناقص هستند.
+$agent_semantic_status: وضعیت
+$agent_semantic_quantity: تعداد
+$agent_semantic_time: زمان
+$agent_semantic_partial: برخی داده‌ها در دسترس نیستند.
+$agent_semantic_pending: در انتظار
+$agent_semantic_confirmed: تأیید شده
+$agent_semantic_completed: تکمیل شده
+$agent_semantic_failed: ناموفق
+$agent_semantic_expired: منقضی شده
+$agent_semantic_active: فعال
+$agent_semantic_unstaking: خارج کردن از استیک
+$agent_semantic_ready: آماده
+$agent_semantic_frozen: منجمد
+$agent_semantic_locked: قفل شده
+$agent_semantic_fungible: توکن
+$agent_semantic_nft: NFT
+$agent_semantic_staking: استیکینگ
+$agent_semantic_vesting: مرحله‌بندی
+$agent_semantic_vault: خزانه
+$agent_semantic_transfer: انتقال
+$agent_semantic_swap: تبادل
+$agent_semantic_stake: استیک
+$agent_semantic_unstake: آن‌استیک
+$agent_semantic_contract: قرارداد
+$agent_semantic_unknown: فعالیت
+$agent_semantic_spam_transactions: تراکنش‌های اسپم
+$agent_semantic_spam_assets: دارایی‌های اسپم
+$agent_semantic_hidden_assets: دارایی‌های مخفی
+$agent_semantic_hidden_assets_warning: نام دارایی‌های مخفی ممکن است گمراه‌کننده باشد. آن‌ها به صورت متن ساده نمایش داده می‌شوند و نمی‌توان به عنوان لینک بازشان کرد.
+$agent_semantic_quarantine_warning: این موارد به عنوان اسپم گزارش شده‌اند. به نام‌ها یا لینک‌هایشان اعتماد نکنید.
+$agent_semantic_redacted_asset: نام مخفی
+$agent_semantic_omitted_spam: "اسپم فیلتر شده: %amount%"
+$agent_semantic_omitted_spam_minimum: "اسپم فیلتر شده: حداقل %amount%"
+$agent_semantic_omitted_hidden: "دارایی‌های مخفی حذف شدند: %amount%"
+$agent_semantic_omitted_hidden_minimum: "دارایی‌های مخفی حذف شدند: حداقل %amount%"
+$agent_semantic_suspicious: "نام‌های ناامن مخفی شدند: %amount%"
+$agent_semantic_suspicious_minimum: "نام‌های ناامن مخفی شدند: حداقل %amount%"
+$agent_semantic_suspicious_shown: "نام‌های احتمالا ناامن: %amount%"
+$agent_semantic_suspicious_shown_minimum: "نام‌های احتمالا ناامن: حداقل %amount%"
+$agent_semantic_omitted_rows: داده‌ها خیلی زیاد است. %amount% ردیف اضافی شامل نشده‌اند. دوره یا فیلترها را محدود کنید.
+$agent_semantic_omitted_rows_minimum: داده‌ها خیلی زیاد است. حداقل %amount% ردیف اضافی شامل نشده‌اند. دوره یا فیلترها را محدود کنید.
+$agent_semantic_update_required: برای نمایش این پاسخ، برنامه را به‌روزرسانی کنید.
+$agent_wallet_page_navigation: صفحات داده کیف پول
+$agent_wallet_page_previous: ← قبلی
+$agent_wallet_page_next: بعدی →
+$agent_wallet_page_indicator: "%current% از %total%"
+$agent_portfolio_unpriced: شامل نشده
+$agent_portfolio_unpriced_value: شامل نشده
+$agent_portfolio_more_positions: +%count% بیشتر
+$agent_portfolio_history_on: تاریخچه در شبکه %network%
+$agent_portfolio_no_activity: هیچ فعالیت اخیر وجود ندارد.
 Clear Chat: پاک کردن گفتگو
 Unsupported link: لینک پشتیبانی‌نشده
 My Wallet Features: قابلیت‌های My Wallet
@@ -1271,6 +1641,8 @@ You have tokens on other subwallets. You can switch to them here.: شما توک
 Subwallet Created: زیرکیف‌پول ساخته شد
 Subwallet Added: زیرکیف‌پول اضافه شد
 Subwallet Switched: زیرکیف‌پول تغییر کرد
+Top 1: ۱ مورد برتر
+Top 3: ۳ مورد برتر
 Top 5: ۵ مورد برتر
 Top 10: ۱۰ مورد برتر
 Top 30: ۳۰ مورد برتر
@@ -1288,9 +1660,9 @@ Deposit: واریز
 Trade: معامله
 Show All Assets: نمایش همه دارایی‌ها
 Show All Collectibles: نمایش همه کالکتیبل‌ها
+Show All Actions: نمایش همه
 Show All %collection_name%: نمایش همه %collection_name%
 Scanning for subwallets...: در حال جستجوی زیرکیف‌پول‌ها...
-This process may take up to a minute. Please wait.: این فرآیند ممکن است تا یک دقیقه طول بکشد. لطفاً صبر کنید.
 Your assets on other TON contracts: دارایی‌های شما در قراردادهای دیگر TON
 No existing subwallets found: هیچ زیرکیف‌پول موجودی یافت نشد
 You can create a new subwallet if you need another address on the same secret words.: اگر به آدرس دیگری با همان کلمات محرمانه نیاز دارید، می‌توانید یک زیرکیف‌پول جدید بسازید.
@@ -1303,12 +1675,12 @@ Show Assets: نمایش دارایی‌ها
 Top %amount%: "%amount% مورد برتر"
 No subwallets yet.: هنوز زیرکیف‌پولی وجود ندارد.
 $subwallets_found:
-  oneValue: "یافت‌شده: %1$d"
-  otherValue: "یافت‌شده: %1$d"
+  oneValue: "یافت‌شده: %count%"
+  otherValue: "یافت‌شده: %count%"
 $subwallet_scan_no_native_balances: بدون موجودی بومی
 $subwallet_scan_other_tokens_suffix:
-  oneValue: " + %1$d توکن دیگر"
-  otherValue: " + %1$d توکن دیگر"
+  oneValue: " + %count% توکن دیگر"
+  otherValue: " + %count% توکن دیگر"
 Send, receive, and trade tokens and collectibles.: توکن‌ها و کالکتیبل‌ها را ارسال، دریافت و معامله کنید.
 $overview_cell_size_small: کوچک
 $overview_cell_size_medium: متوسط
@@ -1350,8 +1722,8 @@ Bluetooth: بلوتوث
 Locked: قفل‌شده
 Enter passcode or use fingerprint: رمز عبور را وارد کنید یا از اثر انگشت استفاده کنید
 Use PIN: استفاده از پین
-Try again in %1$@: در %1$@ دیگر دوباره تلاش کنید
-Try again in %1$@ and %2$@: در %1$@ و %2$@ دیگر دوباره تلاش کنید
+Try again in %duration%: در %duration% دیگر دوباره تلاش کنید
+Try again in %duration% and %unit%: در %duration% و %unit% دیگر دوباره تلاش کنید
 Screen Recording Detected: ضبط صفحه شناسایی شد
 $screen_recording_info: |
   شما در حال حاضر صفحه خود را ضبط می‌کنید.
@@ -1378,9 +1750,6 @@ Swap ID: شناسه مبادله
 Swap ID for %provider%: شناسه مبادله برای %provider%
 Copy Swap ID: کپی شناسه مبادله
 Swap ID Copied: شناسه مبادله کپی شد
-Changelly ID: شناسه Changelly
-Copy Changelly ID: کپی شناسه Changelly
-Changelly ID Copied!: شناسه Changelly کپی شد!
 from: از
 to: به
 Currency: ارز
@@ -1418,31 +1787,31 @@ Show Secret Words: نمایش کلمات محرمانه
 Passcode: رمز عبور
 Lock the app after: قفل کردن اپلیکیشن پس از
 Never: هرگز
-"%1$@ seconds": "%1$@ ثانیه"
-"%1$@ minutes": "%1$@ دقیقه"
+"%count% seconds": "%count% ثانیه"
+"%count% minutes": "%count% دقیقه"
 Unstake Request: درخواست برداشت استیک
 History: تاریخچه
-Earn up to %1$@ per year from your tokens: تا %1$@ در سال از توکن‌های خود درآمد کسب کنید
-Insufficient %1$@ Balance: "موجودی %1$@ ناکافی"
+Earn up to %apy% per year from your tokens: تا %apy% در سال از توکن‌های خود درآمد کسب کنید
+Insufficient %symbol% Balance: "موجودی %symbol% ناکافی"
 Instant Withdrawal: برداشت فوری
 Instantly: فوری
-Up to %1$@: "تا ‭%1$@"
-up to %1$@: "تا ‭%1$@"
+Up to %amount%: "تا ‭%amount%"
+$up_to_amount_lowercase: "تا ‭%amount%"
 Current APR: نرخ درصد سالانه فعلی
 in: در
 Network Error: خطای شبکه
 Enter Amount: مبلغ را وارد کنید
-"Swap %1$@ to %2$@": "مبادله %1$@ به %2$@"
-"%1$@ to %2$@": "%1$@ به %2$@"
-"Max %1$@": "حداکثر %1$@"
-"Authorize %1$@ fee": "تأیید کارمزد %1$@"
+"Swap %from% to %to%": "مبادله %from% به %to%"
+"%from% to %to%": "%from% به %to%"
+"Max %amount%": "حداکثر %amount%"
+"Authorize %token% fee": "تأیید کارمزد %token%"
 Pending previous fee: در انتظار کارمزد قبلی
 AML/KYC: AML/KYC
 Receive to: دریافت به
-Enter %1$@ address: آدرس %1$@ را وارد کنید
-"Send %1$@ this address:": "%1$@ را به این آدرس ارسال کنید:"
+Enter %token% address: آدرس %token% را وارد کنید
+"Send %token% this address:": "%token% را به این آدرس ارسال کنید:"
 Swap is not supported on this account.: مبادله در این حساب پشتیبانی نمی‌شود.
-"%1$@ will be returned": "%1$@ بازگردانده خواهد شد"
+"%amount% will be returned": "%amount% بازگردانده خواهد شد"
 Connecting your wallet: در حال اتصال کیف پول شما
 Action is not possible on a view-only wallet.: این اقدام روی کیف پول فقط‌مشاهده ممکن نیست.
 No matching chains: هیچ شبکه سازگاری وجود ندارد
@@ -1455,38 +1824,37 @@ Switch to Legacy Version: تغییر به نسخه کلاسیک
 Received from: دریافت‌شده از
 Your Secret Words: کلمات محرمانه شما
 day:
-  zeroValue: "%1$d روز"
-  oneValue: "%1$d روز"
-  otherValue: "%1$d روز"
+  zeroValue: "%count% روز"
+  oneValue: "%count% روز"
+  otherValue: "%count% روز"
 hour:
-  zeroValue: "%1$d ساعت"
-  oneValue: "%1$d ساعت"
-  otherValue: "%1$d ساعت"
+  zeroValue: "%count% ساعت"
+  oneValue: "%count% ساعت"
+  otherValue: "%count% ساعت"
 minute:
   zeroValue: دقیقه
   oneValue: دقیقه
-  otherValue: "%1$d دقیقه"
+  otherValue: "%count% دقیقه"
 second:
-  zeroValue: "%1$d ثانیه"
-  oneValue: "%1$d ثانیه"
-  otherValue: "%1$d ثانیه"
+  zeroValue: "%count% ثانیه"
+  oneValue: "%count% ثانیه"
+  otherValue: "%count% ثانیه"
 transfer:
-  zeroValue: "%1$d انتقال"
-  oneValue: "%1$d انتقال"
-  otherValue: "%1$d انتقال"
+  zeroValue: "%count% انتقال"
+  oneValue: "%count% انتقال"
+  otherValue: "%count% انتقال"
 Confirm Actions:
-  zeroValue: "تأیید %1$d اقدام"
+  zeroValue: "تأیید %count% اقدام"
   oneValue: تأیید اقدام
   otherValue: تأیید اقدامات
 "A ~ Z": "الف ~ ی"
 "Biometric authentication not available.": "احراز هویت بیومتریک در دسترس نیست."
 Payment Address: آدرس پرداخت
-"Changelly Payment Address": "آدرس پرداخت Changelly"
 "Wallet to use on": "کیف پول مورد استفاده در"
 "Clipboard empty": "کلیپ‌بورد خالی است"
 "Confirm Connect": "تأیید اتصال"
 "Connected apps can only see your wallet address and will not be able to move your assets without permission.": "اپلیکیشن‌های متصل تنها می‌توانند آدرس کیف پول شما را ببینند و بدون اجازه قادر به جابه‌جایی دارایی‌های شما نخواهند بود."
-"Connect to %1$@?": "اتصال به %1$@؟"
+"Connect to %name%?": "اتصال به %name%؟"
 "Don’t show tokens on your account with value less than $0.01. You can also selectively enable and disable particular tokens using the list below.": "توکن‌های با ارزش کمتر از ۰٫۰۱ دلار را در حساب خود نمایش نده. همچنین می‌توانید با استفاده از فهرست زیر، توکن‌های خاص را به‌صورت انتخابی فعال و غیرفعال کنید."
 "Don’t show transactions of less than $0.01. Such small transactions are often used for spam and scam.": "تراکنش‌های کمتر از ۰٫۰۱ دلار را نمایش نده. چنین تراکنش‌های کوچکی اغلب برای اسپم و کلاهبرداری استفاده می‌شوند."
 "Enter your Wallet Passcode": "رمز عبور کیف پول خود را وارد کنید"
@@ -1510,7 +1878,7 @@ Please try again: لطفاً دوباره تلاش کنید
 Read-only account: حساب فقط‌خواندنی
 "Request for unstaking": "درخواست برداشت استیک"
 Set a passcode: یک رمز عبور تنظیم کنید
-"Show All %1$@": "نمایش همه %1$@"
+"Show All %name%": "نمایش همه %name%"
 "TON Wallet Versions": "نسخه‌های کیف پول TON"
 "Tap to reveal": "برای نمایش ضربه بزنید"
 "The current version of Ledger only supports English-language comments without special characters.": "نسخه فعلی لجر تنها از نظرات انگلیسی‌زبان بدون کاراکترهای ویژه پشتیبانی می‌کند."
@@ -1538,9 +1906,9 @@ Copy Anyway: به‌هرحال کپی کن
 "Words don’t match, please try again.": کلمات مطابقت ندارند، لطفاً دوباره تلاش کنید.
 Load 5 More Wallets: بارگذاری ۵ کیف پول دیگر
 $n_wallets_selected:
-  zeroValue: "%1$d انتخاب‌شده"
-  oneValue: "%1$d انتخاب‌شده"
-  otherValue: "%1$d انتخاب‌شده"
+  zeroValue: "%count% انتخاب‌شده"
+  oneValue: "%count% انتخاب‌شده"
+  otherValue: "%count% انتخاب‌شده"
 Are you sure you want to unpin %tab%?: آیا مطمئن هستید که می‌خواهید سنجاق %tab% را بردارید؟
 add: افزودن
 send: ارسال
@@ -1565,22 +1933,47 @@ $period_year: ۱ سال
 Token: توکن
 All Tokens: همه توکن‌ها
 Customize Widget: سفارشی‌سازی ابزارک
+Ask Agent: از دستیار بپرسید
+Chats: گفتگوها
 Recent Searches: جستجوهای اخیر
 Clear All: پاک کردن همه
 Suggestions: پیشنهادها
+Suggest: پیشنهادها
 Popular and connected apps: اپلیکیشن‌های محبوب و متصل
+Site: سایت
+Sites: سایت‌ها
+App: اپلیکیشن
+Collectible: کالکتیبل
+Action: اقدام
+Tokens and Stocks: توکن‌ها و سهام
+View Wallet: مشاهده کیف پول
 Connected Dapp: اپلیکیشن غیرمتمرکز متصل
-$ago: "%1$d پیش"
-$visited_ago: "%1$d پیش بازدید شد"
+$ago: "%time% پیش"
+$visited_ago: "%time% پیش بازدید شد"
 Notifications are disabled: اعلان‌ها غیرفعال هستند
 Enable in Settings: فعال‌سازی در تنظیمات
 Open Link: باز کردن لینک
 Open in App: باز کردن در اپلیکیشن
 Search in Google: جستجو در گوگل
+Stock: سهام
+Recent Chat: گفتگوی اخیر
+Recent Chats: گفتگوهای اخیر
+Recent Search: جستجوی اخیر
+Google: گوگل
+Open Website: باز کردن وب‌سایت
+Open Collectible: باز کردن کالکتیبل
+Open Collection: باز کردن مجموعه
+Open App: باز کردن اپلیکیشن
+Open Chat: باز کردن گفتگو
+$universal_search_recent: اخیر
+$universal_search_start_conversation: شروع گفتگو
+$universal_search_dictate: دیکته
+$universal_search_clear_text: پاک کردن متن
+$universal_search_switch_section_contents: تغییر محتوای بخش
 $remove_wallets:
   zeroValue: "حذف کیف پول"
   oneValue: "حذف کیف پول"
-  otherValue: "حذف %1$d کیف پول"
+  otherValue: "حذف %count% کیف پول"
 Encryption is not possible. The recipient is not a wallet or has no outgoing transactions.: رمزگذاری ممکن نیست. گیرنده یک کیف پول نیست یا هیچ تراکنش خروجی ندارد.
 just now: همین الان
 "No": "خیر"
@@ -1592,7 +1985,7 @@ Unexpected error. Please let the support know.: خطای غیرمنتظره. ل�
 Unlock it and open the TON App: آن را باز کنید و اپلیکیشن TON را اجرا کنید
 Use 4-digit Passcode: استفاده از رمز عبور ۴ رقمی
 Use 6-digit Passcode: استفاده از رمز عبور ۶ رقمی
-Authorize %token% Fee: تأیید کارمزد %token%
+$authorize_token_fee_capitalized: تأیید کارمزد %token%
 Awaiting Previous Fee: در انتظار کارمزد قبلی
 Lock: قفل
 My Wallet Cards can be installed for wallets and displayed on the home screen an in the wallet list.: کارت‌های My Wallet می‌توانند برای کیف پول‌ها نصب شوند و در صفحه اصلی و در فهرست کیف پول نمایش داده شوند.
@@ -1646,7 +2039,7 @@ push_domain_expires_in_days: دامنه %domain% شما %days% روز دیگر �
 $more_nfts:
   zeroValue: بدون NFT
   oneValue: "+۱ NFT"
-  otherValue: "+%1$d NFT"
+  otherValue: "+%count% NFT"
 
 $subwallets_hint: از زیرکیف‌پول‌ها برای دریافت آدرس‌های اضافی بدون ساخت مجموعه جدیدی از کلمات محرمانه استفاده کنید.
 $subwallets_created_wallets: اگر قبلاً زیرکیف‌پول ساخته‌اید، آن‌ها در فهرست زیر ظاهر خواهند شد.
@@ -1765,5 +2158,73 @@ $enclave_migration_interrupted_message: |
   تلاش پیشین برای به‌روزرسانی داده‌های کیف پول شما در میانه متوقف شد و از این صفحه نمی‌توان آن را ادامه داد. تلاش دوباره در اینجا کمکی نمی‌کند.
 
   برنامه را دوباره نصب نکنید و داده‌های آن را پاک نکنید، کیف پول‌های شما همچنان روی این دستگاه ذخیره شده‌اند. لطفاً با %support_link% تماس بگیرید تا به‌روزرسانی را کامل کنیم.
+$enclave_migration_unexpected_title: تکمیل به‌روزرسانی ممکن نشد
+$enclave_migration_unexpected_message: |
+  به‌روزرسانی داده‌های کیف پول شما به‌دلیل خطایی غیرمنتظره متوقف شد و برنامه نمی‌تواند علت آن را تشخیص دهد. چیزی حذف نشده است: همه کیف پول‌های شما همچنان روی این دستگاه ذخیره‌اند.
+
+  این پیام را ببندید و دوباره تلاش کنید؛ تلاش دوباره به کیف پول‌های شما آسیبی نمی‌زند. اگر باز هم متوقف شد، برنامه را دوباره نصب نکنید و داده‌های آن را پاک نکنید و این کد را برای %support_link% ارسال کنید: %error_code%
+$enclave_migration_retry_title: به‌روزرسانی کامل نشد
+$enclave_migration_retry_message: |
+  به‌روزرسانی داده‌های کیف پول شما پیش از کامل شدن متوقف شد. چیزی حذف نشده است: همه کیف پول‌های شما همچنان روی این دستگاه ذخیره‌اند.
+
+  این پیام را ببندید و دوباره تلاش کنید؛ تلاش دوباره به کیف پول‌های شما آسیبی نمی‌زند. اگر باز هم متوقف شد، برنامه را دوباره نصب نکنید و داده‌های آن را پاک نکنید و این کد را برای %support_link% ارسال کنید: %error_code%
+$enclave_migration_storage_full_title: فضای کافی نیست
+$enclave_migration_storage_full_message: |
+  به‌روزرسانی داده‌های کیف پول شما به فضای خالی بیشتری از فضای باقی‌مانده روی این دستگاه نیاز دارد، بنابراین متوقف شد. چیزی حذف نشده است: همه کیف پول‌های شما همچنان روی این دستگاه ذخیره‌اند.
+
+  مقداری فضا خالی کنید و برنامه را دوباره باز کنید. برنامه را دوباره نصب نکنید و داده‌های آن را پاک نکنید؛ این کار کیف پول‌هایی را که هنوز سالم‌اند از بین می‌برد.
 Hide Unverified NFTs: پنهان کردن NFTهای تأییدنشده
 Unverified: تأییدنشده
+$agent_capacity_limit_title: عامل موقتاً در دسترس نیست
+$agent_capacity_limit_known: درخواست‌های جدید را می‌توان پس از %duration% ارسال کرد.
+$agent_capacity_degraded_title: ممکن است پاسخ‌های عامل ناپایدار باشند
+$agent_capacity_limit_unknown: می‌توانید دوباره تلاش کنید، اما ممکن است پاسخ بارگیری نشود.
+$agent_response_failed_title: دریافت پاسخ ممکن نشد
+$agent_response_interrupted_title: پاسخ قطع شد
+$agent_retry_request: تلاش دوباره برای درخواست
+$agent_rate_limit_title: درخواست‌های بسیار زیاد برای عامل
+$agent_rate_limit_body: "%duration% دیگر دوباره تلاش کنید."
+$agent_user_quota_meter: "سهمیهٔ عامل: %remaining% از %limit% واحد باقی مانده"
+$agent_user_quota_reset: سهمیهٔ روزانه تا %duration% دیگر بازنشانی می‌شود.
+$agent_user_quota_exhausted_title: سهمیهٔ عامل کافی نیست
+$agent_user_quota_exhausted_body: سهمیهٔ موجود برای این درخواست کافی نیست. سهمیهٔ روزانه %limit% واحد است و تا %duration% دیگر بازنشانی می‌شود.
+$agent_time_hours: "%value% ساعت"
+$agent_time_minutes: "%value% دقیقه"
+$agent_time_seconds: "%value% ثانیه"
+Switched to %account%: به %account% تغییر یافت
+See All: مشاهده همه
+Add an **extra layer of security** for your wallet in TON network.: یک **لایه امنیتی اضافی** برای کیف پول خود در شبکه TON اضافه کنید.
+Agent is unavailable: دستیار در دسترس نیست
+Another transaction was sent from this wallet simultaneously. Please try again.: تراکنش دیگری به‌طور همزمان از این کیف پول ارسال شد. لطفاً دوباره تلاش کنید.
+Buying with card is not supported for this chain.: خرید با کارت برای این شبکه پشتیبانی نمی‌شود.
+Confirm with Telegram: تأیید با تلگرام
+Couldn't open support chat. Please try again.: گفتگوی پشتیبانی باز نشد. لطفاً دوباره تلاش کنید.
+Couldn't prepare logs for export. Please try again.: گزارش‌ها برای خروجی گرفتن آماده نشدند. لطفاً دوباره تلاش کنید.
+Disconnect Dapps: قطع اتصال اپلیکیشن‌ها
+EIP-712 domain: دامنه EIP-712
+Earn is not supported on this account.: استیکینگ در این حساب پشتیبانی نمی‌شود.
+Export Logs: خروجی گرفتن از گزارش‌ها
+Failed to load chat: بارگذاری گفتگو ناموفق بود
+Gram: Gram
+MFA NFT transfers support up to 4 NFTs at a time.: انتقال‌های NFT با MFA حداکثر ۴ NFT را به‌طور همزمان پشتیبانی می‌کنند.
+More Details: جزئیات بیشتر
+Open Telegram: باز کردن تلگرام
+Open addresses: آدرس‌ها را باز می‌کند
+SDK is not ready. Please try again.: SDK آماده نیست. لطفاً دوباره تلاش کنید.
+Selected NFTs must use the same network: NFTهای انتخاب‌شده همگی باید از یک شبکه استفاده کنند
+Selling is not supported for this token.: فروش این توکن پشتیبانی نمی‌شود.
+Shows more information: اطلاعات بیشتری نشان می‌دهد
+Sign transfers and important actions with your passcode, **then confirm them in Telegram**.: انتقال‌ها و اقدامات مهم را با رمز عبور خود امضا کنید، **سپس آن‌ها را در تلگرام تأیید نمایید**.
+Telegram Account: حساب تلگرام
+This action cannot be undone.: این اقدام قابل بازگشت نیست.
+This action is no longer available.: این اقدام دیگر در دسترس نیست.
+This helps **protect your funds** even if your recovery phrase or keys are compromised.: این کار حتی در صورت لو رفتن عبارت بازیابی یا کلیدهای شما، از **دارایی‌هایتان محافظت می‌کند**.
+Transaction is not ready: تراکنش آماده نیست
+Unsupported Wallet Version: نسخه پشتیبانی‌نشده کیف پول
+Unsupported version: نسخه پشتیبانی‌نشده
+Waiting For Payment: در انتظار پرداخت
+Today's Movers: بیشترین تغییرات امروز
+Popular Tokens: توکن‌های محبوب
+Tokenized Stocks: سهام توکن‌شده
+Tokenized Gold: طلای توکن‌شده
+Index Funds: صندوق‌های شاخص

@@ -20,12 +20,13 @@ import { fetchStoredAddress } from '../common/accounts';
 import { buildLocalTransaction } from '../common/helpers';
 import { bytesToBase64 } from '../common/utils';
 import { FAKE_TX_ID } from '../constants';
-import { publishSignedMfaRequest, registerMfaConfirmationHandler } from './mfa';
+import { requireMfaMethods } from './optional';
 import { buildTokenSlug } from './tokens';
 
 let onUpdate: OnApiUpdate;
 
 const DRAFT_CACHE_TTL = 5 * SECOND;
+const DRAFT_CACHE_MAX_ENTRIES = 64;
 
 type DraftCacheEntry = {
   value?: ApiCheckTransactionDraftResult;
@@ -58,6 +59,20 @@ function buildDraftCacheKey(chain: ApiChain, options: ApiCheckTransactionDraftOp
   });
 }
 
+function pruneDraftCache(now: number) {
+  for (const [key, entry] of draftCache) {
+    if (entry.expiresAt <= now) {
+      draftCache.delete(key);
+    }
+  }
+
+  while (draftCache.size > DRAFT_CACHE_MAX_ENTRIES) {
+    const oldestKey = draftCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    draftCache.delete(oldestKey);
+  }
+}
+
 function normalizePayloadForKey(payload?: ApiTransferPayload) {
   if (!payload) return undefined;
 
@@ -86,25 +101,36 @@ export function initTransfer(_onUpdate: OnApiUpdate) {
   onUpdate = _onUpdate;
 }
 
-export async function checkTransactionDraft(chain: ApiChain, options: ApiCheckTransactionDraftOptions) {
+export async function checkTransactionDraft(
+  chain: ApiChain,
+  options: ApiCheckTransactionDraftOptions,
+  signal?: AbortSignal,
+) {
+  if (signal) return chains[chain].checkTransactionDraft(options, signal);
+
   const cacheKey = buildDraftCacheKey(chain, options);
   const now = Date.now();
+  pruneDraftCache(now);
   const cached = draftCache.get(cacheKey);
 
   if (cached) {
     if (cached.value && cached.expiresAt > now) {
+      draftCache.delete(cacheKey);
+      draftCache.set(cacheKey, cached);
       return cached.value;
     }
     if (cached.inFlight) {
+      draftCache.delete(cacheKey);
+      draftCache.set(cacheKey, cached);
       return cached.inFlight;
     }
     draftCache.delete(cacheKey);
   }
 
+  const entry: DraftCacheEntry = { expiresAt: now + DRAFT_CACHE_TTL };
   const inFlight = chains[chain].checkTransactionDraft(options)
     .then((result) => {
-      const entry = draftCache.get(cacheKey);
-      if (entry) {
+      if (draftCache.get(cacheKey) === entry) {
         entry.inFlight = undefined;
         if (!('error' in result)) {
           entry.value = result;
@@ -116,14 +142,13 @@ export async function checkTransactionDraft(chain: ApiChain, options: ApiCheckTr
       return result;
     })
     .catch((err) => {
-      draftCache.delete(cacheKey);
+      if (draftCache.get(cacheKey) === entry) draftCache.delete(cacheKey);
       throw err;
     });
 
-  draftCache.set(cacheKey, {
-    inFlight,
-    expiresAt: now + DRAFT_CACHE_TTL,
-  });
+  entry.inFlight = inFlight;
+  draftCache.set(cacheKey, entry);
+  pruneDraftCache(now);
 
   return inFlight;
 }
@@ -178,6 +203,7 @@ export async function submitTransfer(
   const comment = payload?.type === 'comment' && !payload.shouldEncrypt ? payload.text : undefined;
 
   if (result.mfaRequest) {
+    const { publishSignedMfaRequest, registerMfaConfirmationHandler } = requireMfaMethods();
     const mfaResult = await publishSignedMfaRequest(accountId, chain, result.mfaRequest);
     registerMfaConfirmationHandler(mfaResult.mfaRequestHash, (txHash) => {
       createLocalTransactions(accountId, chain, [{

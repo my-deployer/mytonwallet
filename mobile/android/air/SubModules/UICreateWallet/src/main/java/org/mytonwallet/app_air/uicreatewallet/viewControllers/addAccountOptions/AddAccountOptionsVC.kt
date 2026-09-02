@@ -152,7 +152,7 @@ class AddAccountOptionsVC(
                 item = SettingsItem(
                     SettingsItem.Identifier.NONE,
                     org.mytonwallet.app_air.icons.R.drawable.ic_add_secret,
-                    LocaleController.getPluralOrFormat("%1\$d Secret Words", 12, "12/24"),
+                    LocaleController.getPluralOrFormat("%count% Secret Words", 12, "12/24"),
                     LocaleController.getString("Restore wallet from 12 or 24 words"),
                     value = null,
                     hasTintColor = false

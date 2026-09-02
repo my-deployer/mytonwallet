@@ -250,15 +250,21 @@ export class EvmConnect {
   private async connectWallet(silent: boolean): Promise<DappConnectionResult<DappProtocolType.WalletConnect>> {
     if (silent) {
       const now = Date.now();
+
       const cached = this.silentReconnect;
+
       if (cached && cached.expiresAt > now) {
         return cached.promise as Promise<DappConnectionResult<DappProtocolType.WalletConnect>>;
       }
+
       const id = ++this.lastGeneratedId;
+
       const promise = this.requestWc('reconnect', [id]) as
         Promise<DappConnectionResult<DappProtocolType.WalletConnect>>;
       const entry = { promise, expiresAt: now + 500 };
+
       this.silentReconnect = entry;
+
       promise.then(
         (resp) => {
           if (!resp || !resp.success) {
@@ -271,6 +277,7 @@ export class EvmConnect {
       );
       return promise;
     }
+
     const id = ++this.lastGeneratedId;
 
     const metadata = {

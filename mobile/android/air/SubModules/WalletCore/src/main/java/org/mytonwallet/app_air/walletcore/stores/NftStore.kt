@@ -821,6 +821,31 @@ object NftStore : IStore {
         cachedNftCollections[accountId] = collections
     }
 
+    /**
+     * Whether the account owns at least one collectible that is shown to the user. Answers from the
+     * active account's data synchronously; other accounts fall back to the cache on disk (IO).
+     */
+    fun hasVisibleNfts(accountId: String): Boolean {
+        val currentData = nftData?.takeIf { it.accountId == accountId }
+        val nfts = currentData?.cachedNfts
+            ?: fetchCachedNfts(accountId)
+            ?: return false
+        val blacklistedNftAddresses = currentData?.blacklistedNftAddresses
+            ?: WGlobalStorage.getBlacklistedNftAddresses(accountId)
+        val whitelistedNftAddresses = currentData?.whitelistedNftAddresses
+            ?: WGlobalStorage.getWhitelistedNftAddresses(accountId)
+        val areUnverifiedNftsHidden = WGlobalStorage.getAreUnverifiedNftsHidden()
+        return nfts.any { nft ->
+            !shouldHideNft(
+                isHiddenByUser = blacklistedNftAddresses.contains(nft.address),
+                isWhitelisted = whitelistedNftAddresses.contains(nft.address),
+                isHidden = nft.isHidden == true,
+                isUnverified = nft.isUnverified == true,
+                areUnverifiedNftsHidden = areUnverifiedNftsHidden
+            )
+        }
+    }
+
     fun fetchCachedNfts(accountId: String): List<ApiNft>? {
         val nftsString = WCacheStorage.getNfts(accountId) ?: run {
             if (WGlobalStorage.getAccountTonAddress(accountId) == null) "[]" else null

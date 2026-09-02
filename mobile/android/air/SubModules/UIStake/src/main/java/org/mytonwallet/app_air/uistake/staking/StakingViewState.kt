@@ -47,9 +47,9 @@ sealed class StakeButtonState {
     }
 
     object InsufficientBalance : StakeButtonState() {
-        fun getText(symbol: String): String = LocaleController.getFormattedString(
-            "Insufficient %1$@ Balance",
-            listOf(symbol)
+        fun getText(symbol: String): String = LocaleController.getStringWithKeyValues(
+            "Insufficient %symbol% Balance",
+            listOf("%symbol%" to symbol)
         )
 
         override val isEnabled = false

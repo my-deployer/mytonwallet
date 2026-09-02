@@ -2,6 +2,7 @@ import type { ApiActivity, ApiChain, ApiSwapActivity, ApiSwapHistoryItem } from 
 import type { WalletOperationIntent } from './activities/reconciler/types';
 
 import { SWAP_API_VERSION, TONCOIN } from '../../config';
+import { throwIfAborted } from '../../util/abortSignal';
 import { parseAccountId } from '../../util/account';
 import { buildBackendSwapId, getActivityTokenSlugs, parseTxId } from '../../util/activities';
 import { mergeSortedActivities, sortActivities } from '../../util/activities/order';
@@ -32,13 +33,13 @@ export async function swapGetHistory(address: string, params: {
   isCex?: boolean;
   asset?: string;
   hashes?: string[];
-}): Promise<ApiSwapHistoryItem[]> {
+}, signal?: AbortSignal): Promise<ApiSwapHistoryItem[]> {
   const { swapVersion } = await getBackendConfigCache();
 
   const items = await callBackendPost<ApiSwapHistoryItem[]>(`/swap/history/${address}`, {
     ...params,
     swapVersion: swapVersion ?? SWAP_API_VERSION,
-  });
+  }, { signal });
 
   return items.map(convertSwapItemToTrusted);
 }
@@ -49,14 +50,14 @@ export async function swapGetHistoryByAddresses(addressByChain: SwapHistoryAddre
   isCex?: boolean;
   token?: string;
   hashes?: string[];
-}): Promise<ApiSwapHistoryItem[]> {
+}, signal?: AbortSignal): Promise<ApiSwapHistoryItem[]> {
   const { swapVersion } = await getBackendConfigCache();
 
   const items = await callBackendPost<ApiSwapHistoryItem[]>('/swap/history/by-addresses', {
     ...params,
     addressByChain,
     swapVersion: swapVersion ?? SWAP_API_VERSION,
-  });
+  }, { signal });
 
   return items.map(convertSwapItemToTrusted);
 }
@@ -169,18 +170,18 @@ export async function swapReplaceActivities(
   activities: ApiActivity[],
   slug?: string,
   isToNow?: boolean,
-  options: { incompleteTonTraceIds?: readonly string[] } = {},
+  options: { incompleteTonTraceIds?: readonly string[]; signal?: AbortSignal } = {},
 ): Promise<ApiActivity[]> {
   // Both projections ask the same question of the intent store, and on the native platforms every read of it crosses
   // the bridge, so one read serves the whole pass.
   const intents = activities.length && parseAccountId(accountId).network !== 'testnet'
     ? await getWalletOperationIntents(accountId)
     : [];
-  const cexActivities = await swapReplaceCexActivities(accountId, activities, intents, slug, isToNow);
+  const cexActivities = await swapReplaceCexActivities(accountId, activities, intents, slug, isToNow, options.signal);
   // TON trace aggregation owns the canonical on-chain representation. Run it before backend DEX projection so an
   // explicitly-identical backend row is suppressed against the aggregate on every platform, not only web reducers.
   const tonActivities = await aggregateTonSwapActivities(accountId, cexActivities, options.incompleteTonTraceIds);
-  return swapReplaceBackendDexActivities(accountId, tonActivities, intents, slug, isToNow);
+  return swapReplaceBackendDexActivities(accountId, tonActivities, intents, slug, isToNow, options.signal);
 }
 
 const IN_FLIGHT_INTENT_LOOKBACK = HOUR;
@@ -216,6 +217,7 @@ async function swapReplaceBackendDexActivities(
   intents: readonly WalletOperationIntent[],
   slug?: string,
   isToNow?: boolean,
+  signal?: AbortSignal,
 ): Promise<ApiActivity[]> {
   if (
     !activities.length
@@ -247,7 +249,7 @@ async function swapReplaceBackendDexActivities(
       asset: slug ? getTokenBySlug(slug)?.tokenAddress ?? TONCOIN.symbol : undefined,
       hashes,
       isCex: false,
-    })).filter((swap) => !swap.cex);
+    }, signal)).filter((swap) => !swap.cex);
 
     if (!swaps.length) return activities;
 
@@ -289,6 +291,7 @@ async function swapReplaceBackendDexActivities(
 
     return mergeSortedActivities(sortActivities(projectedSwapActivities), projectedSourceActivities);
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('swapReplaceBackendDexActivities', err);
     return activities;
   }
@@ -301,6 +304,7 @@ async function swapReplaceCexActivities(
   intents: readonly WalletOperationIntent[],
   slug?: string,
   isToNow?: boolean,
+  signal?: AbortSignal,
 ): Promise<ApiActivity[]> {
   if (!activities.length || parseAccountId(accountId).network === 'testnet' || !canHaveCexSwap(slug, activities)) {
     return activities;
@@ -338,7 +342,7 @@ async function swapReplaceCexActivities(
       token: slug ? getSwapHistoryTokenFilter(slug) : undefined,
       hashes,
       isCex: true,
-    });
+    }, signal);
 
     if (!swaps.length) {
       return activities;
@@ -378,6 +382,7 @@ async function swapReplaceCexActivities(
     // It's important to enforce our sorting, because otherwise `mergeSortedActivities` may leave duplicates.
     return mergeSortedActivities(sortActivities(projectedSwapActivities), projectedSourceActivities);
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('swapReplaceCexActivities', err);
     return activities;
   }

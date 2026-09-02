@@ -59,6 +59,7 @@ public actor _BalanceDataStore: WalletCoreData.EventsObserver {
 
     @MainActor private var byAccountId: MainActorByAccountIdStore<AccountBalanceData> = .init(initialValue: AccountBalanceData.init(accountId:))
     private var updateDataTask: Task<Void, Never>?
+    private var prewarmTask: Task<Void, Never>?
     private var lastUpdateData: Date = .distantPast
 
     private init() {
@@ -79,7 +80,20 @@ public actor _BalanceDataStore: WalletCoreData.EventsObserver {
         WalletCoreData.add(eventObserver: self)
     }
 
+    /// Eagerly computes data for accounts that were never displayed, so switching to them doesn't flash placeholders
+    public func prewarm(accountIds: [String]) {
+        prewarmTask?.cancel()
+        prewarmTask = Task {
+            for accountId in accountIds {
+                guard !Task.isCancelled else { return }
+                await recomputeAccountIfMissing(accountId: accountId)
+            }
+        }
+    }
+
     public func clean() async {
+        prewarmTask?.cancel()
+        prewarmTask = nil
         updateDataTask?.cancel()
         updateDataTask = nil
         lastUpdateData = .distantPast

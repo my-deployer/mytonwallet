@@ -10,7 +10,7 @@ import Perception
 @MainActor struct SwapDetailsVM {
     var fromToken: ApiToken { inputModel.sellingToken }
     var toToken: ApiToken { inputModel.buyingToken }
-    let swapEstimate: ApiSwapEstimateResponse?
+    let swapEstimate: ApiSwapDexEstimateResponse?
     
     private var inputModel: SwapInputModel
     
@@ -21,19 +21,19 @@ import Perception
         return nil
     }
     
-    init(onchainModel: OnchainSwapModel, inputModel: SwapInputModel) {
-        self.swapEstimate = onchainModel.swapEstimate
+    init(swapEstimate: ApiSwapDexEstimateResponse?, inputModel: SwapInputModel) {
+        self.swapEstimate = swapEstimate
         self.inputModel = inputModel
     }
 
-    var displayEstimate: ApiSwapEstimateResponse? {
+    var displayEstimate: ApiSwapDexEstimateResponse? {
         swapEstimate
     }
     var displayExchangeRate: SwapRate? {
         if let est = displayEstimate {
             return ExchangeRateHelpers.getSwapRate(
-                fromAmount: est.fromAmount?.value,
-                toAmount: est.toAmount?.value,
+                fromAmount: est.fromAmount.value,
+                toAmount: est.toAmount.value,
                 fromToken: fromToken,
                 toToken: toToken
             )
@@ -67,8 +67,8 @@ struct SwapDetailsView: View {
     var sellingToken: ApiToken { model.fromToken }
     var buyingToken: ApiToken { model.toToken }
     var exchangeRate: SwapRate? { model.displayExchangeRate }
-    var swapEstimate: ApiSwapEstimateResponse? { model.swapEstimate }
-    var displayEstimate: ApiSwapEstimateResponse? { model.displayEstimate }
+    var swapEstimate: ApiSwapDexEstimateResponse? { model.swapEstimate }
+    var displayEstimate: ApiSwapDexEstimateResponse? { model.displayEstimate }
     
     @State private var slippageFocused: Bool = false
     @State private var isExpanded = false
@@ -95,25 +95,7 @@ struct SwapDetailsView: View {
     
     @ViewBuilder
     var pricePerCoinRow: some View {
-        
-        if let exchangeRate = exchangeRate, displayEstimate != nil {
-            InsetCell {
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 0) {
-                        Text(lang("Exchange Rate"))
-                            .foregroundStyle(Color.air.secondaryLabel)
-                        Spacer(minLength: 4)
-                        let priceAmount = DecimalAmount.fromDouble(exchangeRate.price, exchangeRate.fromToken)
-                        Text("\(exchangeRate.toToken.symbol) ≈ \(priceAmount.formatted(.compact))")
-                            .textStyle(
-                                .body,
-                                content: .technical,
-                                scaling: .dynamic
-                            )
-                    }
-                }
-            }
-        }
+        SwapExchangeRateRow(exchangeRate: exchangeRate)
     }
     
     @ViewBuilder
@@ -201,11 +183,8 @@ struct SwapDetailsView: View {
         if let displayEstimate {
             let nativeToken = TokenStore.tokens[sellingToken.nativeTokenSlug]
             let feeDetails = model.feeDetails
-            InsetDetailCell {
-                SwapBlockchainFeeLabel(nativeToken: nativeToken, feeDetails: feeDetails)
-            } value: {
-                if let nativeToken,
-                   let feeDetails {
+            if let nativeToken, let feeDetails {
+                SwapBlockchainFeeRow(nativeToken: nativeToken, feeDetails: feeDetails) {
                     FeeView(
                         token: sellingToken,
                         nativeToken: nativeToken,
@@ -214,7 +193,9 @@ struct SwapDetailsView: View {
                         includeLabel: false,
                         showDetailsButton: false
                     )
-                } else if let tonToken = TokenStore.tokens[TONCOIN_SLUG] {
+                }
+            } else if let tonToken = TokenStore.tokens[TONCOIN_SLUG] {
+                SwapBlockchainFeeRow(nativeToken: nil, feeDetails: nil) {
                     let fee = sellingToken.chain == .ton ? displayEstimate.realNetworkFee : displayEstimate.networkFee
                     let feeAmountString = DecimalAmount.fromDouble(fee.value, tonToken).formatted(.fee)
                     Text("~\(feeAmountString)")

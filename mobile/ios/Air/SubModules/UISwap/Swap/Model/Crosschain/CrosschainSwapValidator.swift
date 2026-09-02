@@ -21,15 +21,11 @@ import WalletContext
         if swapEstimate.isEnoughNative == false {
             issue = sellingToken.isNative ? .insufficientBalance : .notEnoughToken(nativeToken(for: sellingToken))
         }
-        if let fromMin = swapEstimate.fromMin {
-            if swapEstimate.fromAmount < fromMin {
-                issue = .minimumAmount(fromMin, sellingToken)
-            }
+        if swapEstimate.fromAmount < swapEstimate.fromMin {
+            issue = .minimumAmount(swapEstimate.fromMin, sellingToken)
         }
-        if let fromMax = swapEstimate.fromMax, fromMax > 0 {
-            if swapEstimate.fromAmount > fromMax {
-                issue = .maximumAmount(fromMax, sellingToken)
-            }
+        if swapEstimate.fromMax > 0, swapEstimate.fromAmount > swapEstimate.fromMax {
+            issue = .maximumAmount(swapEstimate.fromMax, sellingToken)
         }
         return issue
     }

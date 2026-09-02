@@ -142,7 +142,7 @@ final class WalletConnectPaySignTransactionVC: WViewController, UISheetPresentat
             return
         }
         let insufficientTokens = dappRequest.insufficientTokens(accountContext: $account)
-        errorLabel.text = insufficientTokens.map { lang("Not Enough %symbol%", arg1: $0) }
+        errorLabel.text = insufficientTokens.map { L10n.notEnoughSymbol(symbol: $0) }
         errorLabel.isHidden = insufficientTokens == nil
         sendButton.isEnabled = canSend(insufficientTokens: insufficientTokens)
     }
@@ -293,7 +293,7 @@ private struct WalletConnectPayTransferInfoView: View {
                     )
                 }
             } header: {
-                Text(lang("$many_transactions", arg1: transfers.count))
+                Text(L10n.manyTransactions(count: transfers.count))
             }
         }
     }
@@ -322,7 +322,7 @@ private struct WalletConnectPayTransferRow: View {
     private var rowText: String {
         let amountText = displayedAmountText
         let address = formatStartEndAddress(transfer.displayedToAddress)
-        let toText = lang("$transaction_to", arg1: address)
+        let toText = L10n.transactionTo(address: address)
 
         guard !amountText.isEmpty else {
             return toText

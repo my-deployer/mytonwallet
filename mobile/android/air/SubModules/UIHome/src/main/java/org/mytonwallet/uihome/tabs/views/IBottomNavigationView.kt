@@ -15,6 +15,7 @@ abstract class IBottomNavigationView(context: Context) :
         const val ID_EXPLORE = 3
         const val ID_SETTINGS = 4
         const val ID_PORTFOLIO = 5
+        const val ID_MARKET = 6
     }
 
     interface Listener {

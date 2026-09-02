@@ -8,9 +8,10 @@ typealias ContextMenuLongPressSequenceValue = SequenceGesture<LongPressGesture, 
 @available(iOS 16.0, *)
 final class ContextMenuSwiftUISourceBridge: ObservableObject {
     private weak var anchorView: ContextMenuSourceAnchorView?
-    private var presentedOverlayView: ContextMenuOverlayView?
+    private weak var presentedSession: (any ContextMenuPresentationSession)?
 
     private var isEnabled = true
+    private var presentationMode: ContextMenuPresentationMode = .overlay
     private var sourcePortal: ContextMenuSourcePortal?
     private var configuration: (() -> ContextMenuConfiguration?)?
     private var isExternalSelectionActive = false
@@ -18,11 +19,13 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
     func update(
         anchorView: ContextMenuSourceAnchorView,
         isEnabled: Bool,
+        presentationMode: ContextMenuPresentationMode,
         sourcePortal: ContextMenuSourcePortal?,
         configuration: @escaping () -> ContextMenuConfiguration?
     ) {
         self.anchorView = anchorView
         self.isEnabled = isEnabled
+        self.presentationMode = presentationMode
         self.sourcePortal = sourcePortal
         self.configuration = configuration
     }
@@ -53,7 +56,7 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
             return
         }
         self.presentMenuIfNeeded(triggeredByLongPress: true)
-        self.presentedOverlayView?.updateExternalSelection(at: point)
+        self.presentedSession?.updateExternalSelection(at: point)
     }
 
     func handleLongPressChanged(at point: CGPoint) {
@@ -62,10 +65,10 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
         }
         self.presentMenuIfNeeded(triggeredByLongPress: true)
         if !self.isExternalSelectionActive {
-            self.presentedOverlayView?.beginExternalSelection(at: point)
+            self.presentedSession?.beginExternalSelection(at: point)
             self.isExternalSelectionActive = true
         }
-        self.presentedOverlayView?.updateExternalSelection(at: point)
+        self.presentedSession?.updateExternalSelection(at: point)
     }
 
     func handleLongPressEnded(performAction: Bool) {
@@ -73,7 +76,7 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
             return
         }
 
-        self.presentedOverlayView?.endExternalSelection(performAction: performAction)
+        self.presentedSession?.endExternalSelection(performAction: performAction)
         self.isExternalSelectionActive = false
     }
 
@@ -93,10 +96,10 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
                 return
             }
             if !self.isExternalSelectionActive {
-                self.presentedOverlayView?.beginExternalSelection(at: drag.location)
+                self.presentedSession?.beginExternalSelection(at: drag.location)
                 self.isExternalSelectionActive = true
             }
-            self.presentedOverlayView?.updateExternalSelection(at: drag.location)
+            self.presentedSession?.updateExternalSelection(at: drag.location)
         default:
             break
         }
@@ -115,12 +118,12 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
             shouldPerformAction = false
         }
 
-        self.presentedOverlayView?.endExternalSelection(performAction: shouldPerformAction)
+        self.presentedSession?.endExternalSelection(performAction: shouldPerformAction)
         self.isExternalSelectionActive = false
     }
 
     private func presentMenuIfNeeded(triggeredByLongPress: Bool = false) {
-        guard self.presentedOverlayView == nil, let anchorView, let configuration else {
+        guard self.presentedSession == nil, let anchorView, let configuration else {
             return
         }
         guard let configuration = configuration() else {
@@ -131,24 +134,25 @@ final class ContextMenuSwiftUISourceBridge: ObservableObject {
         }
 
         let presentationReference = self.makePresentationReference(for: anchorView)
-        guard let overlayView = ContextMenuPresenter.present(
+        guard let session = ContextMenuPresenter.present(
             configuration: configuration,
             from: anchorView,
+            presentation: self.presentationMode,
             presentationReference: presentationReference
         ) else {
             return
         }
 
-        overlayView.onDidDismiss = { [weak self, weak overlayView] in
+        session.onDidDismiss = { [weak self, weak session] in
             guard let self else {
                 return
             }
-            if self.presentedOverlayView === overlayView {
-                self.presentedOverlayView = nil
+            if self.presentedSession === session {
+                self.presentedSession = nil
                 self.isExternalSelectionActive = false
             }
         }
-        self.presentedOverlayView = overlayView
+        self.presentedSession = session
     }
 
     private func makePresentationReference(for anchorView: UIView) -> ContextMenuPresentationReference {

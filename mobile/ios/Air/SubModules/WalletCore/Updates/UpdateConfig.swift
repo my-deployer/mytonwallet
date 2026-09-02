@@ -8,7 +8,7 @@
 import Foundation
 
 extension ApiUpdate {
-    
+
     public struct UpdateConfig: Equatable, Hashable, Codable, Sendable {
         public enum SeasonalTheme: String, Equatable, Hashable, Codable, Sendable, CaseIterable {
             case newYear = "newYear"
@@ -21,6 +21,11 @@ extension ApiUpdate {
             case hybrid
         }
 
+        public enum AgentProtocolVersion: String, Equatable, Hashable, Codable, Sendable, CaseIterable {
+            case v1
+            case v2
+        }
+
         public var type = "updateConfig"
         public var isLimited: Bool?
         public var isCopyStorageEnabled: Bool?
@@ -29,6 +34,7 @@ extension ApiUpdate {
         public var isAppUpdateRequired: Bool?
         public var seasonalTheme: SeasonalTheme?
         public var knowledgeBaseVersion: String?
+        public var agentProtocolVersion: AgentProtocolVersion?
         public var preferredAgent: PreferredAgent?
         public var allowedOnOffRampCurrencies: [String]?
 
@@ -41,6 +47,7 @@ extension ApiUpdate {
             case isAppUpdateRequired
             case seasonalTheme
             case knowledgeBaseVersion
+            case agentProtocolVersion
             case preferredAgent
             case allowedOnOffRampCurrencies
         }
@@ -55,6 +62,7 @@ extension ApiUpdate {
             isAppUpdateRequired = try container.decodeIfPresent(Bool.self, forKey: .isAppUpdateRequired)
             seasonalTheme = try? container.decodeIfPresent(SeasonalTheme.self, forKey: .seasonalTheme)
             knowledgeBaseVersion = try? container.decodeIfPresent(String.self, forKey: .knowledgeBaseVersion)
+            agentProtocolVersion = try? container.decodeIfPresent(AgentProtocolVersion.self, forKey: .agentProtocolVersion)
             preferredAgent = try? container.decodeIfPresent(PreferredAgent.self, forKey: .preferredAgent)
             // A malformed value must read as an absent field: on iOS that is the fail-closed branch.
             allowedOnOffRampCurrencies = try? container.decodeIfPresent([String].self, forKey: .allowedOnOffRampCurrencies)

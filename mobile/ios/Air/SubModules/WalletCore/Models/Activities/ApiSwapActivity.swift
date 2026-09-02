@@ -237,7 +237,7 @@ public func getSwapType(from: String, to: String, accountChains: Set<ApiChain>) 
 }
 
 public func getShouldSkipSwapWaitingStatus(swap: ApiSwapActivity, accountChains: Set<ApiChain>) -> Bool {
-    getSwapType(from: swap.from, to: swap.to, accountChains: accountChains) != .crosschainToWallet
+    getSwapType(from: swap.from, to: swap.to, accountChains: accountChains).cexTopology != .toWallet
 }
 
 public func getShouldSkipSwapWaitingStatus(activity: ApiActivity, accountChains: Set<ApiChain>) -> Bool {

@@ -14,12 +14,13 @@ import type {
 } from '../../types';
 
 import { parseAccountId } from '../../../util/account';
+import { raceWithAbortSignal, throwIfAborted } from '../../../util/abortSignal';
 import { explainApiTransferFee } from '../../../util/fee/transferFee';
 import { logDebugError } from '../../../util/logs';
 import { getNativeToken } from '../../../util/tokens';
 import { getTokenByAddress } from '../../common/tokens';
 import { fetchPrivateKeyString } from './auth';
-import { getChainParameters, getTronClient } from './util/tronweb';
+import { fetchChainParameters, getChainParameters, getTronClient } from './util/tronweb';
 import { fetchStoredChainAccount, fetchStoredWallet } from '../../common/accounts';
 import { handleServerError } from '../../errors';
 import { getTrc20Balance, getWalletBalance } from './wallet';
@@ -30,6 +31,7 @@ const SIGNATURE_SIZE = 65;
 
 export async function checkTransactionDraft(
   options: ApiCheckTransactionDraftOptions,
+  signal?: AbortSignal,
 ): Promise<ApiCheckTransactionDraftResult> {
   const {
     accountId, amount, toAddress, tokenAddress, payload,
@@ -52,9 +54,9 @@ export async function checkTransactionDraft(
 
     const { address } = await fetchStoredWallet(accountId, 'tron');
     const [trxBalance, bandwidth, { energyUnitFee, bandwidthUnitFee }] = await Promise.all([
-      getWalletBalance(network, address),
-      tronWeb.trx.getBandwidth(address),
-      getChainParameters(network),
+      raceWithAbortSignal(() => getWalletBalance(network, address), signal),
+      raceWithAbortSignal(() => tronWeb.trx.getBandwidth(address), signal),
+      signal ? fetchChainParameters(network, signal) : getChainParameters(network),
     ]);
 
     let fee: bigint;
@@ -67,13 +69,17 @@ export async function checkTransactionDraft(
         amount,
         energyUnitFee,
         fromAddress: address,
+        signal,
       });
     } else {
       // This call throws "Error: Invalid amount provided" when the amount is 0.
       // It doesn't throw when the amount is > than the balance.
       const [transaction, account] = await Promise.all([
-        tronWeb.transactionBuilder.sendTrx(toAddress, Number(amount ?? 1), address),
-        tronWeb.trx.getAccount(toAddress),
+        raceWithAbortSignal(
+          () => tronWeb.transactionBuilder.sendTrx(toAddress, Number(amount ?? 1), address),
+          signal,
+        ),
+        raceWithAbortSignal(() => tronWeb.trx.getAccount(toAddress), signal),
       ]);
 
       const size = 9 + 60 + Buffer.from(transaction.raw_data_hex, 'hex').byteLength + SIGNATURE_SIZE;
@@ -106,6 +112,7 @@ export async function checkTransactionDraft(
 
     return result;
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('tron:checkTransactionDraft', err);
     return {
       ...handleServerError(err),
@@ -193,13 +200,17 @@ async function estimateTrc20TransferFee(tronWeb: TronWeb, options: {
   amount?: bigint;
   energyUnitFee: number;
   fromAddress: string;
+  signal?: AbortSignal;
 }) {
   const {
-    network, tokenAddress, toAddress, energyUnitFee, fromAddress,
+    network, tokenAddress, toAddress, energyUnitFee, fromAddress, signal,
   } = options;
 
   let { amount } = options;
-  const tokenBalance = await getTrc20Balance(network, tokenAddress, fromAddress);
+  const tokenBalance = await raceWithAbortSignal(
+    () => getTrc20Balance(network, tokenAddress, fromAddress),
+    signal,
+  );
 
   if (!tokenBalance) {
     return TRON_GAS.transferTrc20Estimated;
@@ -211,15 +222,18 @@ async function estimateTrc20TransferFee(tronWeb: TronWeb, options: {
 
   // This call throws "Error: REVERT opcode executed" when the given amount is more than the token balance.
   // It doesn't throw when the amount is 0.
-  const { energy_required: energyRequired } = await tronWeb.transactionBuilder.estimateEnergy(
-    tokenAddress,
-    'transfer(address,uint256)',
-    {},
-    [
-      { type: 'address', value: toAddress },
-      { type: 'uint256', value: Number(amount) },
-    ],
-    fromAddress,
+  const { energy_required: energyRequired } = await raceWithAbortSignal(
+    () => tronWeb.transactionBuilder.estimateEnergy(
+      tokenAddress,
+      'transfer(address,uint256)',
+      {},
+      [
+        { type: 'address', value: toAddress },
+        { type: 'uint256', value: Number(amount) },
+      ],
+      fromAddress,
+    ),
+    signal,
   );
 
   return BigInt(energyUnitFee * energyRequired);

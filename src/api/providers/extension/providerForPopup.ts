@@ -7,8 +7,8 @@ import { createExtensionInterface } from '../../../util/createPostMessageInterfa
 import { initWindowConnector } from '../../../util/windowProvider/connector';
 import * as extensionMethods from '../../extensionMethods';
 import initExtensionMethods from '../../extensionMethods/init';
-import * as methods from '../../methods';
 import initApi, { destroy as destroyMethods } from '../../methods/init';
+import { methods } from '../../methods/registry';
 
 // Register the reverse connector listener early, before the popup attempts to connect
 initWindowConnector();

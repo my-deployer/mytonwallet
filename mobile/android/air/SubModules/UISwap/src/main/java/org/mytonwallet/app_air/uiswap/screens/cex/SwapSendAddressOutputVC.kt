@@ -258,8 +258,8 @@ class SwapSendAddressOutputVC(
 
         includeFontPadding = false
         text = LocaleController.getSpannableStringWithKeyValues(
-            "Send %1$@ this address:",
-            listOf(Pair("%1\$@", ssb))
+            "Send %token% this address:",
+            listOf(Pair("%token%", ssb))
         )
     }
 

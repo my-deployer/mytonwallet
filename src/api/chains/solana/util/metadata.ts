@@ -3,7 +3,7 @@ import type { ApiNetwork } from '../../../types';
 import { buildTokenSlug, getTokenBySlug, updateTokens } from '../../../common/tokens';
 import { fetchAssetsByAddresses } from '../wallet';
 
-export async function updateTokensMetadataByAddress(network: ApiNetwork, addresses: string[]) {
+export async function updateTokensMetadataByAddress(network: ApiNetwork, addresses: string[], signal?: AbortSignal) {
   const slugs = addresses.map((e) => ({ address: e, slug: buildTokenSlug('solana', e) }));
 
   const uncachedTokenAddresses: string[] = [];
@@ -15,7 +15,7 @@ export async function updateTokensMetadataByAddress(network: ApiNetwork, address
   }
 
   if (uncachedTokenAddresses.length) {
-    const fetched = await fetchAssetsByAddresses(network, uncachedTokenAddresses);
+    const fetched = await fetchAssetsByAddresses(network, uncachedTokenAddresses, signal);
     await updateTokens(fetched);
   }
 }

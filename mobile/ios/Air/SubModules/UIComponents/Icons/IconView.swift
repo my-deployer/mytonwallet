@@ -15,6 +15,68 @@ private let log = Log("IconView")
 private let stockTokenCornerRadiusRatio: CGFloat = 0.3
 
 public class IconView: UIView {
+    @MainActor
+    public struct Configuration {
+        public enum Shape {
+            case circle
+            case roundedSquare
+            case square
+        }
+
+        public let image: UIImage?
+        public let systemName: String?
+        public let initials: String?
+        public let shape: Shape
+        public let foregroundColor: UIColor?
+        public let backgroundColor: UIColor
+        public let initialsFont: UIFont?
+
+        public init(
+            image: UIImage,
+            shape: Shape = .circle,
+            backgroundColor: UIColor = .clear
+        ) {
+            self.image = image
+            self.systemName = nil
+            self.initials = nil
+            self.shape = shape
+            self.foregroundColor = nil
+            self.backgroundColor = backgroundColor
+            self.initialsFont = nil
+        }
+
+        public init(
+            systemName: String,
+            shape: Shape = .square,
+            foregroundColor: UIColor? = nil,
+            backgroundColor: UIColor = .clear
+        ) {
+            self.image = nil
+            self.systemName = systemName
+            self.initials = nil
+            self.shape = shape
+            self.foregroundColor = foregroundColor
+            self.backgroundColor = backgroundColor
+            self.initialsFont = nil
+        }
+
+        public init(
+            initials: String,
+            backgroundColor: UIColor,
+            foregroundColor: UIColor = .white,
+            shape: Shape = .circle,
+            initialsFont: UIFont? = nil
+        ) {
+            self.image = nil
+            self.systemName = nil
+            self.initials = initials
+            self.shape = shape
+            self.foregroundColor = foregroundColor
+            self.backgroundColor = backgroundColor
+            self.initialsFont = initialsFont
+        }
+    }
+
     private static let labelFont = UIFont.systemFont(ofSize: 20, weight: .semibold)
     private static let tokenPlaceholderTextColor = UIColor.air.secondaryLabel
     private static let tokenPlaceholderBorderColor = UIColor.air.secondaryLabel.withAlphaComponent(0.5)
@@ -545,6 +607,70 @@ public class IconView: UIView {
         gradientLayer.isHidden = true
         chainAccessoryView.isHidden = true
     }
+
+    public func config(with configuration: Configuration) {
+        switch configuration.shape {
+        case .circle:
+            applyIconShape(.circle)
+        case .roundedSquare:
+            applyIconShape(.roundedSquare)
+        case .square:
+            applyIconShape(.rectangle)
+        }
+
+        resetAccountAvatarState()
+        cachedTokenSlug = nil
+        cachedTokenImageURL = nil
+        tokenImageState = .none
+        hideTokenLoadingPlaceholder()
+        hideTokenPlaceholder()
+        imageView.kf.cancelDownloadTask()
+        resolveGradientColors = nil
+        gradientLayer.colors = nil
+        gradientLayer.isHidden = true
+        smallLabelTop.text = nil
+        smallLabelBottom.text = nil
+        chainAccessoryView.reset()
+        chainAccessoryView.isHidden = true
+        largeLabel.font = defaultLargeLabelFont
+        largeLabel.textColor = .white
+
+        imageView.backgroundColor = configuration.backgroundColor
+        if let image = configuration.image {
+            imageView.image = image
+            imageView.contentMode = .scaleAspectFill
+            imageView.tintColor = nil
+            largeLabel.text = nil
+        } else if let systemName = configuration.systemName {
+            imageView.image = UIImage(systemName: systemName)
+            imageView.contentMode = .center
+            imageView.tintColor = configuration.foregroundColor
+            largeLabel.text = nil
+        } else {
+            imageView.image = nil
+            imageView.contentMode = .center
+            imageView.tintColor = nil
+            largeLabel.text = configuration.initials
+            largeLabel.textColor = configuration.foregroundColor
+            largeLabel.font = configuration.initialsFont ?? defaultLargeLabelFont
+        }
+        updateChainAccessoryMask()
+    }
+
+    public func config(
+        withRemoteImageURL url: URL?,
+        placeholder: Configuration
+    ) {
+        config(with: placeholder)
+        guard let url else { return }
+        let placeholderImage = imageView.image
+        imageView.contentMode = .scaleAspectFill
+        imageView.kf.setImage(
+            with: url,
+            placeholder: placeholderImage,
+            options: [.transition(.fade(0.15))]
+        )
+    }
     
     private func configAsStakedToken(
         inWalletTokensList: Bool,
@@ -607,18 +733,16 @@ public class IconView: UIView {
         
         applyIconShape(iconShape)
 
+        largeLabel.font = defaultLargeLabelFont
         if size >= 80 {
-            largeLabel.font = UIFont.roundedNative(ofSize: 32, weight: .bold)
             smallLabelTop.font = UIFont.roundedNative(ofSize: 24, weight: .heavy)
             smallLabelBottom.font = UIFont.roundedNative(ofSize: 24, weight: .heavy)
             smallLabelTopBottomConstraint.constant = -2.333
         } else if size >= 40 {
-            largeLabel.font = UIFont.roundedNative(ofSize: 16, weight: .bold)
             smallLabelTop.font = UIFont.roundedNative(ofSize: 12, weight: .heavy)
             smallLabelBottom.font = UIFont.roundedNative(ofSize: 12, weight: .heavy)
             smallLabelTopBottomConstraint.constant = -1.333
         } else {
-            largeLabel.font = UIFont.roundedNative(ofSize: 14, weight: .bold)
             smallLabelTop.font = UIFont.roundedNative(ofSize: 9, weight: .heavy)
             smallLabelBottom.font = UIFont.roundedNative(ofSize: 9, weight: .heavy)
             smallLabelTopBottomConstraint.constant = -1
@@ -626,6 +750,16 @@ public class IconView: UIView {
         
         updateTokenPlaceholderAppearance()
         updateChainAccessoryMask()
+    }
+
+    private var defaultLargeLabelFont: UIFont {
+        if size >= 80 {
+            UIFont.roundedNative(ofSize: 32, weight: .bold)
+        } else if size >= 40 {
+            UIFont.roundedNative(ofSize: 16, weight: .bold)
+        } else {
+            UIFont.roundedNative(ofSize: 14, weight: .bold)
+        }
     }
 
     private var iconCornerRadius: CGFloat {

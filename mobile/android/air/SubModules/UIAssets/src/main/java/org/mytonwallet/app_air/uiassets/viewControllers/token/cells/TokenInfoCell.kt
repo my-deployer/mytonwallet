@@ -169,6 +169,7 @@ class TokenInfoCell(
     private var isShowingOriginalDescription = false
     private var pendingStateRenderRunnable: Runnable? = null
     private var pendingHeightUpdateRunnable: Runnable? = null
+    private var isExpandedHeightUpdatePending = false
 
     init {
         addView(containerView, LayoutParams(MATCH_PARENT, COLLAPSED_HEIGHT_DP.dp))
@@ -185,14 +186,15 @@ class TokenInfoCell(
     }
 
     fun configure(newState: TokenVM.TokenInfoState) {
-        val stateChanged = state != newState
+        val previousState = state
+        val stateChanged = previousState != newState
         if (!stateChanged) return
         state = newState
-        renderState(newState)
+        renderState(newState, previousState)
         updateTheme()
     }
 
-    private fun renderState(state: TokenVM.TokenInfoState) {
+    private fun renderState(state: TokenVM.TokenInfoState, previousState: TokenVM.TokenInfoState?) {
         heightAnimator?.cancel()
         heightAnimator = null
         descriptionToggleAnimator?.cancel()
@@ -202,11 +204,20 @@ class TokenInfoCell(
         val shouldExpand = state is TokenVM.TokenInfoState.Details &&
             WGlobalStorage.getIsTokenInfoExpanded()
         val wasExpanded = isExpanded
-        isExpanded = false
+        val shouldShowExpandedImmediately = shouldExpand && when (previousState) {
+            null -> true
+            is TokenVM.TokenInfoState.Details -> wasExpanded
+            else -> false
+        }
+        isExpanded = shouldShowExpandedImmediately
         isShowingOriginalDescription = false
-        setExpansionProgress(0f)
+        setExpansionProgress(if (isExpanded) 1f else 0f)
         detailsContainer.importantForAccessibility =
-            IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            if (isExpanded) {
+                IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            } else {
+                IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            }
 
         when (state) {
             TokenVM.TokenInfoState.Loading -> {
@@ -260,13 +271,17 @@ class TokenInfoCell(
             }
         }
         updateHeaderAccessibility()
-        setContainerHeight(COLLAPSED_HEIGHT_DP.dp, notify = wasExpanded, isExpanding = false)
+        if (previousState == null && isExpanded) {
+            containerView.updateLayoutParams { height = WRAP_CONTENT }
+        } else if (!isExpanded) {
+            setContainerHeight(COLLAPSED_HEIGHT_DP.dp, notify = wasExpanded, isExpanding = false)
+        }
         pendingStateRenderRunnable?.let(::removeCallbacks)
         Runnable {
             pendingStateRenderRunnable = null
             if (this.state != state) return@Runnable
             updateExpandedHeight()
-            if (shouldExpand) setExpanded(true, animated = true)
+            if (shouldExpand && !isExpanded) setExpanded(true, animated = true)
         }.also {
             pendingStateRenderRunnable = it
             post(it)
@@ -379,6 +394,16 @@ class TokenInfoCell(
     }
 
     private fun updateExpandedHeight() {
+        if (containerView.width == 0) {
+            if (!isExpandedHeightUpdatePending) {
+                isExpandedHeightUpdatePending = true
+                containerView.doOnLayout {
+                    isExpandedHeightUpdatePending = false
+                    if (state != null && containerView.width > 0) updateExpandedHeight()
+                }
+            }
+            return
+        }
         val measuredHeight = measureExpandedHeight() ?: return
         if (contentView.layoutParams.height != measuredHeight) {
             contentView.updateLayoutParams {

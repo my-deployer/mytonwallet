@@ -17,7 +17,7 @@ import type {
 import type { LangFn } from '../../../../hooks/useLang';
 import type { DropdownItem } from '../../../ui/Dropdown';
 
-import { IS_GRAM_WALLET, IS_MY_WALLET_BRAND } from '../../../../config';
+import { IS_GRAM_WALLET } from '../../../../config';
 import {
   selectAccountStakingStates, selectCurrentAccount,
   selectCurrentAccountId,
@@ -446,7 +446,7 @@ function Card({
           >
             <CardAddress withTextGradient={withTextGradient} />
           </Transition>
-          {IS_MY_WALLET_BRAND && !isNftBuyingDisabled && !isViewMode && (
+          {!isNftBuyingDisabled && !isViewMode && (
             <MintCardButton />
           )}
         </div>

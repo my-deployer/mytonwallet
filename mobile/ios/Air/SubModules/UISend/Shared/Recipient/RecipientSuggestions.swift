@@ -152,7 +152,7 @@ private struct SavedAddressButton: View {
               !suggestion.isCompatibleWithActiveChain else {
             return nil
         }
-        return lang("$address_suggestion_no_chain", arg1: model.chain.title)
+        return L10n.addressSuggestionNoChain(chain: model.chain.title)
     }
 
     var body: some View {
@@ -237,7 +237,7 @@ private struct AccountButton: View {
               !suggestion.isCompatibleWithActiveChain else {
             return nil
         }
-        return lang("$address_suggestion_no_chain", arg1: model.chain.title)
+        return L10n.addressSuggestionNoChain(chain: model.chain.title)
     }
     
     var body: some View {

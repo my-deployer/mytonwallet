@@ -30,6 +30,7 @@ import org.mytonwallet.app_air.walletcore.moshi.MApiFetchSwapItem
 import org.mytonwallet.app_air.walletcore.moshi.MApiFetchSwapsResult
 import org.mytonwallet.app_air.walletcore.moshi.MApiGetAddressInfoResult
 import org.mytonwallet.app_air.walletcore.moshi.MApiLedgerAccountInfo
+import org.mytonwallet.app_air.walletcore.moshi.MApiMarketAssetsResponse
 import org.mytonwallet.app_air.walletcore.moshi.MApiReconcileActivityUpdateResult
 import org.mytonwallet.app_air.walletcore.moshi.MApiSubmitTransferOptions
 import org.mytonwallet.app_air.walletcore.moshi.MApiSwapEstimateRequest
@@ -367,6 +368,14 @@ sealed class ApiMethod<T> {
                 Types.newParameterizedType(List::class.java, MApiTokenDetails::class.java)
             override val arguments: String = ArgumentsBuilder()
                 .jsArray(assets, String::class.java)
+                .build()
+        }
+
+        class FetchMarketAssets(langCode: String) : ApiMethod<MApiMarketAssetsResponse>() {
+            override val name: String = "fetchMarketAssets"
+            override val type: Type = MApiMarketAssetsResponse::class.java
+            override val arguments: String = ArgumentsBuilder()
+                .string(langCode)
                 .build()
         }
     }

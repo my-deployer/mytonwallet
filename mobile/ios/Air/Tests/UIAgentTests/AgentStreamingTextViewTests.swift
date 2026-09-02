@@ -23,4 +23,13 @@ final class AgentStreamingTextViewTests: XCTestCase {
 
         XCTAssertEqual(revealMaskLayer.fillRule, .nonZero)
     }
+
+    func testLegacyRevealControllerKeepsExistingMaximumLiveLag() {
+        let textLength = 4_096
+        let controller = AgentTextRevealController(initialRevealedCount: 0, initialLength: 0)
+
+        controller.observeUpdate(latestLength: textLength, at: 0)
+
+        XCTAssertEqual(controller.currentGlyphCount, textLength - 32)
+    }
 }

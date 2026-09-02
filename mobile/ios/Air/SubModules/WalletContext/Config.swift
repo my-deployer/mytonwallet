@@ -71,12 +71,12 @@ public var APP_WEBSITE_URL: String { IS_GRAM_WALLET ? "https://gramwallet.io" : 
 public let APP_BLOG_URL = "https://mywallet.io/en/blog/"
 public var APP_TERMS_OF_USE_URL: String { IS_GRAM_WALLET ? "https://gramwallet.io/terms-of-use/" : "https://mywallet.io/terms-of-use/" }
 public var APP_PRIVACY_POLICY_URL: String { IS_GRAM_WALLET ? "https://gramwallet.io/privacy-policy/" : "https://mywallet.io/privacy-policy/" }
-public var APP_INSTALL_URL: String { IS_GRAM_WALLET ? "https://apps.apple.com/us/app/gram-wallet/id6763345750" : "https://get.mywallet.io/ios" }
+public var APP_INSTALL_URL: String { IS_GRAM_WALLET ? "https://apps.apple.com/us/app/gram-wallet/id6763345750" : "https://get.mywallet.io/ios-store?utm_source=app_share" }
 public let BOT_USERNAME = "MyTonWalletBot"
 public let SUPPORT_USERNAME = "mysupport"
 
-public let MTW_TIPS_CHANNEL_NAME = "MyTonWalletTips"
-public let MTW_TIPS_CHANNEL_NAME_RU = "MyTonWalletTipsRu"
+public let MTW_TIPS_CHANNEL_NAME = "MyWalletTips"
+public let MTW_TIPS_CHANNEL_NAME_RU = "MyWalletTipsRu"
 public let MFA_BOT_URL = "https://t.me/tgmfabot/auth"
 
 public func buildMfaBotUrl(startApp: String) -> URL? {
@@ -98,6 +98,9 @@ public let HELP_CENTER_SEED_SCAM_URL = "https://help.mywallet.io/intro/scams/lea
 public let HELP_CENTER_SEED_SCAM_URL_RU = "https://help.mywallet.io/ru/baza-znanii/moshennichestvo-i-skamy/slitye-sid-frazy"
 public var DOMAIN_SCAM_REGEX: Regex<Substring> { /^[-\w]{26,}\./ }
 public let MTW_CARDS_COLLECTION = "EQCQE2L9hfwx1V8sgmF9keraHx1rNK9VmgR1ctVvINBGykyM"
+public let MTW_CARDS_MINT_BASE_URL = "https://static.mytonwallet.org/mint-cards/"
+public let MINT_CARD_ADDRESS = "EQBpst3ZWJ9Dqq5gE2YH-yPsFK_BqMOmgi7Z_qK6v7WbrPWv"
+public let MINT_CARD_COMMENT = "Mint card"
 
 public let CARD_RATIO: CGFloat = 208/358
 public let SMALL_CARD_RATIO: CGFloat = 116/80
@@ -139,7 +142,7 @@ public enum DebugTokenInfoMock {
     }
 }
 
-public enum WalletTokenPercentChangeThresholdExperiment {
+public enum WalletTokenPercentChangeThreshold {
     public enum Preset: String, CaseIterable, Identifiable, Sendable {
         case disabled
         case halfPercent
@@ -152,7 +155,7 @@ public enum WalletTokenPercentChangeThresholdExperiment {
         public var title: String {
             switch self {
             case .disabled:
-                "Off"
+                lang("$settings_token_change_threshold_off")
             case .halfPercent:
                 "0.5%"
             case .onePercent:
@@ -188,9 +191,8 @@ public enum WalletTokenPercentChangeThresholdExperiment {
     public static let userDefaultsKey = "experimental_walletTokenPercentChangeThreshold"
 
     public static var preset: Preset {
-        guard IS_DEBUG_OR_TESTFLIGHT_DEFAULT else { return .disabled }
         let rawValue = UserDefaults.standard.string(forKey: userDefaultsKey)
-        return rawValue.flatMap(Preset.init(rawValue:)) ?? .disabled
+        return rawValue.flatMap(Preset.init(rawValue:)) ?? .twoPercent
     }
 
     public static var initialPresetRawValue: String {
@@ -202,6 +204,35 @@ public enum WalletTokenPercentChangeThresholdExperiment {
     }
 }
 
+public enum WalletTokenChainAccessoryExperiment {
+    public static let userDefaultsKey = "experimental_hideUnlabeledWalletTokenChainAccessories"
+
+    public static var isEnabled: Bool {
+        guard UserDefaults.standard.object(forKey: userDefaultsKey) != nil else { return true }
+        return UserDefaults.standard.bool(forKey: userDefaultsKey)
+    }
+
+    public static func shouldShow(
+        isMultichain: Bool,
+        showsTokenLabel: Bool,
+        experimentEnabled: Bool = isEnabled
+    ) -> Bool {
+        isMultichain && (!experimentEnabled || showsTokenLabel)
+    }
+}
+
+public enum WalletActionButtonsSettings {
+    public static let hideActionButtonsRowUserDefaultsKey = "experimental_topTabsHideActionButtonsRow"
+    public static let didChangeNotification = Notification.Name("WalletActionButtonsSettingsDidChange")
+
+    public static var showsActionButtonsRow: Bool {
+        !UserDefaults.standard.bool(forKey: hideActionButtonsRowUserDefaultsKey)
+    }
+
+    public static func notifyDidChange() {
+        NotificationCenter.default.post(name: didChangeNotification, object: nil)
+    }
+}
 public let APP_ROOT_URL_DOMAINS = [ "gramwallet.io", "mytonwallet.io", "mywallet.io" ]
 
 public var IS_DEBUG_OR_TESTFLIGHT_DEFAULT: Bool {

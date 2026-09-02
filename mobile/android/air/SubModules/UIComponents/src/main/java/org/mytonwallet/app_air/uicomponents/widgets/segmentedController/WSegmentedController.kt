@@ -1,5 +1,6 @@
 package org.mytonwallet.app_air.uicomponents.widgets.segmentedController
 
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.view.MotionEvent
@@ -7,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import androidx.core.animation.doOnEnd
 import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.core.view.setPadding
@@ -68,7 +70,11 @@ class WSegmentedController(
     private val pilledTabs: Boolean = false,
     private val ownsItems: Boolean = true,
     private val initialPagePrefetchCount: Int? = null,
-    private val applyPagerSideInsets: Boolean = true
+    private val applyPagerSideInsets: Boolean = true,
+    // Keeps the tab bar (and its menu) visible even when there is only one item.
+    private val showSingleItemTabs: Boolean = false,
+    // Shows the arrow indicator next to the active tab when it has a menu.
+    private val showActiveTabArrow: Boolean = true
 ) : WView(navigationController.context),
     WThemedView,
     WProtectedView,
@@ -214,7 +220,8 @@ class WSegmentedController(
         WClearSegmentedControl(
             context,
             horizontalPaddingDp = if (pilledTabs) 1f else 11f,
-            isTransparent = isTransparent
+            isTransparent = isTransparent,
+            showActiveTabArrow = showActiveTabArrow
         )
     private var underTabsView: View? = null
     private var underTabsHeight = 0
@@ -289,6 +296,17 @@ class WSegmentedController(
         v
     }
 
+    private val shouldShowSegmentedControl: Boolean
+        get() = items.size > 1 || showSingleItemTabs
+
+    // Header view height; collapses when the tab bar is hidden on embedded controllers.
+    private val headerViewHeight: Int
+        get() = if (shouldShowSegmentedControl || isFullScreen) baseHeaderHeight() else 0
+
+    // Vertical space reserved above the pager; collapses when the tab bar is hidden.
+    val headerHeight: Int
+        get() = headerViewHeight + underTabsHeight
+
     private fun baseHeaderHeight(): Int = navHeight +
         (if (isFullScreen) navigationController.getSystemBars().top + navTopPadding else (-3).dp)
 
@@ -311,7 +329,7 @@ class WSegmentedController(
 
     fun insetsUpdated() {
         contentView.layoutParams?.let { layoutParams ->
-            val height = baseHeaderHeight()
+            val height = headerViewHeight
             if (layoutParams.height != height) {
                 layoutParams.height = height
                 contentView.layoutParams = layoutParams
@@ -398,7 +416,7 @@ class WSegmentedController(
         }
         if (!isFullScreen && viewPager.parent === blurSourceContainerView) {
             blurSourceContainerView.setConstraints {
-                toTopPx(viewPager, baseHeaderHeight() + underTabsHeight)
+                toTopPx(viewPager, headerHeight)
             }
         }
     }
@@ -426,7 +444,7 @@ class WSegmentedController(
         if (isFullScreen && !isTransparent) {
             addView(reversedCornerView, LayoutParams(MATCH_PARENT, 0))
         }
-        addView(contentView, ViewGroup.LayoutParams(MATCH_PARENT, baseHeaderHeight()))
+        addView(contentView, ViewGroup.LayoutParams(MATCH_PARENT, headerViewHeight))
         addView(underTabsContainerView, ViewGroup.LayoutParams(MATCH_PARENT, underTabsHeight))
         setConstraints {
             allEdges(blurSourceContainerView)
@@ -446,7 +464,7 @@ class WSegmentedController(
             if (isFullScreen) {
                 toTop(viewPager)
             } else {
-                toTopPx(viewPager, baseHeaderHeight() + underTabsHeight)
+                toTopPx(viewPager, headerHeight)
             }
             val gutter = if (applySideGutters) ViewConstants.HORIZONTAL_PADDINGS.dp else 0
             val startInset = if (applyPagerSideInsets) systemBarStartInset else 0
@@ -533,9 +551,75 @@ class WSegmentedController(
             selectedItem,
             this
         )
-        clearSegmentedControl.isVisible = items.size > 1 && !actionBar.isVisible
+        updateTabBarVisibility()
         syncCloseButtonVisibility()
         clearSegmentedControl.updateItemsTrailingViews()
+    }
+
+    private fun updateTabBarVisibility() {
+        tabBarPresentationAnimator?.cancel()
+        tabBarPresentationAnimator = null
+        clearSegmentedControl.isVisible = shouldShowSegmentedControl && !actionBar.isVisible
+        clearSegmentedControl.alpha = 1f
+        contentView.layoutParams?.let { layoutParams ->
+            if (layoutParams.height != headerViewHeight) {
+                layoutParams.height = headerViewHeight
+                contentView.layoutParams = layoutParams
+            }
+        }
+        applyPagerTopOffset(headerHeight)
+    }
+
+    private fun applyPagerTopOffset(offset: Int) {
+        if (!isFullScreen && viewPager.parent === blurSourceContainerView) {
+            blurSourceContainerView.setConstraints {
+                toTopPx(viewPager, offset)
+            }
+        }
+    }
+
+    private var tabBarPresentationAnimator: ValueAnimator? = null
+
+    // Fades the tab bar in/out and animates the header collapse when its visibility changes.
+    fun updateTabBarPresentation(animated: Boolean) {
+        val shouldShow = shouldShowSegmentedControl && !actionBar.isVisible
+        if (!animated ||
+            clearSegmentedControl.isVisible == shouldShow ||
+            !WGlobalStorage.getAreAnimationsActive()
+        ) {
+            updateTabBarVisibility()
+            return
+        }
+        tabBarPresentationAnimator?.cancel()
+        val startOffset = (if (shouldShow) 0 else baseHeaderHeight()) + underTabsHeight
+        if (shouldShow) {
+            clearSegmentedControl.alpha = 0f
+            clearSegmentedControl.isVisible = true
+            clearSegmentedControl.fadeIn(AnimationConstants.QUICK_ANIMATION)
+        } else {
+            clearSegmentedControl.fadeOut(AnimationConstants.QUICK_ANIMATION)
+        }
+        tabBarPresentationAnimator = ValueAnimator.ofInt(startOffset, headerHeight).apply {
+            duration = AnimationConstants.QUICK_ANIMATION
+            addUpdateListener { animator ->
+                val offset = animator.animatedValue as Int
+                contentView.layoutParams?.let { layoutParams ->
+                    layoutParams.height = (offset - underTabsHeight).coerceAtLeast(0)
+                    contentView.layoutParams = layoutParams
+                }
+                applyPagerTopOffset(offset)
+            }
+            // Finalize with the last height tick; fadeOut's own end action lands
+            // a frame later and flashes a blank band over the pager.
+            doOnEnd {
+                if (!shouldShow) {
+                    clearSegmentedControl.animate().cancel()
+                    clearSegmentedControl.isVisible = false
+                    clearSegmentedControl.alpha = 1f
+                }
+            }
+            start()
+        }
     }
 
     private fun headerViews(): List<View> = buildList {
@@ -626,6 +710,8 @@ class WSegmentedController(
         clearSegmentedControl.removeItem(index, nextSelectedIndex, onCompletion = {
             removingItem = false
             currentOffset = nextSelectedIndex.toFloat()
+            // In drag mode the bar must stay visible; it collapses when sorting ends.
+            if (!isInDragMode) updateTabBarPresentation(animated = true)
             if (nextSelectedIndex != viewPager.currentItem) setActiveIndex(nextSelectedIndex)
             onCompletion()
         })
@@ -805,7 +891,6 @@ class WSegmentedController(
         actionBar.fadeOut(AnimationConstants.SUPER_QUICK_ANIMATION) {
             actionBar.isInvisible = true
             viewPager.isUserInputEnabled = !isTabLocked
-            val shouldShowSegmentedControl = items.size > 1
             headerViews().forEach {
                 it.isVisible = it !== clearSegmentedControl || shouldShowSegmentedControl
             }

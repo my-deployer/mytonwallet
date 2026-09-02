@@ -160,6 +160,17 @@ public enum AppStorageHelper {
         }
     }
 
+    public static var homeActivityVisibleItemsLimit: HomeActivityVisibleItemsLimit {
+        get {
+            settingsStore.homeActivityVisibleItemsLimit
+        }
+        set {
+            guard settingsStore.homeActivityVisibleItemsLimit != newValue else { return }
+            settingsStore.setHomeActivityVisibleItemsLimit(newValue)
+            WalletCoreData.notify(event: .homeActivityVisibleItemsLimitChanged)
+        }
+    }
+
     // MARK: - Auth types & biometrics
 
     private static let authTypesKey = "authTypes"

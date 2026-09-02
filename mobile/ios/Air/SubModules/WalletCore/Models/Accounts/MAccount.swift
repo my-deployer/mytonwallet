@@ -111,6 +111,10 @@ extension MAccount {
     public var supportsSend: Bool {
         !isView
     }
+
+    public var supportsReceive: Bool {
+        !isTemporaryView && !supportedChains.isEmpty
+    }
     
     public var supportsBurn: Bool {
         !isView

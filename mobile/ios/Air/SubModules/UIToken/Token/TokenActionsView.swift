@@ -159,7 +159,11 @@ class TokenActionsView: WTouchPassStackView {
     }
     
     func addPressed() {
-        AppActions.showReceive(accountContext: accountContext, chain: token?.chain)
+        AppActions.showReceive(
+            accountContext: accountContext,
+            chain: token?.chain,
+            buyingToken: token?.slug
+        )
     }
 
     func sendPressed() {

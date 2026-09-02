@@ -7,6 +7,7 @@ final class AgentTestingBackend: AgentBackend {
 
     private weak var context: AgentBackendContext?
     private var pendingReplyTasks: [UUID: Task<Void, Never>] = [:]
+    private var nextMockReplyIndex = 0
 
     func attach(to context: AgentBackendContext) {
         self.context = context
@@ -32,7 +33,7 @@ final class AgentTestingBackend: AgentBackend {
         let typingIndicator = AgentTypingIndicator()
         context.append(.typingIndicator(typingIndicator), animated: true)
 
-        let response = Self.simulatedResponse(for: text, index: context.itemIDs.count)
+        let response = simulatedResponse(for: text)
         let taskID = UUID()
         let task = Task { [weak self] in
             defer { self?.pendingReplyTasks[taskID] = nil }
@@ -68,6 +69,7 @@ final class AgentTestingBackend: AgentBackend {
 
     func reset() {
         cancelPendingReplies()
+        nextMockReplyIndex = 0
     }
 
     private func cancelPendingReplies() {
@@ -75,29 +77,18 @@ final class AgentTestingBackend: AgentBackend {
         pendingReplyTasks.removeAll()
     }
 
-    private static func simulatedResponse(for input: String, index: Int) -> (text: String, action: AgentMessageAction?) {
+    private func simulatedResponse(for input: String) -> (text: String, action: AgentMessageAction?) {
         let trimmedInput = input.trimmingCharacters(in: .whitespacesAndNewlines)
         if let fixtureIndex = Int(trimmedInput),
            fixtureIndex >= 1,
-           fixtureIndex <= fixtureReplies.count {
-            let parsed = Self.parseMessage(fixtureReplies[fixtureIndex - 1])
+           fixtureIndex <= Self.fixtureReplies.count {
+            let parsed = Self.parseMessage(Self.fixtureReplies[fixtureIndex - 1])
             return (parsed.text, parsed.action)
         }
 
-        let cannedReplies = [
-            "I can help with balances, swaps, staking, and recent activity. We can turn this into a real agent flow next.",
-            "This is mocked data for now, but the collection view and composer are already wired for a live conversation feed.",
-            "If you want, the next step is typing indicators, streaming updates, and hooking the messages into the Agent tab navigation."
-        ]
-
-        if input.contains("?") {
-            return (
-                "Short answer: yes. This screen is ready to evolve into a real chat surface once we connect it to the backend.",
-                simulatedAction(for: input)
-            )
-        }
-
-        return (cannedReplies[index % cannedReplies.count], simulatedAction(for: input))
+        let reply = Self.mockReplies[nextMockReplyIndex]
+        nextMockReplyIndex = (nextMockReplyIndex + 1) % Self.mockReplies.count
+        return (reply, Self.simulatedAction(for: input))
     }
 
     private static func simulatedAction(for input: String) -> AgentMessageAction? {
@@ -175,6 +166,61 @@ final class AgentTestingBackend: AgentBackend {
         ]
     }
 
+    private static let mockReplies: [String] = [
+        """
+        ## Portfolio overview
+
+        Your mock portfolio is worth **$4,286.42**, up **2.7%** over the last 24 hours. TON and GRAM account for most of today's movement.
+
+        | Asset | Balance | Price | Value | 24h |
+        | --- | ---: | ---: | ---: | ---: |
+        | TON | 482.31 | $3.84 | $1,852.07 | +2.1% |
+        | GRAM | 18,450 | $0.097 | $1,789.65 | +4.8% |
+        | USDT | 512.20 | $1.00 | $512.20 | +0.0% |
+        | MY | 7,500 | $0.0177 | $132.50 | -1.2% |
+
+        **Allocation note:** TON and GRAM make up about 85% of the portfolio, so changes in either token will have an outsized effect on the total balance.
+        """,
+
+        """
+        ## Recent activity
+
+        Here is a detailed mock snapshot across your wallets. The table is intentionally wide so horizontal scrolling can be tested.
+
+        | Time | Activity | Wallet | From asset | To asset | Amount | Effective rate | Network fee | Status | Reference |
+        | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- |
+        | Today, 09:42 | Swap | Main wallet | GRAM | USDT | 10,000 GRAM | 0.0968 USDT | 0.031 TON | Completed | EQD…4k2p |
+        | Yesterday, 18:07 | Send | Savings | TON | — | 24.5 TON | — | 0.014 TON | Completed | EQB…8m1x |
+        | Aug 14, 12:31 | Stake | Main wallet | MY | stMY | 5,000 MY | 0.982 stMY | 0.022 TON | Pending | EQC…9r7a |
+        | Aug 12, 07:55 | Receive | Ledger | USDT | — | 250 USDT | — | Sponsored | Completed | UQA…2n6v |
+
+        All amounts and transaction references above are sample data. Open an explorer before relying on the status of a real transfer.
+        """,
+
+        """
+        ## Weekly wallet check-in
+
+        Your mock portfolio had a positive week, but the result is concentrated in two volatile assets. The total balance increased from **$4,041.18** to **$4,286.42**, while the stablecoin reserve stayed almost unchanged.
+
+        ### What changed
+
+        - **GRAM contributed most of the gain.** Its price rose 8.4%, adding roughly $139 to the portfolio even after the recent swap into USDT.
+        - **TON remained the largest position.** It gained 3.1% and now represents about 43% of total value.
+        - **MY moved against the trend.** The position fell 2.6%, but its small allocation limited the portfolio impact.
+        - The **USDT reserve covers several typical network transactions**, although fees still need to be paid in TON.
+
+        ### Things worth checking
+
+        1. Keep at least `0.2 TON` available for network fees before staking or swapping the rest.
+        2. Review the pending MY staking transaction and confirm its status in the explorer.
+        3. Consider whether an 85% allocation to TON and GRAM matches the level of volatility you are comfortable with.
+
+        ---
+
+        This is a mock analysis, not financial advice. Prices, balances, returns, and transaction details are fictional, but the response deliberately combines headings, long paragraphs, **emphasis**, `inline values`, lists, and a bare link such as https://mytonwallet.io so the complete Agent message renderer can be exercised during development.
+        """
+    ]
+
     private static let fixtureReplies: [String] = [
         """
         # The market is slightly up today
@@ -184,7 +230,7 @@ final class AgentTestingBackend: AgentBackend {
         The Fear & Greed Index is currently 62 (Greed).
 
         Would you like a quick overview of your portfolio as well?
-        
+
         Here is a **rich text** preview covering common Agent formatting cases.
 
         # Heading Level 1
@@ -202,7 +248,7 @@ final class AgentTestingBackend: AgentBackend {
 
         Multiple paragraphs with spacing.
 
-        Line with trailing spaces    
+        Line with trailing spaces
 
         Unicode: 🚀 TON 💎 中文 العربية ñ
 
@@ -220,7 +266,7 @@ final class AgentTestingBackend: AgentBackend {
 
         [Open Earn](\(SELF_PROTOCOL)stake)
         """,
-        
+
         """
         **Block content parity test**
 

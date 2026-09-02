@@ -8,8 +8,37 @@ import androidx.dynamicanimation.animation.SpringForce
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import java.util.WeakHashMap
 import kotlin.math.abs
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
+
+// Only one spring may drive a RecyclerView's scroll at a time; a second one started on the same
+// view would fight the first per-frame instead of replacing it.
+private val activeSprings = WeakHashMap<RecyclerView, SpringAnimation>()
+
+private fun horizontalScrollProperty() = object : FloatPropertyCompat<RecyclerView>("scrollX") {
+    override fun getValue(view: RecyclerView): Float =
+        view.computeHorizontalScrollOffset().toFloat()
+
+    override fun setValue(view: RecyclerView, value: Float) {
+        view.scrollBy((value - view.computeHorizontalScrollOffset()).toInt(), 0)
+    }
+}
+
+@SuppressLint("ClickableViewAccessibility")
+private fun startSpring(recyclerView: RecyclerView, springAnim: SpringAnimation) {
+    activeSprings.remove(recyclerView)?.cancel()
+    activeSprings[recyclerView] = springAnim
+    springAnim.addEndListener { anim, _, _, _ ->
+        if (activeSprings[recyclerView] === anim) activeSprings.remove(recyclerView)
+    }
+    springAnim.start()
+    recyclerView.setOnTouchListener { _, event ->
+        if (event.action == MotionEvent.ACTION_DOWN) activeSprings.remove(recyclerView)?.cancel()
+        recyclerView.setOnTouchListener(null)
+        return@setOnTouchListener false
+    }
+}
 
 fun ViewPager2.setupSpringFling(onScrollingToTarget: (targetIndex: Int) -> Int) {
     val recyclerView = getChildAt(0) as RecyclerView
@@ -43,14 +72,7 @@ fun ViewPager2.setupSpringFling(onScrollingToTarget: (targetIndex: Int) -> Int) 
 
             val springAnim = SpringAnimation(
                 recyclerView,
-                object : FloatPropertyCompat<RecyclerView>("scrollX") {
-                    override fun getValue(view: RecyclerView): Float =
-                        view.computeHorizontalScrollOffset().toFloat()
-
-                    override fun setValue(view: RecyclerView, value: Float) {
-                        view.scrollBy((value - view.computeHorizontalScrollOffset()).toInt(), 0)
-                    }
-                },
+                horizontalScrollProperty(),
                 scrollPosition * width.toFloat()
             )
 
@@ -58,15 +80,18 @@ fun ViewPager2.setupSpringFling(onScrollingToTarget: (targetIndex: Int) -> Int) 
             springAnim.spring.stiffness = 500f
             springAnim.setStartVelocity(velocityX.toFloat())
             springAnim.addEndListener { _, canceled, _, _ ->
-                if (!canceled) recyclerView.scrollToPosition(finalTargetPosition)
+                if (!canceled) {
+                    recyclerView.scrollBy(
+                        scrollPosition * width - recyclerView.computeHorizontalScrollOffset(),
+                        0
+                    )
+                    // Consuming the fling left the RecyclerView in the dragging scroll state, which
+                    // blocks ViewPager2 from dispatching page selection and the idle state.
+                    // stopScroll() moves it to idle so those callbacks fire.
+                    recyclerView.stopScroll()
+                }
             }
-            springAnim.start()
-            @SuppressLint("ClickableViewAccessibility")
-            recyclerView.setOnTouchListener { _, event ->
-                if (event.action == MotionEvent.ACTION_DOWN) springAnim.cancel()
-                recyclerView.setOnTouchListener(null)
-                return@setOnTouchListener false
-            }
+            startSpring(recyclerView, springAnim)
 
             return true
         }
@@ -86,24 +111,17 @@ fun ViewPager2.springToItem(
         if (LocaleController.isRTL) itemCount - 1 - clampedPosition else clampedPosition
     val offset = scrollPosition * width.toFloat()
 
-    val scrollProperty = object : FloatPropertyCompat<RecyclerView>("scrollX") {
-        override fun getValue(view: RecyclerView): Float =
-            view.computeHorizontalScrollOffset().toFloat()
-
-        override fun setValue(view: RecyclerView, value: Float) {
-            view.scrollBy((value - view.computeHorizontalScrollOffset()).toInt(), 0)
-        }
-    }
-
-    val springAnim = SpringAnimation(recyclerView, scrollProperty, offset)
+    val springAnim = SpringAnimation(recyclerView, horizontalScrollProperty(), offset)
     springAnim.spring.dampingRatio = SpringForce.DAMPING_RATIO_NO_BOUNCY
     springAnim.spring.stiffness = 500f
     springAnim.setStartVelocity(velocityX)
 
-    springAnim.addEndListener { _, _, _, _ ->
-        this.setCurrentItem(clampedPosition, false)
-        onCompletion?.invoke()
+    springAnim.addEndListener { _, canceled, _, _ ->
+        if (!canceled) {
+            this.setCurrentItem(clampedPosition, false)
+            onCompletion?.invoke()
+        }
     }
 
-    springAnim.start()
+    startSpring(recyclerView, springAnim)
 }

@@ -24,6 +24,7 @@ import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WViewController
 import org.mytonwallet.app_air.uicomponents.extensions.dp
+import org.mytonwallet.app_air.uicomponents.helpers.HomeStatusController
 import org.mytonwallet.app_air.uicomponents.widgets.PillShadowView
 import org.mytonwallet.app_air.uicomponents.widgets.WFrameLayout
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
@@ -44,7 +45,6 @@ import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
 import org.mytonwallet.app_air.walletcore.models.MAccount
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.uihome.home.HomeVC
-import org.mytonwallet.uihome.home.status.HomeStatusController
 import org.mytonwallet.uihome.home.views.header.HomeHeaderView
 import org.mytonwallet.uihome.tabletTabs.views.TabletSidePanelView
 import org.mytonwallet.uihome.tabs.AppTabsManager
@@ -130,6 +130,9 @@ class TabletTabsVC(context: Context) :
             ExploreSearchBar.Config(
                 onSearch = { query, focused ->
                     cachedExploreVC?.search(query, focused)
+                },
+                onOpenBestMatch = { onResolved ->
+                    cachedExploreVC?.openBestSearchMatch(onResolved) == true
                 },
                 expandedWidthProvider = {
                     (
@@ -541,7 +544,10 @@ class TabletTabsVC(context: Context) :
         contentNav.insetsUpdated()
         // The per-tab nav inside the host needs its insets too when it's the visible content.
         if (!isShowingPushedOverMain) activeNavigationController?.insetsUpdated()
-        if (!isKeyboardOpen && searchBar.editText.hasFocus()) {
+        if (!isKeyboardOpen &&
+            searchBar.editText.hasFocus() &&
+            cachedExploreVC?.shouldKeepSearchActiveOnKeyboardDismiss != true
+        ) {
             searchBar.editText.clearFocus()
         }
         if (searchBar.searchMatchedSite != null && !isKeyboardOpen) {
@@ -679,6 +685,10 @@ class TabletTabsVC(context: Context) :
         searchBar.setSearchText(text)
     }
 
+    override fun clearSearchFocus() {
+        searchBar.editText.clearFocus()
+    }
+
     override fun switchToFirstTab(): Boolean {
         if (currentTabId != IBottomNavigationView.ID_HOME) {
             selectTab(IBottomNavigationView.ID_HOME)
@@ -700,11 +710,15 @@ class TabletTabsVC(context: Context) :
         targetUri?.let { cachedExploreVC?.findSiteAndOpenTargetUri(it) }
     }
 
-    override fun switchToAgent(prompt: String?): Boolean {
+    override fun switchToAgent(prompt: String?, pinnedMessageId: String?): Boolean {
         if (!AppTabsManager.contains(IBottomNavigationView.ID_AGENT)) return false
         selectTab(IBottomNavigationView.ID_AGENT)
         window?.dismissToRoot()
-        submitAgentPrompt(prompt)
+        if (!pinnedMessageId.isNullOrBlank()) {
+            showAgentMessage(pinnedMessageId)
+        } else {
+            submitAgentPrompt(prompt)
+        }
         return true
     }
 

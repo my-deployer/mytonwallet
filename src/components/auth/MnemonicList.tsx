@@ -42,7 +42,7 @@ function MnemonicList({
     <div className={modalStyles.transitionContentWrapper}>
       <Header
         isActive={isActive}
-        title={lang('%1$d Secret Words', wordsCount) as string}
+        title={lang('%count% Secret Words', wordsCount) as string}
         onBackClick={onClose}
       />
 

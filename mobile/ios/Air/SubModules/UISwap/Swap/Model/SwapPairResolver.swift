@@ -27,7 +27,7 @@ func resolveBuyAmountInputMode(
     sellingChain: ApiChain,
     isReverseProhibited: Bool?
 ) -> SwapBuyAmountInputMode {
-    swapType == .onChain
+    swapType.route == .dex
         && sellingChain.canSwapByBuyAmount
         && isReverseProhibited != true
         ? .enabled

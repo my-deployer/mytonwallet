@@ -72,6 +72,8 @@ jobs:
         env:
           STATOSCOPE_STATS_TO_COMPARE: statoscope-reference.json
         run: npm run statoscope:build
+      - name: Check Agent V2 bundle boundary
+        run: npm run bundle:agent:v2:check
       - name: Prepare statoscope input
         run: |
           mv dist/statoscope-build-statistics.json input.json

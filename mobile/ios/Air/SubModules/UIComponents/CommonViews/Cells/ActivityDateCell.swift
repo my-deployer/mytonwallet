@@ -8,6 +8,77 @@
 import UIKit
 import WalletContext
 
+public enum ActivityTimestampDisplayMode: Equatable, Sendable {
+    case timeOnly
+    case dateWhenOlderThanTwelveHours
+}
+
+public enum ActivityDateFormatting {
+    private static let dateThreshold: TimeInterval = 12 * 60 * 60
+
+    public static func shouldShowDate(
+        for date: Date,
+        relativeTo now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        !calendar.isDate(date, inSameDayAs: now)
+            && now.timeIntervalSince(date) > dateThreshold
+    }
+
+    public static func dateText(
+        for date: Date,
+        relativeTo now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = LocalizationSupport.shared.locale
+    ) -> String {
+        if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+            date.formatted(.dateTime.month(.wide).day().locale(locale))
+        } else {
+            date.formatted(.dateTime.year(.defaultDigits).month(.wide).day().locale(locale))
+        }
+    }
+
+    public static func shortDateText(
+        for date: Date,
+        relativeTo now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = LocalizationSupport.shared.locale
+    ) -> String {
+        if calendar.isDate(date, equalTo: now, toGranularity: .year) {
+            date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+        } else {
+            date.formatted(.dateTime.year(.defaultDigits).month(.abbreviated).day().locale(locale))
+        }
+    }
+
+    public static func headerText(
+        for date: Date,
+        relativeTo now: Date = .now,
+        calendar: Calendar = .current,
+        locale: Locale = LocalizationSupport.shared.locale
+    ) -> String {
+        if calendar.isDate(date, inSameDayAs: now) {
+            lang("Today")
+        } else {
+            dateText(for: date, relativeTo: now, calendar: calendar, locale: locale)
+        }
+    }
+
+    public static func timestampText(
+        for date: Date,
+        mode: ActivityTimestampDisplayMode,
+        relativeTo now: Date = .now,
+        calendar: Calendar = .current,
+        locale: Locale = LocalizationSupport.shared.locale
+    ) -> String {
+        if mode == .dateWhenOlderThanTwelveHours,
+           shouldShowDate(for: date, relativeTo: now, calendar: calendar) {
+            return shortDateText(for: date, relativeTo: now, calendar: calendar, locale: locale)
+        }
+        return stringForTimestamp(timestamp: Int32(clamping: Int64(date.timeIntervalSince1970)))
+    }
+}
+
 public class ActivityDateCell: UICollectionReusableView {
 
     public let contentView = UIView()
@@ -19,10 +90,6 @@ public class ActivityDateCell: UICollectionReusableView {
 
     @available(*, unavailable)
     public required init?(coder: NSCoder) { nil }
-    
-    private var locale: Locale { LocalizationSupport.shared.locale }
-    private lazy var formatStyleCurrentYear = Date.FormatStyle.dateTime.month(.wide).day().locale(locale)
-    private lazy var formatStyleWithYear = Date.FormatStyle.dateTime.year(.defaultDigits).month(.wide).day().locale(locale)
     
     public var skeletonView: DateSkeletonView? = nil
     private let dateLabel = UILabel()
@@ -61,18 +128,13 @@ public class ActivityDateCell: UICollectionReusableView {
     public func configure(with itemDate: Date) {
         skeletonView?.alpha = 0
         dateLabel.alpha = 1
-        // MARK: Handle date header
-        let now = Date()
-        if now.isInSameDay(as: itemDate) {
-            dateLabel.text = lang("Today")
-        } else {
-            let sameYear = now.isInSameYear(as: itemDate)
-            if sameYear {
-                dateLabel.text = itemDate.formatted(formatStyleCurrentYear)
-            } else {
-                dateLabel.text = itemDate.formatted(formatStyleWithYear)
-            }
-        }
+        dateLabel.text = ActivityDateFormatting.headerText(for: itemDate)
+    }
+
+    public func configure(title: String) {
+        skeletonView?.alpha = 0
+        dateLabel.alpha = 1
+        dateLabel.text = title
     }
 
     public func configureSkeleton() {

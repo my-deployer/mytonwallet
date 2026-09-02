@@ -10,14 +10,12 @@ import UIComponents
 import WalletContext
 
 final class WalletAssetsView: WTouchPassView {
-    let walletTokensVC: WalletTokensVC
     private let walletCollectiblesView: WSegmentedControllerContent
 
     var onScrollingOffsetChanged: ((_ progress: CGFloat, _ animated: Bool) -> Void)?
     var scrollProgress: CGFloat = 0
 
-    init(walletTokensVC: WalletTokensVC, walletCollectiblesView: WSegmentedControllerContent) {
-        self.walletTokensVC = walletTokensVC
+    init(walletCollectiblesView: WSegmentedControllerContent) {
         self.walletCollectiblesView = walletCollectiblesView
         super.init(frame: .zero)
         setupViews()
@@ -30,17 +28,13 @@ final class WalletAssetsView: WTouchPassView {
     lazy var tabsContainer = WSegmentedPagerView(
         items: [
             WSegmentedPagerItem(
-                id: "tokens_placeholder",
-                title: lang("Assets"),
-                viewController: walletTokensVC
-            ),
-            WSegmentedPagerItem(
                 id: "nfts_placeholder",
                 title: lang("Collectibles"),
                 viewController: walletCollectiblesView
             ),
         ],
         scrollContentMargin: 16,
+        contentTopInsetWhenSegmentedControlHidden: 4,
         onScrollProgressChanged: { [weak self] progress, animated in
             self?.scrollProgress = progress
             self?.onScrollingOffsetChanged?(progress, animated)
@@ -50,6 +44,7 @@ final class WalletAssetsView: WTouchPassView {
     private func setupViews() {
         translatesAutoresizingMaskIntoConstraints = false
         tabsContainer.translatesAutoresizingMaskIntoConstraints = false
+        tabsContainer.isSegmentedControlHidden = true
         addSubview(tabsContainer)
         NSLayoutConstraint.activate([
             tabsContainer.leadingAnchor.constraint(equalTo: leadingAnchor),

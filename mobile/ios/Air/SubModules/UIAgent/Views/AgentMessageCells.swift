@@ -90,6 +90,20 @@ private extension UICollectionViewCell {
 }
 
 final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCell, UITextViewDelegate {
+    private struct AssistantConfiguration {
+        var message: AgentMessage
+        let textColor: UIColor
+        var hasStreaming: Bool
+        var hadStreaming: Bool
+        var blocks: [AgentMessageBlock]
+    }
+
+    private struct AppliedRichContent {
+        let messageID: AgentItemID
+        let text: String
+        let layoutMaxWidth: CGFloat
+    }
+
     var onPreferredHeightChanged: ((_ animated: Bool) -> Void)?
     var onStreamingRevealCompleted: (() -> Void)?
     var minimumHeightProvider: (() -> CGFloat)?
@@ -101,6 +115,7 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
     private let actionBackgroundView = AgentBubbleBackgroundView()
     private let userMessageTextView = AgentMessageTextView()
     private let assistantMessageTextView = AgentStreamingTextView()
+    private let assistantRichMessageView = AgentRichMessageView()
     private let actionButton = UIButton(type: .system)
     private var configuredMessageID: AgentItemID?
     private var wasStreamingMessage = false
@@ -109,7 +124,8 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
     private var configuredAction: AgentMessageAction?
     private var onActionTap: (() -> Void)?
     private var onURLTap: ((URL) -> Void)?
-    private var lastAssistantConfiguration: (message: AgentMessage, textColor: UIColor, hasStreaming: Bool, hadStreaming: Bool)?
+    private var lastAssistantConfiguration: AssistantConfiguration?
+    private var lastAppliedRichContent: AppliedRichContent?
     private var lastAppliedTextLayoutMaxWidth: CGFloat = 0
     private var suppressesSizeCallbacks = false
 
@@ -142,6 +158,8 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         if messageIDChanged {
             wasStreamingMessage = false
             didShowDeferredAction = false
+            lastAppliedRichContent = nil
+            lastAppliedTextLayoutMaxWidth = 0
         }
         let hasStreaming = message.role == .assistant && message.isStreaming
         let hadStreaming = !messageIDChanged && wasStreamingMessage && !hasStreaming
@@ -170,7 +188,12 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         self.onURLTap = onURLTap
 
         userMessageTextView.isHidden = !isOutgoing
-        assistantMessageTextView.isHidden = isOutgoing
+        if isOutgoing {
+            assistantMessageTextView.isHidden = true
+            assistantRichMessageView.isHidden = true
+            lastAssistantConfiguration = nil
+            lastAppliedRichContent = nil
+        }
 
         userMessageTextView.setContentHuggingPriority(
             isOutgoing ? .required : .defaultLow,
@@ -183,11 +206,22 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
                 textColor: messageTextColor
             )
         } else {
-            lastAssistantConfiguration = (
+            let blocks: [AgentMessageBlock]
+            if hasStreaming || hadStreaming {
+                blocks = []
+            } else if let existing = lastAssistantConfiguration,
+                      existing.message.id == message.id,
+                      existing.message.text == message.text {
+                blocks = existing.blocks
+            } else {
+                blocks = AgentMessageBlockParser.parse(message.text)
+            }
+            lastAssistantConfiguration = AssistantConfiguration(
                 message: message,
                 textColor: messageTextColor,
                 hasStreaming: hasStreaming,
-                hadStreaming: hadStreaming
+                hadStreaming: hadStreaming,
+                blocks: blocks
             )
             assistantMessageTextView.onURLTap = { [weak self] url in
                 self?.onURLTap?(url)
@@ -208,11 +242,15 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
                 self.onPreferredHeightChanged?(animated)
             }
             assistantMessageTextView.onRevealCompleted = { [weak self] in
+                let switchedToRichContent = self?.showFinalRichAssistantContentIfNeeded() == true
                 self?.applyDeferredActionPresentation()
+                if switchedToRichContent {
+                    self?.onPreferredHeightChanged?(false)
+                }
                 self?.onStreamingRevealCompleted?()
             }
             withSizeCallbacksSuppressed {
-                configureAssistantMessageTextView(layoutMaxWidth: layoutMaxWidth)
+                configureAssistantMessageContent(layoutMaxWidth: layoutMaxWidth)
             }
         }
 
@@ -226,13 +264,14 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         guard message.role == .assistant, message.isStreaming else { return }
         guard configuredMessageID == message.id, let existing = lastAssistantConfiguration else { return }
 
-        lastAssistantConfiguration = (
+        lastAssistantConfiguration = AssistantConfiguration(
             message: message,
             textColor: existing.textColor,
             hasStreaming: true,
-            hadStreaming: false
+            hadStreaming: false,
+            blocks: []
         )
-        configureAssistantMessageTextView(layoutMaxWidth: currentTextLayoutMaxWidth(isOutgoing: false))
+        configureAssistantMessageContent(layoutMaxWidth: currentTextLayoutMaxWidth(isOutgoing: false))
     }
 
     override func prepareForReuse() {
@@ -249,6 +288,17 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         userMessageTextView.isSelectable = false
         userMessageTextView.isUserInteractionEnabled = false
         assistantMessageTextView.prepareForReuse()
+        assistantRichMessageView.configure(
+            blocks: [],
+            textColor: .label,
+            maximumContentWidth: 1,
+            detectsLinks: false,
+            markdownProfile: .legacy,
+            onURLTap: nil
+        )
+        assistantRichMessageView.isHidden = true
+        lastAssistantConfiguration = nil
+        lastAppliedRichContent = nil
         lastAppliedTextLayoutMaxWidth = 0
     }
 
@@ -272,12 +322,12 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard !assistantMessageTextView.isHidden, lastAssistantConfiguration != nil else { return }
+        guard userMessageTextView.isHidden, lastAssistantConfiguration != nil else { return }
         let layoutMaxWidth = currentTextLayoutMaxWidth(isOutgoing: false)
         guard abs(layoutMaxWidth - lastAppliedTextLayoutMaxWidth) > 0.5 else { return }
         lastAppliedTextLayoutMaxWidth = layoutMaxWidth
         withSizeCallbacksSuppressed {
-            configureAssistantMessageTextView(layoutMaxWidth: layoutMaxWidth)
+            configureAssistantMessageContent(layoutMaxWidth: layoutMaxWidth)
         }
     }
 
@@ -287,13 +337,14 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         bounds.size.width = targetWidth
         setNeedsLayout()
         layoutIfNeeded()
-        if !assistantMessageTextView.isHidden, lastAssistantConfiguration != nil {
+        if userMessageTextView.isHidden, lastAssistantConfiguration != nil {
             let layoutMaxWidth = currentTextLayoutMaxWidth(isOutgoing: false)
-            lastAppliedTextLayoutMaxWidth = layoutMaxWidth
-            withSizeCallbacksSuppressed {
-                configureAssistantMessageTextView(layoutMaxWidth: layoutMaxWidth)
+            if abs(layoutMaxWidth - lastAppliedTextLayoutMaxWidth) > 0.5 {
+                withSizeCallbacksSuppressed {
+                    configureAssistantMessageContent(layoutMaxWidth: layoutMaxWidth)
+                }
+                layoutIfNeeded()
             }
-            layoutIfNeeded()
         }
         let targetSize = CGSize(width: targetWidth, height: UIView.layoutFittingCompressedSize.height)
         let fittedSize = contentView.systemLayoutSizeFitting(
@@ -353,6 +404,11 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         assistantMessageTextView.setContentCompressionResistancePriority(UILayoutPriority(999), for: .vertical)
         assistantMessageTextView.setContentHuggingPriority(UILayoutPriority(999), for: .vertical)
 
+        assistantRichMessageView.translatesAutoresizingMaskIntoConstraints = false
+        assistantRichMessageView.isHidden = true
+        assistantRichMessageView.setContentCompressionResistancePriority(UILayoutPriority(999), for: .vertical)
+        assistantRichMessageView.setContentHuggingPriority(UILayoutPriority(999), for: .vertical)
+
         var buttonConfiguration = UIButton.Configuration.plain()
         buttonConfiguration.contentInsets = AgentMessageCellMetrics.actionOuterPadding
         buttonConfiguration.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { incoming in
@@ -367,6 +423,7 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
 
         contentStackView.addArrangedSubview(userMessageTextView)
         contentStackView.addArrangedSubview(assistantMessageTextView)
+        contentStackView.addArrangedSubview(assistantRichMessageView)
 
         actionBackgroundView.contentView.addSubview(actionButton)
 
@@ -396,6 +453,9 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
     }
 
     private func renderedMessageText() -> String {
+        if !assistantRichMessageView.isHidden {
+            return lastAssistantConfiguration?.message.text ?? assistantRichMessageView.displayText
+        }
         if !assistantMessageTextView.isHidden {
             return assistantMessageTextView.displayText
         }
@@ -431,8 +491,43 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
         )
     }
 
-    private func configureAssistantMessageTextView(layoutMaxWidth: CGFloat) {
+    private func configureAssistantMessageContent(layoutMaxWidth: CGFloat) {
         guard let configuration = lastAssistantConfiguration else { return }
+        lastAppliedTextLayoutMaxWidth = layoutMaxWidth
+        let containsTable = configuration.blocks.contains {
+            if case .table = $0 { return true }
+            return false
+        }
+        let showsRichContent = containsTable
+            && !configuration.hasStreaming
+            && !configuration.hadStreaming
+        assistantMessageTextView.isHidden = showsRichContent
+        assistantRichMessageView.isHidden = !showsRichContent
+
+        if showsRichContent {
+            let appliedContent = AppliedRichContent(
+                messageID: configuration.message.id,
+                text: configuration.message.text,
+                layoutMaxWidth: layoutMaxWidth
+            )
+            if let previous = lastAppliedRichContent,
+               previous.messageID == appliedContent.messageID,
+               previous.text == appliedContent.text,
+               abs(previous.layoutMaxWidth - appliedContent.layoutMaxWidth) <= 0.5 {
+                return
+            }
+            assistantRichMessageView.configure(
+                blocks: configuration.blocks,
+                textColor: configuration.textColor,
+                maximumContentWidth: layoutMaxWidth,
+                detectsLinks: true,
+                markdownProfile: .legacy,
+                onURLTap: { [weak self] url in self?.onURLTap?(url) }
+            )
+            lastAppliedRichContent = appliedContent
+            return
+        }
+        lastAppliedRichContent = nil
         assistantMessageTextView.configure(
             text: configuration.message.text,
             textColor: configuration.textColor,
@@ -443,6 +538,22 @@ final class AgentMessageCell: UICollectionViewCell, AgentContextMenuPresentingCe
             layoutMaxWidth: layoutMaxWidth,
             streamingIdentity: configuration.message.id.uuidString
         )
+    }
+
+    private func showFinalRichAssistantContentIfNeeded() -> Bool {
+        guard var configuration = lastAssistantConfiguration else { return false }
+        configuration.hasStreaming = false
+        configuration.hadStreaming = false
+        configuration.blocks = AgentMessageBlockParser.parse(configuration.message.text)
+        lastAssistantConfiguration = configuration
+        wasStreamingMessage = false
+        guard configuration.blocks.contains(where: {
+            if case .table = $0 { return true }
+            return false
+        }) else { return false }
+        configureAssistantMessageContent(layoutMaxWidth: currentTextLayoutMaxWidth(isOutgoing: false))
+        setNeedsLayout()
+        return true
     }
 
     private func applyDeferredActionPresentation() {

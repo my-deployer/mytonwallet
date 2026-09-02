@@ -92,7 +92,7 @@ struct WalletSettingsAddButton: View {
         let isDeleting = viewModel.isDeletingAccounts
         
         return Button(action: onDelete) {
-            Text(lang("$remove_wallets", arg1: count))
+            Text(L10n.removeWallets(count: count))
                 .padding(.horizontal, 20)
                 .opacity(isDeleting ? 0 : 1)
                 .overlay {

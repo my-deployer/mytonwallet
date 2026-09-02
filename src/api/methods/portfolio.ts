@@ -19,9 +19,13 @@ export async function fetchPortfolioNetWorthHistory(
   wallets: string[],
   baseCurrency: ApiBaseCurrency = DEFAULT_PRICE_CURRENCY,
   params?: ApiPortfolioHistoryParams,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ) {
   return fetchJson<ApiPortfolioHistoryResponse>(
     buildPortfolioHistoryUrl('net-worth-history', wallets, baseCurrency, params),
+    undefined,
+    options?.signal ? { signal: options.signal } : undefined,
+    options?.timeoutMs === undefined ? undefined : { retries: 1, timeouts: options.timeoutMs },
   );
 }
 
@@ -49,9 +53,13 @@ export async function fetchPortfolioPnlChange(
   wallets: string[],
   baseCurrency: ApiBaseCurrency = DEFAULT_PRICE_CURRENCY,
   params?: ApiPortfolioHistoryParams,
+  options?: { signal?: AbortSignal; timeoutMs?: number },
 ) {
   return fetchJson<ApiPortfolioPnlChangeResponse>(
     buildPortfolioHistoryUrl('pnl-change', wallets, baseCurrency, params),
+    undefined,
+    options?.signal ? { signal: options.signal } : undefined,
+    options?.timeoutMs === undefined ? undefined : { retries: 1, timeouts: options.timeoutMs },
   );
 }
 

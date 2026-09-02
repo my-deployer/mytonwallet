@@ -6,11 +6,58 @@ import WalletCore
 
 @MainActor
 final class MarketScreenModel: ObservableObject {
-    @Published private(set) var scrollToTopRequest = 0
-    @Published private(set) var sections: [MarketSection]
+    typealias FetchAssets = @Sendable (String) async throws -> ApiMarketAssetsResponse
+    typealias LoadCachedAssets = @Sendable (String) async -> ApiMarketAssetsResponse?
 
-    init() {
-        sections = MarketSection.samples()
+    private static let refreshInterval: TimeInterval = 5 * 60
+
+    @Published private(set) var scrollToTopRequest = 0
+    @Published private(set) var sections: [MarketSection] = []
+
+    private let langCode: String
+    private let fetchAssets: FetchAssets
+    private let loadCachedAssets: LoadCachedAssets
+    private let now: @Sendable () -> Date
+    private var marketResponse: ApiMarketAssetsResponse?
+    private var initialContentTask: Task<Void, Never>?
+    private var fetchTask: Task<Void, Never>?
+    private var buildTask: Task<Void, Never>?
+    private var lastFetchedAt: Date?
+    private var hasStarted = false
+
+    init(
+        langCode: String = LocalizationSupport.shared.langCode,
+        fetchAssets: @escaping FetchAssets = { try await Api.fetchMarketAssets(langCode: $0) },
+        loadCachedAssets: @escaping LoadCachedAssets = { await Api.cachedMarketAssets(langCode: $0) },
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
+        self.langCode = langCode
+        self.fetchAssets = fetchAssets
+        self.loadCachedAssets = loadCachedAssets
+        self.now = now
+    }
+
+    isolated deinit {
+        initialContentTask?.cancel()
+        fetchTask?.cancel()
+        buildTask?.cancel()
+    }
+
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
+
+        initialContentTask = Task { [weak self, langCode, loadCachedAssets] in
+            let cachedResponse = await loadCachedAssets(langCode)
+            guard !Task.isCancelled, let self else { return }
+
+            if self.marketResponse == nil {
+                self.marketResponse = cachedResponse
+                self.rebuildSections()
+            }
+            self.initialContentTask = nil
+        }
+        fetchIfNeeded()
     }
 
     func scrollToTop() {
@@ -18,13 +65,50 @@ final class MarketScreenModel: ObservableObject {
     }
 
     func reloadTokens() {
-        sections = MarketSection.samples()
+        guard hasStarted else { return }
+        rebuildSections()
+        fetchIfNeeded()
+    }
+
+    private func fetchIfNeeded() {
+        guard fetchTask == nil else { return }
+        if let lastFetchedAt,
+           now().timeIntervalSince(lastFetchedAt) < Self.refreshInterval {
+            return
+        }
+
+        fetchTask = Task { [weak self, fetchAssets, langCode] in
+            do {
+                let response = try await fetchAssets(langCode)
+                guard !Task.isCancelled, let self else { return }
+                self.lastFetchedAt = self.now()
+                self.marketResponse = response
+                self.rebuildSections()
+            } catch {
+                // Keep the cached response, or the initial samples before the first response.
+            }
+            self?.fetchTask = nil
+        }
+    }
+
+    private func rebuildSections() {
+        buildTask?.cancel()
+        let response = marketResponse
+        buildTask = Task { [weak self] in
+            let sections = if let response {
+                await MarketSectionBuilder.build(from: response)
+            } else {
+                await MarketSection.samples()
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.sections = sections
+            self.buildTask = nil
+        }
     }
 }
 
 struct MarketScreen: View {
     @ObservedObject var model: MarketScreenModel
-    let showsInlineTitle: Bool
     let onScrollOffsetChange: (CGFloat) -> Void
     let onSeeAll: (MarketSection) -> Void
     let onSelectToken: (MarketToken) -> Void
@@ -35,16 +119,6 @@ struct MarketScreen: View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
                 LazyVStack(alignment: .leading, spacing: 24) {
-                    if showsInlineTitle {
-                        Text(lang("Market"))
-                            .textStyle(.largeTitle, scaling: .dynamic)
-                            .foregroundStyle(Color.air.primaryLabel)
-                            .accessibilityAddTraits(.isHeader)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 8)
-                            .padding(.bottom, -8)
-                    }
-
                     ForEach(model.sections) { section in
                         MarketSectionView(
                             section: section,
@@ -56,7 +130,7 @@ struct MarketScreen: View {
 
                     Color.clear.frame(height: 86)
                 }
-                .padding(.top, showsInlineTitle ? 0 : 14)
+                .padding(.top, 14)
                 .scrollPosition(ns: scrollCoordinateSpace, callback: onScrollOffsetChange)
             }
             .coordinateSpace(name: scrollCoordinateSpace)
@@ -87,14 +161,14 @@ private struct MarketSectionView: View {
 
             switch section.layout {
             case .largeHorizontal:
-                MarketMoverCarousel(tokens: section.tokens, onSelectToken: onSelectToken)
+                MarketMoverCarousel(tokens: section.visibleTokens, onSelectToken: onSelectToken)
 
             case .grid:
-                MarketGrid(tokens: section.tokens, onSelectToken: onSelectToken)
+                MarketGrid(tokens: section.visibleTokens, onSelectToken: onSelectToken)
                     .padding(.horizontal, 16)
 
             case .rows:
-                MarketRows(tokens: section.tokens, onSelectToken: onSelectToken)
+                MarketRows(tokens: section.visibleTokens, onSelectToken: onSelectToken)
                     .padding(.horizontal, 16)
             }
         }
@@ -140,7 +214,7 @@ private struct MarketSectionHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(lang(title))
+            Text(title)
                 .textStyle(.bodyStrong, scaling: .dynamic)
                 .foregroundStyle(Color.air.secondaryLabel)
                 .accessibilityAddTraits(.isHeader)
@@ -194,16 +268,7 @@ private struct MarketMoverCard: View {
 
                 VStack(spacing: 0) {
                     Spacer()
-                    ZStack(alignment: .top) {
-                        Image.airBundle(chart.fillImageName)
-                            .resizable()
-                            .frame(width: 160, height: 40)
-                        Image.airBundle(chart.lineImageName)
-                            .resizable()
-                            .frame(width: 161.5, height: 24.5)
-                    }
-                    .frame(width: 160, height: 40, alignment: .top)
-                    .clipped()
+                    chartView(chart)
                 }
             }
 
@@ -234,6 +299,76 @@ private struct MarketMoverCard: View {
             }
         }
         .frame(width: 160, height: 160)
+    }
+
+    @ViewBuilder
+    private func chartView(_ chart: MarketToken.Chart) -> some View {
+        switch chart {
+        case .bundled(let fillImageName, let lineImageName, _):
+            ZStack(alignment: .top) {
+                Image.airBundle(fillImageName)
+                    .resizable()
+                    .frame(width: 160, height: 40)
+                Image.airBundle(lineImageName)
+                    .resizable()
+                    .frame(width: 161.5, height: 24.5)
+            }
+            .frame(width: 160, height: 40, alignment: .top)
+            .clipped()
+
+        case .sparkline(let points, let tint):
+            MarketSparkline(points: points, tint: Color(rgb: tint))
+                .frame(width: 160, height: 42)
+        }
+    }
+}
+
+private struct MarketSparkline: View {
+    let points: [Double]
+    let tint: Color
+
+    var body: some View {
+        ZStack {
+            MarketSparklineShape(points: points, closesToBottom: true)
+                .fill(tint.opacity(0.09))
+            MarketSparklineShape(points: points, closesToBottom: false)
+                .stroke(
+                    tint,
+                    style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round)
+                )
+        }
+    }
+}
+
+private struct MarketSparklineShape: Shape {
+    let points: [Double]
+    let closesToBottom: Bool
+
+    func path(in rect: CGRect) -> Path {
+        guard points.count >= 2 else { return Path() }
+
+        var path = Path()
+        for (index, point) in points.enumerated() {
+            let progress = CGFloat(index) / CGFloat(points.count - 1)
+            let normalizedPoint = CGFloat(min(max(point, 0), 1))
+            let chartHeight = max(0, rect.height - 4)
+            let chartPoint = CGPoint(
+                x: rect.minX + progress * rect.width,
+                y: rect.minY + 2 + normalizedPoint * chartHeight
+            )
+            if index == 0 {
+                path.move(to: chartPoint)
+            } else {
+                path.addLine(to: chartPoint)
+            }
+        }
+
+        if closesToBottom {
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.closeSubpath()
+        }
+        return path
     }
 }
 

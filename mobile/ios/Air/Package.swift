@@ -56,12 +56,14 @@ func airLibrary(_ name: String, type: Product.Library.LibraryType? = nil) -> Pro
 func airTarget(
     _ name: String,
     dependencies: [Target.Dependency] = [],
+    resources: [Resource]? = nil,
     swiftSettings: [SwiftSetting]? = nil,
 ) -> Target {
     .target(
         name: name,
         dependencies: dependencies,
         path: "SubModules/\(name)",
+        resources: resources,
         swiftSettings: swiftSettings ?? sharedSwiftSettings
     )
 }
@@ -86,6 +88,7 @@ let package = Package(
         .iOS(.v16),
     ],
     products: [
+        airLibrary("AirUILab"),
         airLibrary("AirAsFramework"),
         airLibrary("Ledger"),
         airLibrary("NativeEnclave"),
@@ -108,9 +111,14 @@ let package = Package(
         airLibrary("UIReceive"),
         airLibrary("UISend"),
         airLibrary("UISettings"),
+        airLibrary("UIUniversalSearch"),
         airLibrary("UISwap"),
         airLibrary("UIToken"),
         airLibrary("UITransaction"),
+        airLibrary("UniversalSearchFeature"),
+        airLibrary("UniversalSearchCore"),
+        airLibrary("UniversalSearchPersistence"),
+        airLibrary("UniversalSearchWalletCore"),
         airLibrary("WReachability"),
         airLibrary("WalletContext"),
         airLibrary("WalletCoreTypes"),
@@ -137,10 +145,6 @@ let package = Package(
         .package(
             url: "https://github.com/groue/GRDB.swift",
             exact: "7.9.0"
-        ),
-        .package(
-            url: "https://github.com/mytonwallet-org/DGCharts",
-            revision: "86929ffb26280d49777e8b2c2311daa419747a49"
         ),
         .package(
             url: "https://github.com/mytonwallet-org/hw-transport-ios-ble",
@@ -200,9 +204,6 @@ let package = Package(
         .target(
             name: "WalletResources",
             path: "SubModules/WalletResources",
-            exclude: [
-                "Resources/Strings/Localizable.xcstrings",
-            ],
             resources: [
                 .process("Resources/Animations"),
                 .process("Resources/Assets.xcassets"),
@@ -254,7 +255,6 @@ let package = Package(
                 "WalletContext",
                 "WalletCore",
                 .product(name: "Dependencies", package: "swift-dependencies"),
-                .product(name: "DGCharts", package: "dgcharts"),
                 .product(name: "Kingfisher", package: "kingfisher"),
                 .product(name: "LottieKit", package: "LottieKit"),
                 .product(name: "Perception", package: "swift-perception"),
@@ -394,6 +394,47 @@ let package = Package(
             ]
         ),
         airTarget(
+            "UniversalSearchCore"
+        ),
+        airTarget(
+            "UniversalSearchPersistence",
+            dependencies: [
+                "UniversalSearchCore",
+                .product(name: "GRDB", package: "grdb.swift"),
+            ]
+        ),
+        airTarget(
+            "UniversalSearchWalletCore",
+            dependencies: [
+                "UniversalSearchCore",
+                "WalletContext",
+                "WalletCore",
+                "WalletCoreTypes",
+            ]
+        ),
+        airTarget(
+            "UniversalSearchFeature",
+            dependencies: [
+                "UIComponents",
+                "UIAgent",
+                "UIInAppBrowser",
+                "UIUniversalSearch",
+                "UniversalSearchCore",
+                "UniversalSearchPersistence",
+                "UniversalSearchWalletCore",
+                "WalletContext",
+                "WalletCore",
+                "WalletCoreTypes",
+            ]
+        ),
+        airTarget(
+            "UIUniversalSearch",
+            dependencies: [
+                "UIComponents",
+                "WalletContext",
+            ]
+        ),
+        airTarget(
             "UITransaction",
             dependencies: [
                 "UIComponents",
@@ -431,6 +472,7 @@ let package = Package(
                 "WalletContext",
                 "WalletCore",
                 "WReachability",
+                .product(name: "GraphKit", package: "GraphKit"),
                 .product(name: "Flow", package: "swiftui-flow"),
                 .product(name: "Perception", package: "swift-perception"),
             ]
@@ -475,6 +517,8 @@ let package = Package(
                 "WalletContext",
                 "WalletCore",
                 "MyAgent",
+                .product(name: "BigInt", package: "swift-bigint"),
+                .product(name: "GraphKit", package: "GraphKit"),
                 .product(name: "GRDB", package: "grdb.swift"),
             ]
         ),
@@ -543,6 +587,29 @@ let package = Package(
             ]
         ),
         airTarget(
+            "AirUILab",
+            dependencies: [
+                "ProtectedAction",
+                "UIAssets",
+                "UIAgent",
+                "UIComponents",
+                "UIDapp",
+                "UIEarn",
+                "UIPasscode",
+                "UIProtectedAction",
+                "UISend",
+                "UISettings",
+                "UISwap",
+                "UITransaction",
+                "UIUniversalSearch",
+                "WalletContext",
+                "WalletCore",
+            ],
+            resources: [
+                .process("Resources"),
+            ]
+        ),
+        airTarget(
             "AirAsFramework",
             dependencies: [
                 contextMenuKitDependency,
@@ -568,12 +635,51 @@ let package = Package(
                 .product(name: "Perception", package: "swift-perception"),
                 "UIHome",
                 "UIBrowser",
+                "UIUniversalSearch",
+                "UniversalSearchFeature",
                 .product(name: "SwiftNavigation", package: "swift-navigation"),
                 "UIPasscode",
                 "ProtectedAction",
                 "UIProtectedAction",
                 "UIDapp",
                 "UICreateWallet",
+            ]
+        ),
+        airTestTarget(
+            "UniversalSearchCoreTests",
+            dependencies: [
+                "UniversalSearchCore",
+            ]
+        ),
+        airTestTarget(
+            "UniversalSearchPersistenceTests",
+            dependencies: [
+                "UniversalSearchCore",
+                "UniversalSearchPersistence",
+                .product(name: "GRDB", package: "grdb.swift"),
+            ]
+        ),
+        airTestTarget(
+            "UniversalSearchWalletCoreTests",
+            dependencies: [
+                "UniversalSearchCore",
+                "UniversalSearchWalletCore",
+                "WalletContext",
+                "WalletCore",
+                "WalletCoreTypes",
+            ]
+        ),
+        airTestTarget(
+            "UniversalSearchFeatureTests",
+            dependencies: [
+                "UIAgent",
+                "UIInAppBrowser",
+                "UIUniversalSearch",
+                "UniversalSearchCore",
+                "UniversalSearchFeature",
+                "UniversalSearchWalletCore",
+                "WalletCore",
+                "WalletCoreTypes",
             ]
         ),
         airTestTarget(
@@ -611,10 +717,27 @@ let package = Package(
             ]
         ),
         airTestTarget(
+            "UIEarnTests",
+            dependencies: [
+                "UIEarn",
+                "WalletCore",
+                "WalletContext",
+            ]
+        ),
+        airTestTarget(
             "UIComponentsTests",
             dependencies: [
                 contextMenuKitDependency,
                 "UIComponents",
+                "WalletResources",
+            ]
+        ),
+        airTestTarget(
+            "UIAgentTests",
+            dependencies: [
+                "UIAgent",
+                "WalletCore",
+                "WalletContext",
                 "WalletResources",
             ]
         ),
@@ -629,6 +752,7 @@ let package = Package(
             "UIProtectedActionTests",
             dependencies: [
                 "ProtectedAction",
+                "UIPasscode",
                 "UIProtectedAction",
                 "WalletCore",
                 "WalletResources",

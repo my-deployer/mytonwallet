@@ -9,16 +9,16 @@ import type { AnyAction, CallContractAction, JettonTransferAction, SwapAction } 
 import type { ParsedAction, ParsedTrace, TraceOutput } from './types';
 
 import { TONCOIN } from '../../../config';
+import { pauseWithAbortSignal, raceWithAbortSignal, throwIfAborted } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { getActivityTokenSlugs, getIsActivityPending } from '../../../util/activities';
 import { mergeSortedActivities } from '../../../util/activities/order';
 import { fromDecimal, toDecimal } from '../../../util/decimals';
 import { extractKey, findDifference, split } from '../../../util/iteratees';
 import { logDebug, logDebugError } from '../../../util/logs';
-import { pause } from '../../../util/schedulers';
 import withCacheAsync from '../../../util/withCacheAsync';
 import { getSigner } from './util/signer';
-import { resolveTokenWalletAddress } from './util/tonCore';
+import { fetchTokenWalletAddress, resolveTokenWalletAddress } from './util/tonCore';
 import { fetchStoredChainAccount, fetchStoredWallet } from '../../common/accounts';
 import { getTokenBySlug, tokensPreload } from '../../common/tokens';
 import { SEC } from '../../constants';
@@ -34,14 +34,17 @@ const RELOAD_ACTIVITIES_PAUSE = SEC;
 const TRACE_ATTEMPT_COUNT = 5;
 const TRACE_RETRY_DELAY = SEC;
 
-export const checkHasTransaction = withCacheAsync(async (network: ApiNetwork, address: string) => {
+export const checkHasTransaction = withCacheAsync(fetchHasTransaction);
+
+export async function fetchHasTransaction(network: ApiNetwork, address: string, signal?: AbortSignal) {
   const transactions = await fetchTransactions({
     network,
     address,
     limit: 1,
+    signal,
   });
   return Boolean(transactions.length);
-});
+}
 
 export async function fetchActivitySlice({
   accountId,
@@ -49,6 +52,7 @@ export async function fetchActivitySlice({
   toTimestamp,
   fromTimestamp,
   limit,
+  signal,
 }: ApiFetchActivitySliceOptions): Promise<ApiActivity[]> {
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'ton');
@@ -62,12 +66,13 @@ export async function fetchActivitySlice({
       limit: limit ?? GET_TRANSACTIONS_LIMIT,
       fromTimestamp,
       toTimestamp,
+      signal,
     });
   } else {
     let tokenWalletAddress = address;
 
     if (tokenSlug !== TONCOIN.slug) {
-      await tokensPreload.promise;
+      await raceWithAbortSignal(tokensPreload.promise, signal);
       const token = getTokenBySlug(tokenSlug);
       if (!token?.tokenAddress) {
         // Returning [] would make upstream `addPastActivities` set
@@ -75,7 +80,9 @@ export async function fetchActivitySlice({
         // Throwing makes `callApi` return undefined - the next cycle retries.
         throw new Error(`fetchActivitySlice: token ${tokenSlug} not in cache`);
       }
-      tokenWalletAddress = await resolveTokenWalletAddress(network, address, token.tokenAddress);
+      tokenWalletAddress = signal
+        ? await fetchTokenWalletAddress(network, address, token.tokenAddress, signal)
+        : await resolveTokenWalletAddress(network, address, token.tokenAddress);
     }
 
     activities = await fetchActions({
@@ -85,15 +92,21 @@ export async function fetchActivitySlice({
       limit: limit ?? GET_TRANSACTIONS_LIMIT,
       fromTimestamp,
       toTimestamp,
+      signal,
     });
 
     activities = activities.filter((activity) => getActivityTokenSlugs(activity).includes(tokenSlug));
   }
 
-  return reloadIncompleteActivities(network, address, activities);
+  return reloadIncompleteActivities(network, address, activities, signal);
 }
 
-export async function reloadIncompleteActivities(network: ApiNetwork, address: string, activities: ApiActivity[]) {
+export async function reloadIncompleteActivities(
+  network: ApiNetwork,
+  address: string,
+  activities: ApiActivity[],
+  signal?: AbortSignal,
+) {
   try {
     let actionIdsToReload = activities
       .filter((activity) => activity.shouldReload)
@@ -101,16 +114,18 @@ export async function reloadIncompleteActivities(network: ApiNetwork, address: s
 
     for (let attempt = 0; attempt < RELOAD_ACTIVITIES_ATTEMPTS && actionIdsToReload.length; attempt++) {
       logDebug(`Reload incomplete activities #${attempt + 1}`, actionIdsToReload);
-      await pause(RELOAD_ACTIVITIES_PAUSE);
+      await pauseWithAbortSignal(RELOAD_ACTIVITIES_PAUSE, signal);
 
       ({ activities, actionIdsToReload } = await tryReloadIncompleteActivities(
         network,
         address,
         activities,
         actionIdsToReload,
+        signal,
       ));
     }
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('reloadIncompleteActivities', err);
   }
 
@@ -123,6 +138,7 @@ async function tryReloadIncompleteActivities(
   address: string,
   activities: ApiActivity[],
   actionIdsToReload: string[],
+  signal?: AbortSignal,
 ) {
   const actionIdBatches = split(actionIdsToReload, GET_TRANSACTIONS_LIMIT);
 
@@ -132,6 +148,7 @@ async function tryReloadIncompleteActivities(
       filter: { actionId: actionIds },
       walletAddress: address,
       limit: GET_TRANSACTIONS_LIMIT,
+      signal,
     });
     return reloadedActivities.filter((activity) => !activity.shouldReload);
   }));
@@ -161,6 +178,7 @@ export async function decryptComment({ accountId, activity, enclaveToken }: ApiD
 export async function fetchActivityDetails(
   accountId: string,
   activity: ApiActivity,
+  signal?: AbortSignal,
 ): Promise<ApiActivity | undefined> {
   const { network } = parseAccountId(accountId);
   const { address: walletAddress } = await fetchStoredWallet(accountId, 'ton');
@@ -169,7 +187,7 @@ export async function fetchActivityDetails(
   // The trace can be unavailable immediately after the action is received, so a couple of delayed retries are made
   for (let attempt = 0; attempt < TRACE_ATTEMPT_COUNT && !result; attempt++) {
     if (attempt > 0) {
-      await pause(TRACE_RETRY_DELAY);
+      await pauseWithAbortSignal(TRACE_RETRY_DELAY, signal);
     }
 
     const parsedTrace = await fetchAndParseTrace(
@@ -177,6 +195,7 @@ export async function fetchActivityDetails(
       walletAddress,
       activity.externalMsgHashNorm!,
       getIsActivityPending(activity),
+      signal,
     );
     if (!parsedTrace) {
       continue;

@@ -501,7 +501,7 @@ function PasswordForm({
         onChange={handleAutoConfirmChange}
         className={styles.autoConfirmCheckbox}
       >
-        {toNativeDigits(lang('Remember for %1$d minutes', AUTO_CONFIRM_DURATION_MINUTES) as string)}
+        {toNativeDigits(lang('Remember for %minutes% minutes', AUTO_CONFIRM_DURATION_MINUTES) as string)}
       </Checkbox>
     );
   }

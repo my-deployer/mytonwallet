@@ -1,57 +1,136 @@
-import renderMarkdown, { parseMarkdownActions } from './renderMarkdown';
+import renderMarkdown, { renderDeterministicMarkdownTable } from './renderMarkdown';
 
-describe('renderMarkdown action links', () => {
-  it('separates complete action links from renderable text', () => {
-    expect(parseMarkdownActions([
-      'Done.',
-      '',
-      '[Open Agent](mtw://agent)',
-      '[Swap](mtw://swap)',
-    ].join('\n'))).toEqual({
-      buttons: [
-        { label: 'Open Agent', url: 'mtw://agent' },
-        { label: 'Swap', url: 'mtw://swap' },
-      ],
-      renderableText: 'Done.\n\n\n',
-    });
-  });
+describe('renderMarkdown', () => {
+  const text = [
+    '[Open site](https://example.com)',
+    'https://example.org',
+    '[Receive](mtw://receive)',
+  ].join('\n');
 
-  it.each([
-    '[',
-    '[Open Agent',
-    '[Open Agent]',
-    '[Open Agent](',
-    '[Open Agent](mtw:',
-    '[Open Agent](mtw://agent',
-  ])('buffers an incomplete trailing action token: %s', (action) => {
-    expect(parseMarkdownActions(`Done.\n\n${action}`, {
-      shouldBufferIncompleteAction: true,
-    })).toEqual({
-      buttons: [],
-      renderableText: 'Done.\n\n',
-    });
-  });
+  it('keeps V1 links and actions interactive', () => {
+    const result = renderMarkdown(text, { areLinksEnabled: true, profile: 'legacy' });
 
-  it('releases a trailing bracket expression after it stops matching an action', () => {
-    expect(parseMarkdownActions('Use [optional] value', {
-      shouldBufferIncompleteAction: true,
-    }).renderableText).toBe('Use [optional] value');
-  });
-
-  it('preserves regular Markdown links', () => {
-    expect(parseMarkdownActions('[Website](https://example.com)', {
-      shouldBufferIncompleteAction: true,
-    })).toEqual({
-      buttons: [],
-      renderableText: '[Website](https://example.com)',
-    });
-
-    const result = renderMarkdown('[Website](https://example.com)', {
-      shouldBufferIncompleteAction: true,
-    });
-
-    expect(result.renderableText).toBe('[Website](https://example.com)');
     expect(result.html).toContain('<a href="https://example.com"');
+    expect(result.html).toContain('<a href="https://example.org"');
+    expect(result.buttons).toEqual([{ label: 'Receive', url: 'mtw://receive' }]);
+  });
+
+  it('renders V2 links and actions as passive text', () => {
+    const result = renderMarkdown(text, { areLinksEnabled: false, profile: 'legacy' });
+
+    expect(result.html).not.toContain('<a ');
+    expect(result.html).toContain('Open site (https://example.com)');
+    expect(result.html).toContain('https://example.org');
+    expect(result.html).toContain('Receive');
     expect(result.buttons).toEqual([]);
+  });
+
+  it('renders the restrained Agent V2 profile without widening V1 syntax', () => {
+    const result = renderMarkdown([
+      'Wallet **warning:** keep `GRAM` for fees.',
+      '',
+      '- First item',
+      '- Second *item*',
+      '',
+      '1. Verify the address',
+      '2. Review the fee',
+      '',
+      '```javascript',
+      'const html = "<script>safe</script>";',
+      '```',
+    ].join('\n'), { areLinksEnabled: false, profile: 'agentV2' });
+
+    expect(result.html).toContain('<strong>warning:</strong>');
+    expect(result.html).toContain('<code>GRAM</code>');
+    expect(result.html).toContain('<ul><li>First item</li><li>Second <em>item</em></li></ul>');
+    expect(result.html).toContain('<ol><li>Verify the address</li><li>Review the fee</li></ol>');
+    expect(result.html).toContain('<pre data-language="javascript"><code>');
+    expect(result.html).toContain('&lt;script&gt;safe&lt;/script&gt;');
+    expect(result.html).not.toContain('<script>');
+  });
+
+  it('renders blank-line-separated Agent V2 prose as semantic paragraph blocks', () => {
+    const result = renderMarkdown(
+      'The transfer is ready for review.\n\nConfirm the address before signing.',
+      { areLinksEnabled: false, profile: 'agentV2' },
+    );
+
+    expect(result.html).toBe(
+      '<p>The transfer is ready for review.</p><p>Confirm the address before signing.</p>',
+    );
+  });
+
+  it('renders escaped signs from grounded Agent V2 values without leaking backslashes', () => {
+    const result = renderMarkdown(
+      String.raw`Daily changes: \+1\.62% and \-2\.01%.`,
+      { areLinksEnabled: false, profile: 'agentV2' },
+    );
+
+    expect(result.html).toBe('<p>Daily changes: +1.62% and -2.01%.</p>');
+  });
+
+  it('keeps a single Agent V2 prose line break inside one paragraph', () => {
+    const result = renderMarkdown(
+      'The transfer is ready for review.\nConfirm the address before signing.',
+      { areLinksEnabled: false, profile: 'agentV2' },
+    );
+
+    expect(result.html).toBe(
+      '<p>The transfer is ready for review. Confirm the address before signing.</p>',
+    );
+  });
+
+  it('keeps unsupported and incomplete Agent V2 Markdown readable and passive', () => {
+    const result = renderMarkdown([
+      '# Unsupported heading',
+      '> Unsupported quote',
+      '<img src=x onerror=alert(1)>',
+      '**unfinished',
+      'Literal %%AGENT_INLINE_CODE_42%% token',
+      '[Source](https://example.com/path_with_value)',
+      '[Receive](mtw://receive)',
+    ].join('\n'), { areLinksEnabled: false, profile: 'agentV2' });
+
+    expect(result.html).toContain('# Unsupported heading');
+    expect(result.html).toContain('&gt; Unsupported quote');
+    expect(result.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(result.html).not.toContain('<img ');
+    expect(result.html).toContain('**unfinished');
+    expect(result.html).toContain('%%AGENT_INLINE_CODE_42%%');
+    expect(result.html).toContain('Source (https://example.com/path_with_value)');
+    expect(result.html).toContain('Receive');
+    expect(result.html).not.toContain('<a ');
+    expect(result.buttons).toEqual([]);
+  });
+
+  it('renders deterministic and grounded Agent V2 Markdown tables safely', () => {
+    const markdown = [
+      '| Wallet | Balance | Status |',
+      '| --- | --- | --- |',
+      String.raw`| Main \| **literal** \<script\> | $10 | View only |`,
+    ].join('\n');
+    const deterministic = renderDeterministicMarkdownTable(markdown);
+    const modelAuthored = renderMarkdown(markdown, { areLinksEnabled: false, profile: 'agentV2' });
+
+    expect(deterministic.html).toContain('<table>');
+    expect(deterministic.html).toContain('<td>Main | **literal** &lt;script&gt;</td>');
+    expect(deterministic.html).not.toContain('<script>');
+    expect(modelAuthored.html).toContain('<table>');
+    expect(modelAuthored.html).toContain(
+      '<td>Main | <strong>literal</strong> &lt;script&gt;</td>',
+    );
+    expect(modelAuthored.html).not.toContain('<script>');
+  });
+
+  it('keeps malformed Agent V2 table syntax as escaped prose', () => {
+    const result = renderMarkdown([
+      '| Wallet | Balance |',
+      '| -- | --- |',
+      '| <img src=x onerror=alert(1)> | 10 USD |',
+    ].join('\n'), { areLinksEnabled: false, profile: 'agentV2' });
+
+    expect(result.html).not.toContain('<table>');
+    expect(result.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(result.html).not.toContain('<img ');
   });
 });

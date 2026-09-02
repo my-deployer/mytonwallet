@@ -2,7 +2,7 @@ import React from '../../lib/teact/teact';
 import TeactDOM from '../../lib/teact/teact-dom';
 
 import type { AgentMessage } from '../../global/types';
-import type { TextRevealPresentation } from './hooks/useAgentMessages';
+import type { TextRevealPresentation } from './hooks/textRevealPresentation';
 
 import { pause } from '../../util/schedulers';
 
@@ -290,6 +290,8 @@ describe('MessageBubble streaming text', () => {
                 ...buildMessage(`Hydrated response ${index}`),
                 id: index,
               }}
+              areLinksEnabled
+              isDisabled={false}
               shouldAnimateTextStreaming
             />
           ))}
@@ -368,7 +370,10 @@ describe('MessageBubble streaming text', () => {
     message: AgentMessage,
     props: Partial<React.ComponentProps<typeof MessageBubble>>,
   ) {
-    TeactDOM.render(<MessageBubble message={message} {...props} />, root);
+    TeactDOM.render(
+      <MessageBubble message={message} areLinksEnabled isDisabled={false} {...props} />,
+      root,
+    );
   }
 
   function getStreamingText() {

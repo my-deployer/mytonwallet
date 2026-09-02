@@ -254,7 +254,7 @@ private struct ItemView: View {
     
     func onCopy() {
         UIPasteboard.general.string = item.textToCopy
-        AppActions.showToast(icon: .animatedCopy, message: lang("%chain% Address Copied", arg1: item.chain.title))
+        AppActions.showToast(icon: .animatedCopy, message: L10n.chainAddressCopied(chain: item.chain.title))
         Haptics.play(.lightTap)
     }
 }

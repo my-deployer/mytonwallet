@@ -16,6 +16,7 @@ export async function fetchTransactions(options: {
   toTimestamp?: number;
   shouldIncludeFrom?: boolean;
   shouldIncludeTo?: boolean;
+  signal?: AbortSignal;
 }): Promise<ApiTransaction[]> {
   const {
     network,
@@ -25,6 +26,7 @@ export async function fetchTransactions(options: {
     fromTimestamp,
     shouldIncludeFrom,
     shouldIncludeTo,
+    signal,
   } = options;
 
   const data: {
@@ -36,7 +38,7 @@ export async function fetchTransactions(options: {
     start_utime: fromTimestamp && toSeconds(fromTimestamp) + (!shouldIncludeFrom ? 1 : 0),
     end_utime: toTimestamp && toSeconds(toTimestamp) - (!shouldIncludeTo ? 1 : 0),
     sort: 'desc',
-  });
+  }, signal);
 
   const {
     transactions: rawTransactions,

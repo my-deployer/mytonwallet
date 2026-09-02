@@ -22,6 +22,7 @@ struct DebugView: View {
 #if DEBUG
     @AppStorage(DebugBypassLockscreen.userDefaultsKey) private var bypassLockscreen = false
     @AppStorage(DebugPromotionPreset.userDefaultsKey) private var showAirPromotionPreset = false
+    @AppStorage(DebugPromotionPreset.cardMintingUserDefaultsKey) private var showCardMintingPromotionPreset = false
 #endif
 
     @Environment(\.dismiss) private var dismiss
@@ -128,6 +129,23 @@ struct DebugView: View {
                     Text("Overrides the current account promotion config with the built-in 2026 Air campaign sample.")
                 }
                 .onChange(of: showAirPromotionPreset) { _ in
+                    if showAirPromotionPreset {
+                        showCardMintingPromotionPreset = false
+                    }
+                    Task { @MainActor in
+                        AccountConfigStore.liveValue.refreshDebugOverrides()
+                    }
+                }
+
+                Section {
+                    Toggle("Show card minting promotion", isOn: $showCardMintingPromotionPreset)
+                } footer: {
+                    Text("Overrides the current account promotion and card inventory with a mint-card sample.")
+                }
+                .onChange(of: showCardMintingPromotionPreset) { _ in
+                    if showCardMintingPromotionPreset {
+                        showAirPromotionPreset = false
+                    }
                     Task { @MainActor in
                         AccountConfigStore.liveValue.refreshDebugOverrides()
                     }
@@ -188,13 +206,7 @@ struct DebugView: View {
         Text("TestFlight Only")
             .header(.purple)
 
-        DrawerCloseControlExperimentPicker()
-
-        DrawerAnimationExperimentSection()
-
-        TopTabsNavigationExperimentPicker()
-
-        WalletTokenPercentChangeThresholdExperimentPicker()
+        WalletTokenChainAccessoryExperimentToggle()
 
         Section {
             Toggle("View as production", isOn: $forceProductionMode)
@@ -241,173 +253,17 @@ struct DebugView: View {
     }
 }
 
-private struct DrawerAnimationExperimentSection: View {
-    @AppStorage(DrawerAnimationExperiment.exposedMainWidthUserDefaultsKey)
-    private var exposedMainWidth = DrawerAnimationExperiment.defaultExposedMainWidth
-    @AppStorage(DrawerAnimationExperiment.parallaxFactorUserDefaultsKey)
-    private var parallaxFactor = DrawerAnimationExperiment.defaultParallaxFactor
-    @AppStorage(DrawerAnimationExperiment.minimumScaleUserDefaultsKey)
-    private var minimumScale = DrawerAnimationExperiment.defaultMinimumScale
-    @AppStorage(DrawerAnimationExperiment.openMainContentOpacityUserDefaultsKey)
-    private var openMainContentOpacity = DrawerAnimationExperiment.defaultOpenMainContentOpacity
-    @AppStorage(DrawerAnimationExperiment.minimumDrawerOpacityUserDefaultsKey)
-    private var minimumDrawerOpacity = DrawerAnimationExperiment.defaultMinimumDrawerOpacity
-    @AppStorage(DrawerAnimationExperiment.transitionDurationUserDefaultsKey)
-    private var transitionDuration = DrawerAnimationExperiment.defaultTransitionDuration
-    @AppStorage(DrawerAnimationExperiment.minimumTransitionDurationUserDefaultsKey)
-    private var minimumTransitionDuration = DrawerAnimationExperiment.defaultMinimumTransitionDuration
-    @AppStorage(DrawerAnimationExperiment.springDampingRatioUserDefaultsKey)
-    private var springDampingRatio = DrawerAnimationExperiment.defaultSpringDampingRatio
-    @AppStorage(DrawerAnimationExperiment.overscrollReturnDurationUserDefaultsKey)
-    private var overscrollReturnDuration = DrawerAnimationExperiment.defaultOverscrollReturnDuration
-
-    var body: some View {
-        Group {
-            Section {
-                Stepper(value: $exposedMainWidth, in: 16...160, step: 1) {
-                    valueRow("Visible Main Content", value: "\(Int(exposedMainWidth)) pt")
-                }
-
-                Stepper(value: $parallaxFactor, in: 0...0.3, step: 0.01) {
-                    valueRow("Drawer Parallax", value: percent(parallaxFactor))
-                }
-
-                Stepper(value: $minimumScale, in: 0.85...1, step: 0.005) {
-                    valueRow("Drawer Starting Scale", value: percent(minimumScale, fractionLength: 1))
-                }
-
-                Stepper(value: $openMainContentOpacity, in: 0...1, step: 0.01) {
-                    valueRow("Open Main Opacity", value: percent(openMainContentOpacity))
-                }
-
-                Stepper(value: $minimumDrawerOpacity, in: 0...1, step: 0.01) {
-                    valueRow("Drawer Starting Opacity", value: percent(minimumDrawerOpacity))
-                }
-            } header: {
-                Text("Drawer Presentation")
-            } footer: {
-                Text("Values update the current experimental drawer immediately. Starting values apply at the beginning of its reveal transition and animate to 100%.")
-            }
-
-            Section {
-                Stepper(value: $transitionDuration, in: 0.1...1, step: 0.01) {
-                    valueRow("Full Duration", value: seconds(transitionDuration))
-                }
-
-                Stepper(value: $minimumTransitionDuration, in: 0.05...0.5, step: 0.01) {
-                    valueRow("Minimum Settle", value: seconds(minimumTransitionDuration))
-                }
-
-                Stepper(value: $springDampingRatio, in: 0.5...1, step: 0.01) {
-                    valueRow("Spring Damping", value: decimal(springDampingRatio))
-                }
-
-                Stepper(value: $overscrollReturnDuration, in: 0.1...0.8, step: 0.01) {
-                    valueRow("Overscroll Return", value: seconds(overscrollReturnDuration))
-                }
-
-                Button("Reset Drawer Settings") {
-                    DrawerAnimationExperiment.reset()
-                }
-            } header: {
-                Text("Drawer Animation")
-            } footer: {
-                Text("The spring uses gesture velocity. Full duration is scaled by the remaining transition distance, with Minimum Settle as its lower bound.")
-            }
-        }
-        .onChange(of: exposedMainWidth) { _ in notifyDidChange() }
-        .onChange(of: parallaxFactor) { _ in notifyDidChange() }
-        .onChange(of: minimumScale) { _ in notifyDidChange() }
-        .onChange(of: openMainContentOpacity) { _ in notifyDidChange() }
-        .onChange(of: minimumDrawerOpacity) { _ in notifyDidChange() }
-        .onChange(of: transitionDuration) { _ in notifyDidChange() }
-        .onChange(of: minimumTransitionDuration) { _ in notifyDidChange() }
-        .onChange(of: springDampingRatio) { _ in notifyDidChange() }
-        .onChange(of: overscrollReturnDuration) { _ in notifyDidChange() }
-    }
-
-    private func valueRow(_ title: String, value: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-        }
-    }
-
-    private func percent(_ value: Double, fractionLength: Int = 0) -> String {
-        value.formatted(.percent.precision(.fractionLength(fractionLength)))
-    }
-
-    private func decimal(_ value: Double) -> String {
-        value.formatted(.number.precision(.fractionLength(2)))
-    }
-
-    private func seconds(_ value: Double) -> String {
-        "\(decimal(value)) s"
-    }
-
-    private func notifyDidChange() {
-        DrawerAnimationExperiment.notifyDidChange()
-    }
-}
-
-private struct DrawerCloseControlExperimentPicker: View {
-    @AppStorage(DrawerCloseControlExperiment.variantUserDefaultsKey)
-    private var selection = DrawerCloseControlExperiment.initialVariantRawValue
+private struct WalletTokenChainAccessoryExperimentToggle: View {
+    @AppStorage(WalletTokenChainAccessoryExperiment.userDefaultsKey)
+    private var isEnabled = true
 
     var body: some View {
         Section {
-            Picker("Drawer Close Control", selection: $selection) {
-                ForEach(DrawerCloseControlExperiment.Variant.allCases) { variant in
-                    Text(variant.title).tag(variant.rawValue)
-                }
-            }
+            Toggle("Hide Unlabeled Token Chains", isOn: $isEnabled)
         } footer: {
-            Text("Selects either the standard close button or the currently open main tab title for dismissing the experimental Settings drawer.")
+            Text("Hides chain accessories in wallet token rows unless the token has a visible label badge, such as stablecoins and stocks. Off preserves the current behavior.")
         }
-        .onChange(of: selection) { _ in
-            DrawerCloseControlExperiment.notifyDidChange()
-        }
-    }
-}
-
-private struct TopTabsNavigationExperimentPicker: View {
-    @AppStorage(TopTabsNavigationExperiment.variantUserDefaultsKey)
-    private var selection = TopTabsNavigationExperiment.initialVariantRawValue
-
-    var body: some View {
-        Section {
-            Picker("Top Tabs Navigation", selection: $selection) {
-                ForEach(TopTabsNavigationExperiment.Variant.allCases) { variant in
-                    Text(variant.title).tag(variant.rawValue)
-                }
-            }
-        } footer: {
-            Text("Selects the experimental swipeable compact-width root navigation layout. Regular-width sidebar navigation is unchanged.")
-        }
-        .onChange(of: selection) { _ in
-            TopTabsNavigationExperiment.notifyDidChange()
-        }
-    }
-}
-
-private struct WalletTokenPercentChangeThresholdExperimentPicker: View {
-    @AppStorage(WalletTokenPercentChangeThresholdExperiment.userDefaultsKey)
-    private var selection = WalletTokenPercentChangeThresholdExperiment.initialPresetRawValue
-
-    var body: some View {
-        Section {
-            Picker("Token Row % Threshold", selection: $selection) {
-                ForEach(WalletTokenPercentChangeThresholdExperiment.Preset.allCases) { preset in
-                    Text(preset.title).tag(preset.rawValue)
-                }
-            }
-        } footer: {
-            Text("Hides 24-hour percentage changes in wallet token rows when their absolute value is below the selected threshold. Off preserves the current behavior.")
-        }
-        .onChange(of: selection) { _ in
+        .onChange(of: isEnabled) { _ in
             WalletCoreData.notify(event: .tokensChanged)
         }
     }

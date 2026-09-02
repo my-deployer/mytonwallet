@@ -77,7 +77,7 @@ struct DepositLinkView: View {
                             TappableDepositLink(depostitLink: url)
                         }
                     } header: {
-                        Text(lang("Share this URL to receive %token%", arg1: model.tokenAmount.token.symbol))
+                        Text(L10n.shareThisUrlToReceiveToken(token: model.tokenAmount.token.symbol))
                     }
                 }
             }

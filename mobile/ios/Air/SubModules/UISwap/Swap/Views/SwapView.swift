@@ -20,15 +20,15 @@ struct SwapView: View {
                     SwapWarning(displayImpactWarning: swapModel.displayImpactWarning)
                     
                     switch swapModel.detailsSection {
-                    case .onchain:
+                    case .dex:
                         SwapDetailsView(
                             model: swapModel.detailsVM,
                             slippage: swapModel.slippage,
                             onSlippageCommit: { swapModel.commitSlippage($0) }
                         )
                         .transition(.opacity)
-                    case .crosschain(let swapType):
-                        if let cexEstimate = swapModel.crosschain.cexEstimate,
+                    case .cex(let swapType):
+                        if let cexEstimate = swapModel.estimateState.cexEstimate,
                            let providerName = cexEstimate.providerName {
                             SwapCexProviderInfoView(
                                 providerName: providerName,
@@ -40,13 +40,13 @@ struct SwapView: View {
                         }
                         SwapCexDetailsView(
                             inputModel: swapModel.input,
-                            swapEstimate: swapModel.crosschain.cexEstimate,
+                            swapEstimate: swapModel.estimateState.cexEstimate,
                             swapType: swapType
                         )
                     }
                 }
                 .padding(.horizontal, 16)
-                .animation(.snappy, value: swapModel.onchain.swapEstimate)
+                .animation(.snappy, value: swapModel.estimateState.dexEstimate)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear

@@ -117,6 +117,7 @@ final class TokenActionsCell: FirstRowCell {
         guard let actionsView else { return }
         
         actionsView.token = token
+        actionsView.fundAvailable = accountContext?.account.supportsReceive == true
         actionsView.sendAvailable = sendAvailable
         actionsView.earnAvailable = earnAvailable
         

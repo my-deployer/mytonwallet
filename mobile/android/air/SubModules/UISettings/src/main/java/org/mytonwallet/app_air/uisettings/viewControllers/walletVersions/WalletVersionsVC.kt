@@ -31,6 +31,7 @@ import org.mytonwallet.app_air.walletcore.api.enclaveDuplicateSecrets
 import org.mytonwallet.app_air.walletcore.api.importNewWalletVersion
 import org.mytonwallet.app_air.walletcore.api.refreshStoredMfaIfPossible
 import org.mytonwallet.app_air.walletcore.models.MAccount
+import org.mytonwallet.app_air.walletcore.moshi.api.ApiUpdate
 import org.mytonwallet.app_air.walletcore.pushNotifications.AirPushNotifications
 import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.utils.jsonObject
@@ -38,7 +39,7 @@ import org.mytonwallet.app_air.walletcore.utils.jsonObject
 class WalletVersionsVC(context: Context) :
     WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource,
-    WalletCore.EventObserver {
+    WalletCore.UpdatesObserver {
     @Suppress("PropertyName")
     override val TAG = "WalletVersions"
 
@@ -52,7 +53,7 @@ class WalletVersionsVC(context: Context) :
     private val rvAdapter =
         WRecyclerViewAdapter(WeakReference(this), arrayOf(HEADER_CELL, VERSION_CELL))
 
-    val walletVersionsData = AccountStore.walletVersionsData
+    val walletVersionsData get() = AccountStore.walletVersionsData
 
     private val lastItemPaddingDecoration =
         LastItemPaddingDecoration(navigationController?.bottomInset ?: 0)
@@ -100,7 +101,7 @@ class WalletVersionsVC(context: Context) :
             toBottom(recyclerView)
         }
 
-        WalletCore.registerObserver(this)
+        WalletCore.subscribeToApiUpdates(ApiUpdate.ApiUpdateWalletVersions::class.java, this)
 
         updateTheme()
     }
@@ -202,18 +203,28 @@ class WalletVersionsVC(context: Context) :
     ) {
         when (indexPath.section) {
             1 -> {
+                val versions = walletVersionsData?.versions ?: return
                 (cellHolder.cell as WalletVersionCell).configure(
-                    walletVersionsData!!.versions[indexPath.row],
-                    indexPath.row == (walletVersionsData.versions.size - 1)
+                    versions[indexPath.row],
+                    indexPath.row == (versions.size - 1)
                 )
             }
         }
     }
 
-    override fun onWalletEvent(walletEvent: WalletEvent) {
-        when (walletEvent) {
+    override fun onBridgeUpdate(update: ApiUpdate) {
+        when (update) {
+            is ApiUpdate.ApiUpdateWalletVersions -> {
+                rvAdapter.reloadData()
+            }
+
             else -> {}
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        WalletCore.unsubscribeFromApiUpdates(ApiUpdate.ApiUpdateWalletVersions::class.java, this)
     }
 
     private fun importVersion(version: String) {

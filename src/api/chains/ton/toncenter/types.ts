@@ -108,6 +108,52 @@ export type MetadataMap = Record<string, {
   token_info: AnyTokenMetadata[];
 }>;
 
+/** An entry of the `/nft/items` response */
+export type NftItemState = {
+  address: string;
+  init: boolean;
+  /** Stringified integer */
+  index: string;
+  collection_address?: string | null;
+  owner_address?: string | null;
+  /** The owner behind a sale contract, equal to `owner_address` when the NFT is not on sale */
+  real_owner?: string | null;
+  on_sale?: boolean;
+  content?: { uri?: string };
+  last_transaction_lt?: string;
+};
+
+export type NftItemsResponse = {
+  nft_items: NftItemState[];
+  address_book: AddressBook;
+  metadata: MetadataMap;
+};
+
+/** An entry of the `/nft/transfers` response */
+export type NftTransferState = {
+  query_id: string;
+  nft_address: string;
+  nft_collection?: string | null;
+  transaction_hash: string;
+  /** Stringified integer */
+  transaction_lt: string;
+  /** Unix seconds */
+  transaction_now: number;
+  transaction_aborted: boolean;
+  old_owner: string;
+  new_owner: string;
+  response_destination?: string | null;
+  forward_amount?: string | null;
+  forward_payload?: string | null;
+  trace_id?: string;
+};
+
+export type NftTransfersResponse = {
+  nft_transfers: NftTransferState[];
+  address_book: AddressBook;
+  metadata: MetadataMap;
+};
+
 export type StakingProvider = 'tonstakers' | 'nominators' | (string & {});
 export type DexSlug = 'stonfi' | 'stonfi_v2' | 'dedust';
 export type MarketplaceSlug = 'fragment' | 'getgems';
@@ -387,6 +433,8 @@ export type NftCollectionMetadata = {
   name?: string;
   description?: string;
   image?: string;
+  is_nsfw?: boolean;
+  is_scam?: boolean;
   extra?: BaseExtra & {
     uri?: string;
     render_type?: 'hidden' | (string & {});
@@ -400,15 +448,22 @@ export type NftItemMetadata = {
   name?: string;
   description?: string;
   image?: string;
+  /** Stringified integer */
+  nft_index?: string;
+  // Set by Toncenter moderation. `is_nsfw` also makes it serve blurred `_image_*` URLs
+  is_nsfw?: boolean;
+  is_scam?: boolean;
   extra?: BaseExtra & {
-    attributes?: {
-      trait_type: string;
-      value: string;
-    }[];
+    /**
+     * The on-chain metadata is passed through as it was minted, so nothing about the shape is
+     * guaranteed: this is not always an array, and an entry `value` is not always a string
+     */
+    attributes?: unknown;
     render_type?: 'hidden' | (string & {});
     marketplace?: string;
     domain?: string;
     lottie?: string;
+    buttons?: { label?: string; uri?: string }[];
   };
 };
 

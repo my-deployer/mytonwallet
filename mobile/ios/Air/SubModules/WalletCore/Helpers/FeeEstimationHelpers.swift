@@ -27,9 +27,9 @@ public class FeeEstimationHelpers {
             
             if let networkFee, networkFee > 0, let decimals = nativeUserTokenIn?.decimals {
                 value = doubleToBigInt(networkFee, decimals: decimals)
-            } else if (swapType == SwapType.onChain) {
+            } else if swapType.route == .dex {
                 value = chainConfigIn?.maxSwap ?? 0
-            } else if (swapType == SwapType.crosschainFromWallet || swapType == SwapType.crosschainInsideWallet) {
+            } else if swapType.cexTopology != .toWallet {
                 value = (isNativeIn == true ? chainConfigIn?.maxTransfer : chainConfigIn?.maxTransferToken) ?? 0
             }
             

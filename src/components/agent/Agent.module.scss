@@ -30,6 +30,8 @@
 .messages {
   --hints-height: 88px;
 
+  overflow-anchor: none;
+
   overflow-y: auto;
   display: flex;
   flex: 1;
@@ -41,10 +43,12 @@
   background-color: var(--color-background-first);
 
   @include mixins.respond-below(xs) {
-    padding-bottom: 4.25rem; // Input height + margin top and bottom
+    padding-bottom: calc(var(--agent-input-bar-height, 3.5rem) + 0.75rem);
 
     :global(html.with-bottombar) & {
-      padding-bottom: calc(4.25rem + var(--bottombar-height));
+      padding-bottom: calc(
+        var(--agent-input-bar-height, calc(3.5rem + var(--bottombar-height))) + 0.75rem
+      );
     }
   }
 
@@ -57,7 +61,7 @@
   }
 
   @include mixins.respond-above(xs) {
-    padding-bottom: 5.25rem;
+    padding-bottom: calc(var(--agent-input-bar-height, 3.5rem) + 1.75rem);
   }
 
   &:global(.hints-shown) {
@@ -78,14 +82,8 @@
   flex-grow: 1;
 }
 
-.messagesContent {
-  display: flex;
-  flex-direction: column;
-  margin-top: auto;
-
-  @include mixins.respond-above(xs) {
-    min-height: 100%;
-  }
+.scrollToBottom {
+  bottom: calc(var(--agent-input-bar-height, 3.5rem) + 0.75rem);
 }
 
 .dateSeparator {

@@ -5,8 +5,8 @@
   z-index: 2;
 
   display: flex;
+  flex-direction: column;
   flex-shrink: 0;
-  align-items: flex-end;
 
   padding: 0 1.25rem 0.75rem;
 
@@ -35,6 +35,20 @@
   }
 }
 
+.quotaSlot {
+  margin-bottom: 0.5rem;
+}
+
+.statusSlot {
+  margin: 0 -0.25rem 0.5rem;
+}
+
+.inputRow {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+}
+
 .pill {
   position: relative;
 
@@ -59,13 +73,15 @@
 }
 
 .input {
+  --agent-input-inline-end-padding: 2.75rem;
+
   overflow-y: auto !important;
 
   height: auto;
   min-height: 2.75rem !important;
   max-height: 7.5rem;
   padding-block: 0.75rem !important;
-  padding-inline: 0.75rem 2.75rem !important;
+  padding-inline: 0.75rem var(--agent-input-inline-end-padding) !important;
   border: none !important;
   border-radius: 1.4375rem !important;
 
@@ -83,14 +99,25 @@
   }
 }
 
-.inputButton {
-  cursor: var(--custom-cursor, pointer);
+.inputWithTwoButtons {
+  --agent-input-inline-end-padding: 4.5rem;
+}
 
+.inputButtons {
   position: absolute;
   bottom: 0.625rem;
   inset-inline-end: 0.75rem;
 
   display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.inputButton {
+  cursor: var(--custom-cursor, pointer);
+
+  display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
 
@@ -123,6 +150,11 @@
   }
 
   @include mixins.active-transition-optimization();
+}
+
+.inputButtonActive {
+  color: var(--color-accent);
+  background-color: var(--color-accent-10o);
 }
 
 .sendButton {

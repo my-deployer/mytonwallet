@@ -58,6 +58,7 @@ class WAutoCompleteAddressCell(context: Context) :
 
     private var account: MAccount? = null
     private var address: MSavedAddress? = null
+    private var balanceAccountId: String? = null
     private var keyword: String = ""
     private var filteredChainName: String? = null
     private var isFirst: Boolean = false
@@ -203,6 +204,8 @@ class WAutoCompleteAddressCell(context: Context) :
                 animationState = item.animationState
             ) && !configureAddress(
                 address = address,
+                balanceAccountId = item.balanceAccountId,
+                balance = item.value ?: "",
                 keyword = item.keyword,
                 isFirst = item.isFirst,
                 isLast = item.isLast,
@@ -250,10 +253,11 @@ class WAutoCompleteAddressCell(context: Context) :
         updateRadius()
         updateAddressLabel()
 
-        if (account != null) {
+        if (balanceAccountId != null) {
             valueLabel.isVisible = true
             valueLabel.isSensitiveData = true
-            valueLabel.setMaskCols(8 + abs(account.name.hashCode()) % 8)
+            val name = account?.name ?: address?.name.orEmpty()
+            valueLabel.setMaskCols(8 + abs(name.hashCode()) % 8)
         } else {
             valueLabel.isVisible = false
         }
@@ -358,6 +362,7 @@ class WAutoCompleteAddressCell(context: Context) :
 
         this.account = account
         this.address = null
+        this.balanceAccountId = account.accountId
 
         iconView.config(account)
         cardThumbnail.configure(account)
@@ -374,6 +379,8 @@ class WAutoCompleteAddressCell(context: Context) :
 
     private fun configureAddress(
         address: MSavedAddress?,
+        balanceAccountId: String?,
+        balance: String,
         keyword: String,
         isFirst: Boolean,
         isLast: Boolean,
@@ -385,6 +392,8 @@ class WAutoCompleteAddressCell(context: Context) :
         }
         if (this.address == address &&
             titleLabel.text == address.name &&
+            this.balanceAccountId == balanceAccountId &&
+            valueLabel.contentView.text == balance &&
             this.keyword == keyword &&
             this.isFirst == isFirst &&
             this.isLast == isLast &&
@@ -396,10 +405,12 @@ class WAutoCompleteAddressCell(context: Context) :
         }
         this.account = null
         this.address = address
+        this.balanceAccountId = balanceAccountId
 
         iconView.config(address)
         cardThumbnail.configure(null)
         titleLabel.text = address.name
+        valueLabel.contentView.text = balance
 
         if (keyword.isNotEmpty()) {
             titleLabel.highlight(keyword)
@@ -464,12 +475,13 @@ class WAutoCompleteAddressCell(context: Context) :
     }
 
     fun notifyBalanceChange() {
-        val accountId = account?.accountId ?: return
+        val accountId = balanceAccountId ?: return
         val baseCurrency = WalletCore.baseCurrency
         CoroutineScope(Dispatchers.Main).launch {
             val balanceDouble = withContext(Dispatchers.Default) {
                 BalanceStore.totalBalanceInBaseCurrency(accountId)
             } ?: run {
+                if (balanceAccountId != accountId) return@launch
                 if (valueLabel.contentView.text != "") valueLabel.contentView.text = ""
                 return@launch
             }
@@ -479,6 +491,7 @@ class WAutoCompleteAddressCell(context: Context) :
                 baseCurrency.decimalsCount,
                 true
             )
+            if (balanceAccountId != accountId) return@launch
             if (valueLabel.contentView.text != newValue) valueLabel.contentView.text = newValue
         }
     }

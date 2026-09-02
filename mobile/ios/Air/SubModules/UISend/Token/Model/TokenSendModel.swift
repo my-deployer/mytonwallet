@@ -41,10 +41,13 @@ private struct TokenSendMemoRequirement {
     let isRequired: Bool
 }
 
-struct TokenSendDraftSnapshot: Equatable, Sendable {
-    let request: TokenSendDraftRequest
-    let draft: TokenSendValidatedDraft
+typealias TokenSendDraftSnapshot = OperationDraftSnapshot<
+    TokenSendDraftRequest,
+    TokenSendValidatedDraft
+>
 
+extension OperationDraftSnapshot
+where Request == TokenSendDraftRequest, Draft == TokenSendValidatedDraft {
     var isAccepted: Bool {
         draft.recipient.error == nil
     }
@@ -73,11 +76,7 @@ final class TokenSendModel: Sendable {
     @PerceptionIgnored
     private var feeQuoteTask: Task<Void, Never>?
     @PerceptionIgnored
-    private var draftValidationTask: Task<Void, Never>?
-    @PerceptionIgnored
     private var feeQuoteRevision: UInt64 = 0
-    @PerceptionIgnored
-    private var draftRevision: UInt64 = 0
     @PerceptionIgnored
     private var loadingFeeRequest: TokenSendFeeQuoteRequest?
     @PerceptionIgnored
@@ -86,6 +85,11 @@ final class TokenSendModel: Sendable {
     private var isReconcilingMaximum = false
     @PerceptionIgnored
     var onDraftFailure: ((any Error) -> Void)?
+    @PerceptionIgnored
+    let draftCoordinator: OperationDraftCoordinator<
+        TokenSendDraftRequest,
+        TokenSendValidatedDraft
+    >
 
     private var environment: TokenSendEnvironment
     private var amountInput: TokenSendAmountInput
@@ -94,9 +98,6 @@ final class TokenSendModel: Sendable {
     private var memoRequirement: TokenSendMemoRequirement?
 
     private(set) var binaryPayload: String?
-    private(set) var draftSnapshot: TokenSendDraftSnapshot?
-    private(set) var loadingDraftRequest: TokenSendDraftRequest?
-    private(set) var failedDraftRequest: TokenSendDraftRequest?
     private(set) var feeQuote: TokenSendFeeQuote?
     private(set) var maximumAmount: BigInt?
     private(set) var maximumFailure: TokenSendMaxFailure?
@@ -118,6 +119,10 @@ final class TokenSendModel: Sendable {
         self.isAccountSwitchingAllowed = isAccountSwitchingAllowed
             && configuration.mode == .send
         self.flow = flow
+        self.draftCoordinator = OperationDraftCoordinator(
+            debounce: .milliseconds(250),
+            load: flow.validateDraft
+        )
 
         let tokenSlug: String
         let tokenSelectionSource: TokenSelectionSource
@@ -188,6 +193,25 @@ final class TokenSendModel: Sendable {
             }
             switchToPreferredToken(chain: chain)
         }
+        draftCoordinator.didPublishSnapshot = { [weak self] snapshot in
+            guard let self else { return }
+            guard currentDraftRequest == snapshot.request else {
+                refreshDraft()
+                return
+            }
+            applyDraftDerivedState(
+                snapshot.draft,
+                request: snapshot.request
+            )
+        }
+        draftCoordinator.didFailRequest = { [weak self] request, error in
+            guard let self else { return }
+            guard currentDraftRequest == request else {
+                refreshDraft()
+                return
+            }
+            onDraftFailure?(error)
+        }
 
         setupObservers()
         refreshFeeQuote()
@@ -196,7 +220,6 @@ final class TokenSendModel: Sendable {
 
     deinit {
         feeQuoteTask?.cancel()
-        draftValidationTask?.cancel()
     }
 
     var amount: BigInt? {
@@ -259,11 +282,7 @@ final class TokenSendModel: Sendable {
     }
 
     var currentDraftSnapshot: TokenSendDraftSnapshot? {
-        guard let request = currentDraftRequest,
-              draftSnapshot?.request == request else {
-            return nil
-        }
-        return draftSnapshot
+        draftCoordinator.snapshot(for: currentDraftRequest)
     }
 
     var currentDraft: TokenSendValidatedDraft? {
@@ -271,13 +290,11 @@ final class TokenSendModel: Sendable {
     }
 
     var hasCurrentDraftFailure: Bool {
-        currentDraftRequest != nil
-            && failedDraftRequest == currentDraftRequest
+        draftCoordinator.hasFailed(currentDraftRequest)
     }
 
     var isDraftLoading: Bool {
-        guard let request = currentDraftRequest else { return false }
-        return loadingDraftRequest == request
+        draftCoordinator.isLoading(currentDraftRequest)
     }
 
     var addressViewModel: AddressViewModel {
@@ -478,7 +495,7 @@ final class TokenSendModel: Sendable {
 
     func retryDraft() {
         refreshFeeQuote(force: true)
-        refreshDraft(debounce: false, force: true)
+        draftCoordinator.retry()
     }
 
     func retryMaximum() {
@@ -692,7 +709,7 @@ final class TokenSendModel: Sendable {
     }
 
     private var displayedDraftForFee: TokenSendValidatedDraft? {
-        guard let snapshot = draftSnapshot,
+        guard let snapshot = draftCoordinator.lastSnapshot,
               snapshot.request.accountId == environment.accountId,
               snapshot.request.asset == environment.asset else {
             return nil
@@ -801,59 +818,11 @@ final class TokenSendModel: Sendable {
         debounce: Bool = true,
         force: Bool = false
     ) {
-        guard let request = currentDraftRequest else {
-            draftRevision &+= 1
-            draftValidationTask?.cancel()
-            loadingDraftRequest = nil
-            failedDraftRequest = nil
-            return
-        }
-        if !force {
-            if loadingDraftRequest == request
-                || draftSnapshot?.request == request
-                || failedDraftRequest == request {
-                return
-            }
-        }
-
-        draftRevision &+= 1
-        let revision = draftRevision
-        loadingDraftRequest = request
-        failedDraftRequest = nil
-        draftValidationTask?.cancel()
-        draftValidationTask = Task { [weak self, flow] in
-            do {
-                if debounce {
-                    try await Task.sleep(for: .seconds(0.250))
-                }
-                let draft = try await flow.validateDraft(request)
-                try Task.checkCancellation()
-                guard let self,
-                      draftRevision == revision,
-                      currentDraftRequest == request else {
-                    return
-                }
-                loadingDraftRequest = nil
-                failedDraftRequest = nil
-                draftSnapshot = TokenSendDraftSnapshot(
-                    request: request,
-                    draft: draft
-                )
-                applyDraftDerivedState(
-                    draft,
-                    request: request
-                )
-            } catch {
-                guard let self, !Task.isCancelled,
-                      draftRevision == revision,
-                      currentDraftRequest == request else {
-                    return
-                }
-                loadingDraftRequest = nil
-                failedDraftRequest = request
-                onDraftFailure?(error)
-            }
-        }
+        draftCoordinator.setRequest(
+            currentDraftRequest,
+            debounce: debounce ? nil : .zero,
+            refreshIfUnchanged: force
+        )
     }
 
     private func applyDraftDerivedState(
@@ -972,11 +941,7 @@ final class TokenSendModel: Sendable {
     }
 
     private func invalidateDraftIdentity() {
-        draftRevision &+= 1
-        draftValidationTask?.cancel()
-        loadingDraftRequest = nil
-        draftSnapshot = nil
-        failedDraftRequest = nil
+        draftCoordinator.reset()
         maximumCandidates = []
         maximumFailure = nil
         isReconcilingMaximum = false

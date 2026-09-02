@@ -8,6 +8,7 @@ import type {
 } from '../types';
 
 import { DEBUG } from '../../config';
+import { throwIfAborted } from '../../util/abortSignal';
 import { getActivityChains, getIsBackendSwapId } from '../../util/activities';
 import { areActivitiesSortedAndUnique, mergeSortedActivitiesToMaxTime } from '../../util/activities/order';
 import { getChainConfig, getOrderedAccountChains } from '../../util/chain';
@@ -30,7 +31,7 @@ import {
   getBackendDexSwapIdsDuplicatedByTonAggregates as findBackendDexSwapIdsDuplicatedByTonAggregates,
   swapReplaceActivities,
 } from '../common/swap';
-import { fetchSwaps } from './swap';
+import { requireSwapMethods } from './optional';
 
 export type ActivitySliceResult = {
   activities: ApiActivity[];
@@ -67,26 +68,31 @@ export async function fetchPastActivities(
   limit: number,
   tokenSlug?: string,
   toTimestamp?: number,
+  options?: { signal?: AbortSignal; shouldThrowOnError?: boolean },
 ): Promise<ActivitySliceResult | undefined> {
+  const { signal, shouldThrowOnError = false } = options ?? {};
   try {
     if (tokenSlug) {
       const { activities: rawActivities, hasMore, incompleteTraceIds } = await fetchTokenActivitySlice(
-        accountId, limit, tokenSlug, toTimestamp,
+        accountId, limit, tokenSlug, toTimestamp, signal,
       );
       const activities = await swapReplaceActivities(
         accountId,
         rawActivities,
         tokenSlug,
         undefined,
-        { incompleteTonTraceIds: incompleteTraceIds },
+        { incompleteTonTraceIds: incompleteTraceIds, ...(signal && { signal }) },
       );
 
       return { activities, hasMore };
     }
 
-    return fetchAllActivitySlice(accountId, limit, toTimestamp);
+    const result = await fetchAllActivitySlice(accountId, limit, toTimestamp, signal);
+    return result;
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('fetchPastActivities', tokenSlug, err);
+    if (shouldThrowOnError) throw err;
     return undefined;
   }
 }
@@ -197,7 +203,7 @@ async function fetchActiveCexPatchBeforeRender(
 
   const projectionContext = uniqueActivitiesById([...contextActivities, ...incomingActivities]);
   const result = await Promise.race([
-    fetchSwaps(
+    requireSwapMethods().fetchSwaps(
       accountId,
       activeCexSwaps.map(({ backendSwapId }) => ({ id: backendSwapId, chain: 'ton' as const })),
       projectionContext,
@@ -253,15 +259,23 @@ function fetchTokenActivitySlice(
   limit: number,
   tokenSlug: string,
   toTimestamp?: number,
+  signal?: AbortSignal,
 ): Promise<RawActivitySliceResult> {
   const chain = getChainBySlug(tokenSlug);
-  return fetchAndCheckActivitySlice(chain, { accountId, tokenSlug, toTimestamp, limit }, false);
+  return fetchAndCheckActivitySlice(chain, {
+    accountId,
+    tokenSlug,
+    toTimestamp,
+    limit,
+    ...(signal && { signal }),
+  });
 }
 
 async function fetchAllActivitySlice(
   accountId: string,
   limit: number,
   toTimestamp?: number,
+  signal?: AbortSignal,
 ): Promise<ActivitySliceResult> {
   const account = await fetchStoredAccount(accountId);
   // `getOrderedAccountChains` drops stored keys absent from CHAIN_CONFIG; without it a stale
@@ -275,9 +289,15 @@ async function fetchAllActivitySlice(
   const settled = await Promise.allSettled(
     // The `fetchActivitySlice` method of all chains must return sorted activities
     deduplicatedChains.map((chain) =>
-      fetchAndCheckActivitySlice(chain, { accountId, toTimestamp, limit }, true),
+      fetchAndCheckActivitySlice(chain, {
+        accountId,
+        toTimestamp,
+        limit,
+        ...(signal && { signal }),
+      }, { shouldFetchCrossChain: true }),
     ),
   );
+  throwIfAborted(signal);
 
   let firstRejection: Error | undefined;
   const results: RawActivitySliceResult[] = settled.map((settledResult, index) => {
@@ -303,7 +323,7 @@ async function fetchAllActivitySlice(
     rawActivities,
     undefined,
     undefined,
-    { incompleteTonTraceIds: incompleteTraceIds },
+    { incompleteTonTraceIds: incompleteTraceIds, ...(signal && { signal }) },
   );
   const hasMore = results.some((r) => r.hasMore);
 
@@ -324,9 +344,10 @@ export function decryptComment(accountId: string, activity: ApiTransactionActivi
   return '';
 }
 
-export async function fetchActivityDetails(accountId: string, activity: ApiActivity) {
+export async function fetchActivityDetails(accountId: string, activity: ApiActivity, signal?: AbortSignal) {
   for (const chain of getActivityChains(activity)) {
-    const newActivity = await chains[chain].fetchActivityDetails(accountId, activity);
+    const newActivity = await chains[chain].fetchActivityDetails(accountId, activity, signal);
+    throwIfAborted(signal);
     if (newActivity) {
       return newActivity;
     }
@@ -351,17 +372,20 @@ export async function fetchTransactionById(
 async function fetchAndCheckActivitySlice(
   chain: ApiChain,
   options: ApiFetchActivitySliceOptions,
-  isCrossChain: boolean,
+  {
+    shouldFetchCrossChain = false,
+  }: { shouldFetchCrossChain?: boolean } = {},
 ): Promise<RawActivitySliceResult> {
   const chainStandard = getChainConfig(chain).chainStandard;
 
   let activities: ApiActivity[] = [];
 
-  if (isCrossChain && chainStandard && !options.tokenSlug) {
+  if (shouldFetchCrossChain && chainStandard && !options.tokenSlug) {
     activities = await chains[chain].crosschain!.fetchCrossChainActivitySlice(options);
   } else {
     activities = await chains[chain].fetchActivitySlice(options);
   }
+  throwIfAborted(options.signal);
 
   // const activities = await chains[chain].fetchActivitySlice(options);
 

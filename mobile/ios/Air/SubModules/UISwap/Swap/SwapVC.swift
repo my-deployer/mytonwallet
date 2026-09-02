@@ -18,7 +18,7 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
     private var continueButton: WButton?
     private var continueButtonConstraint: NSLayoutConstraint?
     private var pendingButtonConfiguration: SwapButtonConfiguration?
-    private var appliedButtonConfiguration: SwapButtonConfiguration?
+    private var buttonPresentationController: SwapButtonPresentationController?
     private lazy var accountSwitcher = AccountSwitcher(configuration: .init(accountSupport: .swap)) { [weak self] accountId in
         self?.selectAccount(accountId: accountId)
     }
@@ -38,6 +38,7 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
         defaultSellingToken: String? = nil,
         defaultBuyingToken: String? = nil,
         defaultSellingAmount: Double? = nil,
+        defaultBuyingAmount: Double? = nil,
         isAccountSwitchingAllowed: Bool = false
     ) {
         self._account = accountContext
@@ -48,6 +49,7 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
             defaultSellingToken: defaultSellingToken ?? TONCOIN_SLUG,
             defaultBuyingToken: defaultBuyingToken ?? TON_USDT_SLUG,
             defaultSellingAmount: defaultSellingAmount,
+            defaultBuyingAmount: defaultBuyingAmount,
             accountContext: _account
         )
         WalletCoreData.add(eventObserver: self)
@@ -89,13 +91,15 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
 
         let continueButton = addBottomButton(bottomConstraint: false)
         self.continueButton = continueButton
+        let buttonPresentationController = SwapButtonPresentationController(button: continueButton)
+        self.buttonPresentationController = buttonPresentationController
         setupBottomButtonBackground(continueButton: continueButton)
         continueButton.isEnabled = false
+        continueButton.isUserInteractionEnabled = false
         continueButton.configureTitle(sellingToken: swapModel.input.sellingToken, buyingToken: swapModel.input.buyingToken)
         continueButton.addTarget(self, action: #selector(continuePressed), for: .touchUpInside)
         if let pendingButtonConfiguration {
-            pendingButtonConfiguration.apply(to: continueButton)
-            appliedButtonConfiguration = pendingButtonConfiguration
+            buttonPresentationController.apply(pendingButtonConfiguration)
             self.pendingButtonConfiguration = nil
         }
         
@@ -105,6 +109,7 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
         self.continueButtonConstraint = constraint
         
         updateTheme()
+        addCustomNavigationBarBackground(color: .air.sheetBackground)
     }
 
     private func setupBottomButtonBackground(continueButton: WButton) {
@@ -164,7 +169,7 @@ public final class SwapVC: WViewController, WSensitiveDataProtocol {
         switch route {
         case .priceImpactWarning(let impact, let next):
             showAlert(
-                title: lang("The exchange rate is below market value!", arg1: "\(impact.formatted(.number.precision(.fractionLength(0..<1)).locale(.forNumberFormatters)))%"),
+                title: L10n.theExchangeRateIsBelowMarketValue(value: "\(impact.formatted(.number.precision(.fractionLength(0..<1)).locale(.forNumberFormatters)))%"),
                 text: lang("We do not recommend to perform an exchange, try to specify a lower amount."),
                 button: lang("Swap"),
                 buttonStyle: .destructive,
@@ -298,18 +303,14 @@ extension SwapVC: WalletCoreData.EventsObserver {
 
 extension SwapVC: SwapModelDelegate {
     func applyButtonConfiguration(_ config: SwapButtonConfiguration) {
-        guard let continueButton else {
+        guard let buttonPresentationController else {
             if pendingButtonConfiguration?.hasSamePresentation(as: config) == true {
                 return
             }
             pendingButtonConfiguration = config
             return
         }
-        if appliedButtonConfiguration?.hasSamePresentation(as: config) == true {
-            return
-        }
-        config.apply(to: continueButton)
-        appliedButtonConfiguration = config
+        buttonPresentationController.apply(config)
     }
 
     func executeSwapCommand(_ command: SwapCommand) {

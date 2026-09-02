@@ -1,5 +1,5 @@
 import { Address, beginCell, Cell, internal, SendMode, storeMessageRelaxed } from '@ton/core';
-import { WalletContractV5R1 } from '@ton/ton';
+import { WalletContractV5R1 } from '@ton/ton/dist/wallets/WalletContractV5R1';
 
 import type { DieselStatus } from '../../../global/types';
 import type { DappProtocolType } from '../../dappProtocols';
@@ -35,6 +35,7 @@ import { ApiTransactionDraftError, ApiTransactionError } from '../../types';
 import { ApiCommonError } from '../../types';
 
 import { DEFAULT_FEE, DIESEL_ADDRESS, STON_PTON_ADDRESS } from '../../../config';
+import { raceWithAbortSignal, throwIfAborted } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { bigintMultiplyToNumber } from '../../../util/bigint';
 import { fromDecimal, toDecimal } from '../../../util/decimals';
@@ -71,7 +72,7 @@ import { withoutTransferConcurrency } from '../../common/preventTransferConcurre
 import { getTokenByAddress } from '../../common/tokens';
 import { MINUTE, SEC } from '../../constants';
 import { ApiServerError, handleServerError } from '../../errors';
-import { checkHasTransaction } from './activities';
+import { checkHasTransaction, fetchHasTransaction } from './activities';
 import { resolveAddress } from './address';
 import { ATTEMPTS, FEE_FACTOR, LEDGER_VESTING_SUBWALLET_ID, TRANSFER_TIMEOUT_SEC } from './constants';
 import { emulateExternalMessage, emulateTransaction } from './emulation';
@@ -97,16 +98,18 @@ async function getMfaExtensionSeqnoWithFallback(
   network: ApiNetwork,
   walletAddress: Address,
   storedExtensionAddress: string,
+  signal?: AbortSignal,
 ) {
   try {
-    return await getMfaExtensionSeqno(network, storedExtensionAddress);
+    return await getMfaExtensionSeqno(network, storedExtensionAddress, signal);
   } catch (err) {
-    const resolved = await resolveMfaExtensionAddress(network, walletAddress);
+    throwIfAborted(signal);
+    const resolved = await resolveMfaExtensionAddress(network, walletAddress, signal);
     if (!resolved) throw err;
 
     try {
       if (!Address.parse(storedExtensionAddress).equals(Address.parse(resolved))) {
-        return await getMfaExtensionSeqno(network, resolved);
+        return await getMfaExtensionSeqno(network, resolved, signal);
       }
     } catch {
       // Ignore parsing issues and try resolved address anyway.
@@ -121,12 +124,14 @@ async function getRequiredMfaExtensionSeqno(
   wallet: TonWallet,
   mfa: ApiMfa | undefined,
   logPrefix: string,
+  signal?: AbortSignal,
 ) {
   if (!mfa) return undefined;
 
   try {
-    return await getMfaExtensionSeqnoWithFallback(network, wallet.address, mfa.address);
+    return await getMfaExtensionSeqnoWithFallback(network, wallet.address, mfa.address, signal);
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError(logPrefix, 'Failed to get MFA extension seqno', err);
     throw err;
   }
@@ -200,6 +205,7 @@ function consumeCachedWalletInfo(network: ApiNetwork, address: string, allowInFl
 
 export async function checkTransactionDraft(
   options: CustomTransactionOptions<ApiCheckTransactionDraftOptions>,
+  signal?: AbortSignal,
 ): Promise<ApiCheckTransactionDraftResult> {
   const {
     accountId,
@@ -217,14 +223,14 @@ export async function checkTransactionDraft(
   let result: ApiCheckTransactionDraftResult = {};
 
   try {
-    result = await checkToAddress(network, toAddress);
+    result = await checkToAddress(network, toAddress, signal);
     if ('error' in result) {
       return result;
     }
 
     toAddress = result.resolvedAddress!;
 
-    const { isInitialized } = await getContractInfo(network, toAddress);
+    const { isInitialized } = await getContractInfo(network, toAddress, signal);
 
     let stateInit: Cell | undefined;
 
@@ -240,7 +246,9 @@ export async function checkTransactionDraft(
     }
 
     if (result.isBounceable && !isInitialized && !stateInit) {
-      result.isToAddressNew = !(await checkHasTransaction(network, toAddress));
+      result.isToAddressNew = !(await (signal
+        ? fetchHasTransaction(network, toAddress, signal)
+        : checkHasTransaction(network, toAddress)));
       return {
         ...result,
         error: ApiTransactionDraftError.InactiveContract,
@@ -260,8 +268,10 @@ export async function checkTransactionDraft(
     const wallet = getTonWallet(account.byChain.ton);
     const { address, isInitialized: isWalletInitialized } = account.byChain.ton;
     const signer = getSigner(accountId, account, undefined, true);
-    const walletInfo = await getWalletInfo(network, wallet);
-    rememberWalletInfo(network, address, walletInfo);
+    const walletInfo = await getWalletInfo(network, wallet, signal);
+    if (!signal) {
+      rememberWalletInfo(network, address, walletInfo);
+    }
     const { seqno, balance: toncoinBalance } = walletInfo;
 
     let toncoinAmount: bigint;
@@ -291,6 +301,7 @@ export async function checkTransactionDraft(
         payload,
         forwardAmount,
         isLedger: account.type === 'ledger',
+        ...(signal && { signal }),
       });
       ({ amount: toncoinAmount, toAddress, payload } = tokenTransfer);
       const { realAmount: realToncoinAmount, isTokenWalletDeployed, mintlessTokenBalance } = tokenTransfer;
@@ -302,7 +313,7 @@ export async function checkTransactionDraft(
 
       const tokenWalletAddress = toAddress;
       balance = await calculateTokenBalanceWithMintless(
-        network, tokenWalletAddress, isTokenWalletDeployed, mintlessTokenBalance,
+        network, tokenWalletAddress, isTokenWalletDeployed, mintlessTokenBalance, signal,
       );
     }
 
@@ -313,6 +324,7 @@ export async function checkTransactionDraft(
       wallet,
       account.byChain.ton.mfa,
       'checkTransactionDraft',
+      signal,
     );
 
     const signingOptions = {
@@ -364,8 +376,15 @@ export async function checkTransactionDraft(
           account.byChain.ton.mfa.address,
           signingResult.mfaRequest,
           legacyWalletTransaction,
+          signal,
         )
-        : await emulateTransactionWithFallback(network, wallet, signingResult.transaction, isWalletInitialized),
+        : await emulateTransactionWithFallback(
+          network,
+          wallet,
+          signingResult.transaction,
+          isWalletInitialized,
+          signal,
+        ),
     );
 
     // todo: Use `received` from the emulation to calculate the real fee. Check what happens when the receiver is the same wallet.
@@ -391,6 +410,7 @@ export async function checkTransactionDraft(
           canTransferGasfully,
           toncoinBalance: effectiveToncoinBalance,
           tokenBalance: balance,
+          signal,
         });
       }
 
@@ -417,6 +437,7 @@ export async function checkTransactionDraft(
       error: ApiTransactionDraftError.InsufficientBalance,
     };
   } catch (err: any) {
+    throwIfAborted(signal);
     return {
       ...handleServerError(err),
       ...result,
@@ -430,6 +451,7 @@ function estimateDiesel(
   toncoinAmount: string,
   isW5?: boolean,
   isStars?: boolean,
+  signal?: AbortSignal,
 ) {
   return callBackendGet<{
     status: DieselStatus;
@@ -438,11 +460,11 @@ function estimateDiesel(
     pendingCreatedAt?: string;
   }>('/diesel/estimate', {
     address, tokenAddress, toncoinAmount, isW5, isStars,
-  });
+  }, undefined, signal);
 }
 
-export async function checkToAddress(network: ApiNetwork, toAddress: string) {
-  const resolved = await resolveAddress(network, toAddress);
+export async function checkToAddress(network: ApiNetwork, toAddress: string, signal?: AbortSignal) {
+  const resolved = await resolveAddress(network, toAddress, undefined, signal);
   if ('error' in resolved) return resolved;
   toAddress = resolved.address;
 
@@ -1345,6 +1367,7 @@ async function emulateMfaRequestWithFallback(
   mfaExtensionAddress: string,
   mfaRequest: SignedMfaRequest,
   legacyWalletTransaction: Cell,
+  signal?: AbortSignal,
 ): Promise<ApiEmulationWithFallbackResult> {
   try {
     const authDate = Math.floor(Date.now() / 1000);
@@ -1363,13 +1386,22 @@ async function emulateMfaRequestWithFallback(
       walletAddress,
       Address.parse(mfaExtensionAddress),
       body,
+      undefined,
+      signal,
     );
     return { isFallback: false, ...emulation };
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('Failed to emulate an MFA transaction', err);
   }
 
-  const fallback = await emulateTransactionWithFallback(network, wallet, legacyWalletTransaction, walletIsInitialized);
+  const fallback = await emulateTransactionWithFallback(
+    network,
+    wallet,
+    legacyWalletTransaction,
+    walletIsInitialized,
+    signal,
+  );
   return { ...fallback, isFallback: true };
 }
 
@@ -1378,11 +1410,13 @@ async function emulateTransactionWithFallback(
   wallet: TonWallet,
   transaction: Cell,
   isInitialized?: boolean,
+  signal?: AbortSignal,
 ): Promise<ApiEmulationWithFallbackResult> {
   try {
-    const emulation = await emulateTransaction(network, wallet, transaction, isInitialized);
+    const emulation = await emulateTransaction(network, wallet, transaction, isInitialized, signal);
     return { isFallback: false, ...emulation };
   } catch (err) {
+    throwIfAborted(signal);
     logDebugError('Failed to emulate a transaction', err);
   }
 
@@ -1390,12 +1424,15 @@ async function emulateTransactionWithFallback(
   // It doesn't support estimating more than 20 messages (inside the transaction) at once.
   // eslint-disable-next-line no-null/no-null
   const { code = null, data = null } = !isInitialized ? wallet.init : {};
-  const { source_fees: fees } = await getTonClient(network).estimateExternalMessageFee(wallet.address, {
-    body: transaction,
-    initCode: code,
-    initData: data,
-    ignoreSignature: true,
-  });
+  const { source_fees: fees } = await raceWithAbortSignal(
+    () => getTonClient(network).estimateExternalMessageFee(wallet.address, {
+      body: transaction,
+      initCode: code,
+      initData: data,
+      ignoreSignature: true,
+    }),
+    signal,
+  );
   const networkFee = BigInt(fees.in_fwd_fee + fees.storage_fee + fees.gas_fee + fees.fwd_fee);
   return { isFallback: true, networkFee };
 }
@@ -1489,6 +1526,7 @@ async function getDiesel({
   canTransferGasfully,
   toncoinBalance,
   tokenBalance,
+  signal,
 }: {
   accountId: string;
   tokenAddress: string;
@@ -1496,6 +1534,7 @@ async function getDiesel({
   // The below fields allow to avoid network requests if you already have these data
   toncoinBalance?: bigint;
   tokenBalance?: bigint;
+  signal?: AbortSignal;
 }): Promise<ApiFetchEstimateDieselResult> {
   const { network } = parseAccountId(accountId);
   if (network !== 'mainnet') return DIESEL_NOT_AVAILABLE;
@@ -1507,7 +1546,7 @@ async function getDiesel({
   if (!token.isGaslessEnabled && !token.isStarsEnabled) return DIESEL_NOT_AVAILABLE;
 
   const { address, version } = storedTonWallet;
-  toncoinBalance ??= await getWalletBalance(network, wallet);
+  toncoinBalance ??= await getWalletBalance(network, wallet, signal);
   const fee = getDieselToncoinFee(token);
   const toncoinNeeded = fee.amount - toncoinBalance;
 
@@ -1519,6 +1558,7 @@ async function getDiesel({
     toDecimal(toncoinNeeded),
     version === 'W5',
     fee.isStars,
+    signal,
   );
   const diesel: ApiFetchEstimateDieselResult = {
     status: rawDiesel.status,
@@ -1535,7 +1575,10 @@ async function getDiesel({
     return diesel;
   }
 
-  tokenBalance ??= await getTokenBalanceWithMintless(network, address, tokenAddress);
+  tokenBalance ??= await raceWithAbortSignal(
+    () => getTokenBalanceWithMintless(network, address, tokenAddress),
+    signal,
+  );
   const canPayDiesel = tokenBalance >= tokenAmount;
   const isAwaitingNotExpiredPrevious = Boolean(
     rawDiesel.pendingCreatedAt

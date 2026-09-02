@@ -1,12 +1,9 @@
-import { Address } from '@ton/core';
-
 import type { SignedMfaRequest } from '../chains/ton/util/signer';
 import type { ApiAccountAny, ApiChain, ApiMfa, ApiTonWallet, OnApiUpdate } from '../types';
 
 import { parseAccountId } from '../../util/account';
 import { logDebugError } from '../../util/logs';
-import { resolveMfaExtensionAddress } from '../chains/ton/contracts/util';
-import { createRemoveMfaExtensionPayload, installMfaExtension } from '../chains/ton/mfa';
+import chains from '../chains';
 import {
   fetchStoredAccount,
   fetchStoredAddress,
@@ -30,6 +27,19 @@ const mfaConfirmationHandlers = new Map<string, MfaConfirmationHandler[]>();
 
 export function initMfa(_onUpdate: OnApiUpdate) {
   onUpdate = _onUpdate;
+}
+
+/**
+ * The MFA implementation. MFA lives on the TON wallet: the extension address, the stored `mfa` field and
+ * the account updates below are all TON-shaped.
+ */
+function resolveMfa() {
+  const mfa = chains.ton?.mfa;
+  if (!mfa) {
+    throw new Error('MFA is not supported in this build');
+  }
+
+  return mfa;
 }
 
 export async function fetchMfaRequest(hash: string) {
@@ -89,7 +99,7 @@ export async function installMfaFromRequest(
   user: { id: string; name: string; username?: string; avatarUrl?: string },
   enclaveToken?: string,
 ) {
-  const result = await installMfaExtension(accountId, user.id, enclaveToken);
+  const result = await resolveMfa().installMfaExtension(accountId, user.id, enclaveToken);
   if ('error' in result) return result;
 
   const mfa = {
@@ -120,7 +130,7 @@ export async function installMfaFromRequest(
 
 export async function publishRemoveMfaRequest(accountId: string, enclaveToken?: string) {
   const walletAddress = await fetchStoredAddress(accountId, 'ton');
-  const result = await createRemoveMfaExtensionPayload(accountId, enclaveToken);
+  const result = await resolveMfa().createRemoveMfaExtensionPayload(accountId, enclaveToken);
   if ('error' in result) return result;
 
   return await createMfaRequest({
@@ -149,7 +159,7 @@ export async function refreshMfaState(accountId: string, enclaveToken?: string):
   const { network } = parseAccountId(accountId);
   const { address: walletAddress, mfa: currentMfa } = account.byChain.ton;
 
-  const mfaAddress = await resolveMfaExtensionAddress(network, Address.parse(walletAddress));
+  const mfaAddress = await resolveMfa().resolveExtensionAddress(network, walletAddress);
   let nextMfa: ApiTonWallet['mfa'] | undefined = mfaAddress ? {
     address: mfaAddress,
     user: currentMfa?.user,

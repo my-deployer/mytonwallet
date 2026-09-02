@@ -57,7 +57,6 @@ public struct MtwCardBalanceView: View, Equatable {
             integerColor: nil,
             fractionColor: nil,
             symbolColor: nil,
-            showChevron: false,
             sensitiveDataCellSize: 6,
             sensitiveDataTheme: .adaptive,
         )
@@ -70,7 +69,6 @@ public struct MtwCardBalanceView: View, Equatable {
             integerColor: nil,
             fractionColor: nil,
             symbolColor: nil,
-            showChevron: true,
             sensitiveDataCellSize: 16,
             sensitiveDataTheme: .light,
         )
@@ -86,7 +84,6 @@ public struct MtwCardBalanceView: View, Equatable {
                 integerColor: nil,
                 fractionColor: nil,
                 symbolColor: nil,
-                showChevron: true,
                 sensitiveDataCellSize: 16,
                 sensitiveDataTheme: .light,
             )
@@ -100,7 +97,6 @@ public struct MtwCardBalanceView: View, Equatable {
             integerColor: UIColor.label,
             fractionColor: .air.secondaryLabel,
             symbolColor: .air.secondaryLabel,
-            showChevron: false,
             sensitiveDataCellSize: 14,
             sensitiveDataTheme: .adaptive,
         )
@@ -113,7 +109,6 @@ public struct MtwCardBalanceView: View, Equatable {
             integerColor: UIColor.label,
             fractionColor: .air.secondaryLabel,
             symbolColor: .air.secondaryLabel,
-            showChevron: true,
             sensitiveDataCellSize: 15,
             sensitiveDataTheme: .adaptive,
         )
@@ -126,7 +121,6 @@ public struct MtwCardBalanceView: View, Equatable {
             integerColor: nil,
             fractionColor: nil,
             symbolColor: nil,
-            showChevron: false,
             sensitiveDataCellSize: 18,
             sensitiveDataTheme: .light,
         )
@@ -140,8 +134,6 @@ public struct MtwCardBalanceView: View, Equatable {
         public let integerColor: UIColor?
         public let fractionColor: UIColor?
         public let symbolColor: UIColor?
-
-        public let showChevron: Bool
 
         public let sensitiveDataCellSize: CGFloat
         public let sensitiveDataTheme: ShyMask.Theme
@@ -185,42 +177,40 @@ public struct MtwCardBalanceView: View, Equatable {
     private var isPlaceholder: Bool { balance == nil }
 
     private func mainView(_ balance: BaseCurrencyAmount) -> some View {
-        HStack(spacing: 6) {
-            Text(
-                balance.formatAttributed(
-                    format: .init(preset: .baseCurrencyEquivalentWithMinimumFractionDigits, roundHalfUp: true),
-                    integerFont: style.integerFont,
-                    fractionFont: style.fractionFont,
-                    symbolFont: style.symbolFont,
-                    integerColor: style.integerColor ?? UIColor.label,
-                    fractionColor: (style.fractionColor ?? UIColor.label)
-                        .withAlphaComponent(secondaryOpacity),
-                    symbolColor: (style.symbolColor ?? UIColor.label)
-                        .withAlphaComponent(secondaryOpacity),
-                )
-            )
+        balanceContent(balance)
             .contentTransition(isNumericTranstionEnabled ? .numericText() : .identity)
             .lineLimit(1)
+            .environment(\.layoutDirection, .leftToRight)
+            .backportGeometryGroup()
+            .minimumScaleFactor(0.1)
+            .sensitiveData(
+                alignment: .center,
+                cols: 14,
+                rows: 3,
+                cellSize: style.sensitiveDataCellSize,
+                theme: style.sensitiveDataTheme,
+                cornerRadius: 12,
+                onReveal: onSensitiveDataReveal
+            )
+    }
 
-            if style.showChevron {
-                Image.airBundle("ArrowUpDown")
-                    .opacity(secondaryOpacity == 1 ? 0.75 : 0.5)
-                    .offset(y: -1)
-                    .padding(.vertical, -8)
-                    .accessibilityHidden(true)
-            }
-        }
-        .environment(\.layoutDirection, .leftToRight)
-        .backportGeometryGroup()
-        .minimumScaleFactor(0.1)
-        .sensitiveData(
-            alignment: .center,
-            cols: 14,
-            rows: 3,
-            cellSize: style.sensitiveDataCellSize,
-            theme: style.sensitiveDataTheme,
-            cornerRadius: 12,
-            onReveal: onSensitiveDataReveal
+    private func balanceContent(_ balance: BaseCurrencyAmount) -> some View {
+        attributedBalanceText(balance)
+    }
+
+    private func attributedBalanceText(_ balance: BaseCurrencyAmount) -> Text {
+        Text(
+            balance.formatAttributed(
+                format: .init(preset: .baseCurrencyEquivalentWithMinimumFractionDigits, roundHalfUp: true),
+                integerFont: style.integerFont,
+                fractionFont: style.fractionFont,
+                symbolFont: style.symbolFont,
+                integerColor: style.integerColor ?? UIColor.label,
+                fractionColor: (style.fractionColor ?? UIColor.label)
+                    .withAlphaComponent(secondaryOpacity),
+                symbolColor: (style.symbolColor ?? UIColor.label)
+                    .withAlphaComponent(secondaryOpacity),
+            )
         )
     }
 

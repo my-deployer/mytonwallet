@@ -10,7 +10,7 @@ private let log = Log("OnchainSwapEstimateEngine")
         changedFrom: SwapSide,
         swapType: SwapType,
         account: SwapAccountSnapshot
-    ) async throws -> OnchainSwapEstimateResult {
+    ) async throws -> SwapEstimateResult {
         try await loadEstimate(
             input: input,
             changedFrom: changedFrom,
@@ -22,7 +22,7 @@ private let log = Log("OnchainSwapEstimateEngine")
         input: SwapEstimateInput,
         changedFrom: SwapSide,
         account: SwapAccountSnapshot
-    ) async throws -> OnchainSwapEstimateResult {
+    ) async throws -> SwapEstimateResult {
         do {
             let selling = input.selling
             let buying = input.buying
@@ -59,11 +59,14 @@ private let log = Log("OnchainSwapEstimateEngine")
                 isFromAmountMax: isFromAmountMax
             )
 
-            let swapEstimate = try await Api.swapEstimate(accountId: account.id, request: request)
+            let response = try await Api.swapEstimate(accountId: account.id, request: request)
             try Task.checkCancellation()
-            return OnchainSwapEstimateResult(
+            guard case .dex(let swapEstimate) = response else {
+                throw SdkError.unexpected(message: "Expected DEX swap estimate", context: response)
+            }
+            return SwapEstimateResult(
                 changedFrom: changedFrom,
-                swapEstimate: swapEstimate,
+                response: .dex(swapEstimate),
                 estimateIssue: nil
             )
         } catch {
@@ -72,32 +75,12 @@ private let log = Log("OnchainSwapEstimateEngine")
             }
             log.error("swapEstimate error \(error, .public)")
             let isRateLimited = isSwapEstimateRateLimited(error)
-            return OnchainSwapEstimateResult(
+            return SwapEstimateResult(
                 changedFrom: changedFrom,
-                swapEstimate: nil,
-                estimateIssue: isRateLimited ? nil : mapEstimateError(error),
+                response: nil,
+                estimateIssue: isRateLimited ? nil : swapEstimateIssue(from: error),
                 isRateLimited: isRateLimited
             )
-        }
-    }
-
-    private func mapEstimateError(_ error: Error) -> SwapIssue {
-        if let message = swapEstimateBackendMessage(from: error) {
-            return mapEstimateErrorMessage(message)
-        }
-        return .unexpectedEstimateError
-    }
-
-    private func mapEstimateErrorMessage(_ message: String) -> SwapIssue {
-        switch message.trimmingCharacters(in: .whitespacesAndNewlines) {
-        case "Insufficient liquidity":
-            return .insufficientLiquidity
-        case "Tokens must be different", "Asset not found", "Pair not found":
-            return .invalidPair
-        case "Too small amount":
-            return .tooSmallAmount
-        default:
-            return .unexpectedEstimateError
         }
     }
 }

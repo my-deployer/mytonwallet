@@ -9,15 +9,14 @@ import useLastCallback from './useLastCallback';
 import useShowTransition from './useShowTransition';
 
 export default function useVesting(
-  { vesting, userMycoin, isDisabled }: {
+  { vesting, userMycoin }: {
     vesting?: ApiVestingInfo[];
     userMycoin?: UserToken;
-    isDisabled?: boolean;
   },
 ) {
   const { loadMycoin, openVestingModal } = getActions();
 
-  const hasVesting = !isDisabled && Boolean(vesting?.length);
+  const hasVesting = Boolean(vesting?.length);
   const isMycoinLoaded = Boolean(userMycoin);
 
   useEffect(() => {

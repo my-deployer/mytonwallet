@@ -40,7 +40,7 @@ import WalletContext
                         icon: .airBundle("SendCopy"),
                         handler: {
                             UIPasteboard.general.string = address
-                            AppActions.showToast(icon: .animatedCopy, message: lang("%chain% Address Copied", arg1: chain.title))
+                            AppActions.showToast(icon: .animatedCopy, message: L10n.chainAddressCopied(chain: chain.title))
                             Haptics.play(.lightTap)
                         }
                     )

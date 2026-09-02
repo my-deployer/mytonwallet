@@ -1,5 +1,6 @@
 
 import ContextMenuKit
+import Perception
 import SwiftUI
 import UIKit
 import UIComponents
@@ -8,6 +9,7 @@ import WalletContext
 
 @MainActor public protocol WalletAssetsDelegate: AnyObject {
     func walletAssetDidChangeHeight(animated: Bool)
+    func walletAssetDidChangeDisplayTabs(animated: Bool)
 }
 
 @MainActor public final class WalletAssetsVC: WViewController, WalletCoreData.EventsObserver, Sendable {
@@ -16,8 +18,7 @@ import WalletContext
     public weak var delegate: (any WalletAssetsDelegate)?
     
     public var editingNavigator: NftsEditingNavigator { nftsVCManager.editingNavigator  }
-    
-    private var tokensVC: WalletTokensVC?
+
     private var nftsVC: NftsVC?
     private let nftsVCManager: NftsVCManager
     
@@ -29,7 +30,7 @@ import WalletContext
     private var tabViewControllers: [DisplayAssetTab: any WSegmentedControllerContent] = [:]
     private var lastMeasuredWidth: CGFloat = 0
     private var calculatedTabHeights: [ObjectIdentifier: CGFloat] = [:]
-    private var forceAnimatedHeightReport = false
+    private var lastReportedHasVisibleContent: Bool?
     
     private lazy var tabContextMenuProviders = WalletAssetsTabContextMenuProviders(
         accountSource: accountSource,
@@ -61,7 +62,7 @@ import WalletContext
     
     public init(accountSource: AccountSource) {
         self.accountIdProvider = AccountIdProvider(source: accountSource)
-        self.tabsViewModel = WalletAssetsViewModel(accountSource: accountSource)
+        self.tabsViewModel = WalletAssetsViewModel(accountSource: accountSource, includesTokens: false)
         self.nftsVCManager = NftsVCManager(tabsViewModel: tabsViewModel)
         super.init(nibName: nil, bundle: nil)
     }
@@ -70,15 +71,10 @@ import WalletContext
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func switchIncomingFirstTabAccountTo(_ accountId: String, animated: Bool) {
+    private func switchIncomingFirstTabAccountTo(_ accountId: String) {
         guard let first = tabsViewModel.displayTabs.first, let vc = tabViewControllers[first] else { return }
 
-        forceAnimatedHeightReport = animated
-        defer { forceAnimatedHeightReport = false }
-
         switch vc {
-        case let tokensVC as WalletTokensVC:
-            tokensVC.switchAccountTo(accountId: accountId, animated: false)
         case let nftsVC as NftsVC:
             nftsVC.switchAccountTo(accountId: accountId, animated: false)
         default:
@@ -86,14 +82,28 @@ import WalletContext
         }
     }
     
-    public func interactivelySwitchAccountTo(accountId: String) {
+    private var displayedAccountId: String?
+
+    private func observeAccountId() {
+        withPerceptionTracking {
+            _ = accountIdProvider.accountId
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                self?.accountIdChanged()
+                self?.observeAccountId()
+            }
+        }
+    }
+
+    private func accountIdChanged() {
+        let accountId = accountIdProvider.accountId
+        guard accountId != displayedAccountId else { return }
+        displayedAccountId = accountId
         editingNavigator.cancelEditing()
-        
-        tabsViewModel.changeAccountTo(accountId: accountId)
-        switchIncomingFirstTabAccountTo(accountId, animated: true)
         walletAssetsView.tabsContainer.handleSegmentChange(to: 0, animated: true)
     }
-        
+
+
     func _displayTabsChanged(force: Bool, animated: Bool) {
         nftsVCManager.beginUpdate()
         defer {
@@ -123,11 +133,13 @@ import WalletContext
         let items: [WSegmentedPagerItem] = displayTabs.enumerated().map { index, tab in
             makePagerItem(tab: tab, viewController: vcs[index])
         }
+        walletAssetsView.tabsContainer.isSegmentedControlHidden = items.count == 1
         walletAssetsView.tabsContainer.replace(
             items: items,
             force: force,
             animated: animated
         )
+        lastReportedHasVisibleContent = hasVisibleContent
         
         // now remove "orphaned" tabs
         tabViewControllersToRemove.values.forEach { removeChild($0) }
@@ -141,7 +153,7 @@ import WalletContext
     private func makeViewControllerForTab(_ tab: DisplayAssetTab) -> any WSegmentedControllerContent & UIViewController {
         switch tab {
         case .tokens:
-            fatalError("created once")
+            fatalError("Tokens are presented as a separate Home section")
         case .nfts:
             return nftsVC!
         case .nftCollectionFilter(let filter):
@@ -150,27 +162,16 @@ import WalletContext
     }
     
     public override func loadView() {
-        let tokensVC = WalletTokensVC(accountSource: accountSource, mode: .compact)
-        self.tokensVC = tokensVC
-        addChild(tokensVC)
-        tokensVC.didMove(toParent: self)
-
         let nftsVC = NftsVC(accountSource: accountSource, manager: nftsVCManager, layoutMode: .compact, filter: .none)
         self.nftsVC = nftsVC
         addChild(nftsVC)
         nftsVC.didMove(toParent: self)
 
-        view = WalletAssetsView(walletTokensVC: tokensVC, walletCollectiblesView: nftsVC)
+        view = WalletAssetsView(walletCollectiblesView: nftsVC)
     }
     
     public override func viewDidLoad() {
         super.viewDidLoad()
-        
-        tokensVC?.onHeightChanged = { [weak self] animated in
-            guard let self else { return }
-            self.invalidateCalculatedTabHeights()
-            self.headerHeightChanged(animated: animated || self.forceAnimatedHeightReport)
-        }
         
         nftsVCManager.restoreTabsOnReorderCanceling = true
         nftsVCManager.onStateChange = { [weak self] oldState, newState in
@@ -184,8 +185,16 @@ import WalletContext
                 }
             }
             
-            if newState.heightChanged(since: oldState) {
+            let hasVisibleContent = self.hasVisibleContent
+            let visibilityChanged = self.lastReportedHasVisibleContent.map { $0 != hasVisibleContent } == true
+            self.lastReportedHasVisibleContent = hasVisibleContent
+            let heightChanged = newState.heightChanged(since: oldState)
+            if visibilityChanged || heightChanged {
                 self.invalidateCalculatedTabHeights()
+            }
+            if visibilityChanged {
+                self.delegate?.walletAssetDidChangeDisplayTabs(animated: true)
+            } else if heightChanged {
                 self.headerHeightChanged(animated: true)
             }
         }
@@ -216,11 +225,12 @@ import WalletContext
         }
         
         updateTheme()
-        
-        tabViewControllers[.tokens] = tokensVC
+
         tabViewControllers[.nfts] = nftsVC
 
         WalletCoreData.add(eventObserver: self)
+        displayedAccountId = accountIdProvider.accountId
+        observeAccountId()
         
         tabsViewModel.delegate = self
         _displayTabsChanged(force: true, animated: false)
@@ -253,10 +263,6 @@ import WalletContext
     nonisolated public func walletCore(event: WalletCore.WalletCoreData.Event) {
         MainActor.assumeIsolated {
             switch event {
-            case .accountChanged:
-                if accountSource == .current {
-                    walletAssetsView.selectedIndex = 0
-                }
             case .applicationWillEnterForeground:
                 view.setNeedsLayout()
                 view.setNeedsDisplay()
@@ -391,17 +397,18 @@ import WalletContext
     
     public func computedHeight() -> CGFloat {
         let progress = walletAssetsView.scrollProgress
+        let contentTopInset = walletAssetsView.tabsContainer.contentTopInset
         
         var newItemsHeight: CGFloat
         
         let vcs = walletAssetsView.tabsContainer.viewControllers
         if vcs.isEmpty {
-            newItemsHeight = 44
+            newItemsHeight = 0
         } else if vcs.count == 1 {
-            newItemsHeight = 44 + calculatedHeight(for: vcs[0])
+            newItemsHeight = contentTopInset + calculatedHeight(for: vcs[0])
         } else {
             let lo = max(0, min(vcs.count - 2, Int(progress)))
-            newItemsHeight = 44 + interpolate(
+            newItemsHeight = contentTopInset + interpolate(
                 from: calculatedHeight(for: vcs[lo]),
                 to: calculatedHeight(for: vcs[lo + 1]),
                 progress: clamp(progress - CGFloat(lo), min: 0, max: 1)
@@ -412,9 +419,16 @@ import WalletContext
         
         return newItemsHeight
     }
-    
-    public var skeletonViewCandidates: [UIView] {
-        walletAssetsView.walletTokensVC.skeletonViewCandidates
+
+    public var hasVisibleContent: Bool {
+        Self.shouldShowContent(
+            hasDisplayTabs: !tabsViewModel.displayTabs.isEmpty,
+            visibleNftCount: NftStore.getAccountShownNfts(accountId: accountIdProvider.accountId)?.count
+        )
+    }
+
+    static func shouldShowContent(hasDisplayTabs: Bool, visibleNftCount: Int?) -> Bool {
+        hasDisplayTabs && visibleNftCount != 0
     }
     
     private func onSegmentsReorder() {
@@ -425,5 +439,11 @@ import WalletContext
 extension WalletAssetsVC: WalletAssetsViewModelDelegate {
     public func walletAssetModelDidChangeDisplayTabs(dueToAccountSwitch: Bool) {
         _displayTabsChanged(force: dueToAccountSwitch, animated: dueToAccountSwitch)
+        if dueToAccountSwitch {
+            // Runs after the tabs were rebuilt for the new account, so the first tab's reused
+            // controller is switched regardless of how the account observers were ordered
+            switchIncomingFirstTabAccountTo(accountIdProvider.accountId)
+        }
+        delegate?.walletAssetDidChangeDisplayTabs(animated: dueToAccountSwitch)
     }
 }

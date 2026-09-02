@@ -172,7 +172,8 @@ object LocaleController {
 
     fun getStringOrNull(key: String?): String? = key?.let { getString(key) }
 
-    fun getPlural(amount: Int, key: String): String = getPluralOrFormat(key, amount)
+    fun getPlural(amount: Int, key: String, placeholder: String = "%count%"): String =
+        getPluralOrFormat(key, amount, placeholder = placeholder)
 
     // `$in_days` is a pure plural ("in N days"). `today`/`tomorrow` are handled separately because
     // the CLDR `one` plural category (e.g. ru/uk: 1, 21, 31, 61...) cannot isolate exactly 1 day.
@@ -188,25 +189,27 @@ object LocaleController {
         key: String,
         amount: Int,
         value: String = amount.toString(),
-        localizedNumbers: Boolean = true
+        localizedNumbers: Boolean = true,
+        placeholder: String = "%count%"
     ): String {
         val rule: ((Int) -> Int)? = PLURAL_RULES[activeLanguage.langCode]
         val optionIndex = rule?.invoke(amount) ?: 0
         val pluralKey = key + "." + PLURAL_OPTIONS.getOrElse(optionIndex) { PLURAL_OPTIONS[0] }
         return if (dictionary.contains(pluralKey)) {
-            getFormattedString(
+            getStringWithKeyValues(
                 pluralKey,
-                listOf(value)
+                listOf(placeholder to value)
             ).withLocalizedNumbers(localizedNumbers)
         } else {
             val fallbackKey = key + "." + PLURAL_OPTIONS[6]
             if (dictionary.contains(fallbackKey)) {
-                getFormattedString(
+                getStringWithKeyValues(
                     fallbackKey,
-                    listOf(value)
+                    listOf(placeholder to value)
                 ).withLocalizedNumbers(localizedNumbers)
             } else {
-                getFormattedString(key, listOf(value)).withLocalizedNumbers(localizedNumbers)
+                getStringWithKeyValues(key, listOf(placeholder to value))
+                    .withLocalizedNumbers(localizedNumbers)
             }
         }
     }

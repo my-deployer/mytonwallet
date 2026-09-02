@@ -20,20 +20,20 @@ import WalletContext
         false
     }
 
-    func previousNetworkFee(state: SwapFlowState) -> MDouble? {
+    func previousNetworkFee(state: SwapEstimateModel) -> MDouble? {
         nil
     }
 
-    func priceImpactWarning(state: SwapFlowState) -> Double? {
+    func priceImpactWarning(state: SwapEstimateModel) -> Double? {
         nil
     }
 
     func supports(swapType: SwapType) -> Bool {
-        swapType != .onChain
+        swapType.route == .cex
     }
 
     func detailsSection(swapType: SwapType) -> SwapDetailsSection {
-        .crosschain(swapType)
+        .cex(swapType)
     }
 
     func estimate(
@@ -51,7 +51,7 @@ import WalletContext
         if result.isRateLimited {
             return .rateLimited(changedFrom: result.changedFrom)
         }
-        let estimatedAmounts = result.swapEstimate.map {
+        let estimatedAmounts = result.cexEstimate.map {
             SwapInputModel.Estimate(
                 changedFrom: result.changedFrom,
                 fromAmount: $0.fromAmount.value,
@@ -62,7 +62,7 @@ import WalletContext
             changedFrom: result.changedFrom,
             estimatedAmounts: estimatedAmounts,
             backendMaxAmount: nil,
-            stateUpdate: .crosschain(result)
+            stateUpdate: result
         )
     }
 
@@ -70,13 +70,13 @@ import WalletContext
         swapType: SwapType,
         sellingToken: ApiToken,
         nativeTokenInBalance: BigInt?,
-        state: SwapFlowState
+        state: SwapEstimateModel
     ) -> SwapMaxAmountContext {
         let explainedFee = explainSwapFee(.init(
             swapType: swapType,
             tokenIn: sellingToken,
-            networkFee: state.crosschain.cexEstimate?.networkFee,
-            realNetworkFee: state.crosschain.cexEstimate?.realNetworkFee,
+            networkFee: state.cexEstimate?.networkFee,
+            realNetworkFee: state.cexEstimate?.realNetworkFee,
             dieselStatus: nil,
             dieselFee: nil,
             nativeTokenInBalance: nativeTokenInBalance
@@ -87,18 +87,18 @@ import WalletContext
         )
     }
 
-    func buttonState(context: SwapPresentationContext, state: SwapFlowState) -> SwapButtonState {
-        presenter.buttonState(context: context, state: state.crosschain)
+    func buttonState(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapButtonState {
+        presenter.buttonState(context: context, state: state)
     }
 
-    func route(context: SwapPresentationContext, state: SwapFlowState) -> SwapRoute? {
-        presenter.route(context: context, state: state.crosschain)
+    func route(context: SwapPresentationContext, state: SwapEstimateModel) -> SwapRoute? {
+        presenter.route(context: context, state: state)
     }
 
-    func performSwap(context: SwapExecutionContext, state: SwapFlowState) async throws -> SwapExecutionResult {
+    func performSwap(context: SwapExecutionContext, state: SwapEstimateModel) async throws -> SwapExecutionResult {
         try await executor.performSwap(
             swapType: context.swapType,
-            swapEstimate: state.crosschain.cexEstimate,
+            swapEstimate: state.cexEstimate,
             sellingToken: context.confirmation.selling.token,
             buyingToken: context.confirmation.buying.token,
             account: context.account,

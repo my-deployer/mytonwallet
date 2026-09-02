@@ -29,17 +29,14 @@ import {
   GLOBAL_STATE_CACHE_KEY,
   IFRAME_WHITELIST,
   IPFS_GATEWAY_BASE_URL,
-  IS_CORE_WALLET,
   IS_EXPLORER,
   IS_EXTENSION,
-  IS_FEATURE_LIMITED,
   IS_FIREFOX_EXTENSION,
   IS_GRAM_WALLET,
   IS_HEADLESS,
   IS_OPERA_EXTENSION,
   IS_PACKAGED_ELECTRON,
   IS_TELEGRAM_APP,
-  IS_TON_BRAND,
   LANG_LIST,
   MFA_API_BASE_URL,
   MW_STATIC_BASE_URL,
@@ -86,7 +83,7 @@ const cspConnectSrcExtra = APP_ENV === 'development'
   ? `http://localhost:3000 ${process.env.CSP_CONNECT_SRC_EXTRA_URL}`
   : '';
 const cspScriptSrcExtra = IS_TELEGRAM_APP ? 'https://telegram.org' : '';
-const cspFrameSrcExtra = IS_FEATURE_LIMITED ? '' : [
+const cspFrameSrcExtra = [
   'https://buy-sandbox.moonpay.com/',
   'https://buy.moonpay.com/',
   'https://sell.moonpay.com/',
@@ -139,7 +136,6 @@ const cspImageSrcHosts = [
   'https://mytonwallet.s3.eu-central-1.amazonaws.com',
   'https://cache.tonapi.io', // Deprecated
   'https://c.tonapi.io',
-  'https://imgproxy.toncenter.com',
   'https://web-api.changelly.com',
 ].join(' ');
 
@@ -428,10 +424,8 @@ export default function createConfig(
         csp: CSP,
         cache_key: GLOBAL_STATE_CACHE_KEY,
         title: APP_NAME,
-        homepage: IS_CORE_WALLET
-          ? 'https://wallet.ton.org'
-          : IS_GRAM_WALLET ? 'https://gramwallet.io' : 'https://mywallet.io',
-        assets_prefix: IS_GRAM_WALLET ? 'gramWallet/' : IS_TON_BRAND ? 'coreWallet/' : '',
+        homepage: IS_GRAM_WALLET ? 'https://wallet.ton.org' : 'https://mywallet.io',
+        assets_prefix: IS_GRAM_WALLET ? 'gramWallet/' : '',
       }),
       new PreloadWebpackPlugin({
         include: 'allAssets',
@@ -441,9 +435,6 @@ export default function createConfig(
           /theme_.*?\.png/, // Theme icons
           /chain_.*?\.png/, // Chain icons
           /settings_.*?\.svg/, // Settings icons (svg)
-          ...(IS_TON_BRAND ? [
-            /core_wallet_.*?\.png/, // Lottie thumbs for TON Wallet
-          ] : []),
           ...(IS_GRAM_WALLET ? [
             /gram_wallet_.*?\.png/, // Lottie thumbs for Gram Wallet
           ] : []),
@@ -495,7 +486,6 @@ export default function createConfig(
         IS_EXTENSION: '', // It's necessary to use an empty string, because it's used in bundle-time conditions
         IS_FIREFOX_EXTENSION: 'false',
         IS_AIR_APP: 'false',
-        IS_CORE_WALLET: 'false',
         IS_GRAM_WALLET: 'false',
         IS_TELEGRAM_APP: 'false',
         IS_EXPLORER: 'false',
@@ -509,10 +499,18 @@ export default function createConfig(
         MULTISEND_DAPP_URL: '',
         PORTFOLIO_DAPP_URL: '',
         AGENT_API_URL: '',
+        AGENT_OVERRIDE: 'v1',
+        AGENT_V2_QUOTA_STATUS_ENABLED: '0',
         MFA_BOT_URL: '',
         MFA_API_BASE_URL: '',
         MFA_MASTER_ADDRESS: '',
         MFA_EXTENSION_CODE_HASH: '',
+        NO_TON: '0',
+        NO_TRON: '0',
+        NO_SOLANA: '0',
+        NO_EVM: '0',
+        NO_EXTRA_FEATURES: '0',
+        NO_LEDGER: '0',
       }),
       new ProvidePlugin({
         Buffer: ['buffer', 'Buffer'],
@@ -539,13 +537,7 @@ export default function createConfig(
                   256: 'gramWallet/icon-256x256.png',
                   512: 'gramWallet/icon-512x512.png',
                 }
-                : IS_TON_BRAND
-                  ? {
-                    192: 'coreWallet/icon-192x192.png',
-                    256: 'coreWallet/icon-256x256.png',
-                    512: 'coreWallet/icon-512x512.png',
-                  }
-                  : { 192: 'icon-192x192.png', 384: 'icon-384x384.png', 512: 'icon-512x512.png' };
+                : { 192: 'icon-192x192.png', 384: 'icon-384x384.png', 512: 'icon-512x512.png' };
 
               if (IS_FIREFOX_EXTENSION) {
                 manifest.background = {
@@ -579,9 +571,9 @@ export default function createConfig(
               // Consolidate the retiring mytonwallet.app brand host onto mywallet.io in search. The app
               // keeps serving on .app (installed PWAs and deeplinks pin it), so this is a canonical
               // header rather than a redirect; the same site also answers on web(.beta).mywallet.io, which
-              // self-canonicalizes. Omitted for Gram/core: those builds are a different brand
+              // self-canonicalizes. Omitted for Gram: it is a different brand
               // (wallet.ton.org ships to ton-blockchain/ton-wallet) and must never point at mywallet.io.
-              const canonical = (IS_GRAM_WALLET || IS_CORE_WALLET) ? undefined
+              const canonical = IS_GRAM_WALLET ? undefined
                 : APP_ENV === 'staging' ? 'https://web-beta.mywallet.io/'
                   : 'https://web.mywallet.io/';
               return canonical

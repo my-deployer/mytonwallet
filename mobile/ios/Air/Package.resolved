@@ -20,14 +20,6 @@
       }
     },
     {
-      "identity" : "dgcharts",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mytonwallet-org/DGCharts",
-      "state" : {
-        "revision" : "86929ffb26280d49777e8b2c2311daa419747a49"
-      }
-    },
-    {
       "identity" : "grdb.swift",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/groue/GRDB.swift",

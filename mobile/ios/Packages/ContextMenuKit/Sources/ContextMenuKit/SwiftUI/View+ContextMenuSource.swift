@@ -6,6 +6,7 @@ public extension View {
     func contextMenuSource(
         isEnabled: Bool = true,
         triggers: ContextMenuInteractionTriggers = [.tap, .longPress],
+        presentationMode: ContextMenuPresentationMode = .overlay,
         sourcePortal: ContextMenuSourcePortal? = nil,
         configuration: @escaping () -> ContextMenuConfiguration?
     ) -> some View {
@@ -13,6 +14,7 @@ public extension View {
             ContextMenuSourceModifier(
                 isEnabled: isEnabled,
                 triggers: triggers,
+                presentationMode: presentationMode,
                 sourcePortal: sourcePortal,
                 configuration: configuration
             )
@@ -24,6 +26,7 @@ public extension View {
 private struct ContextMenuSourceModifier: ViewModifier {
     let isEnabled: Bool
     let triggers: ContextMenuInteractionTriggers
+    let presentationMode: ContextMenuPresentationMode
     let sourcePortal: ContextMenuSourcePortal?
     let configuration: () -> ContextMenuConfiguration?
 
@@ -36,6 +39,7 @@ private struct ContextMenuSourceModifier: ViewModifier {
                 ContextMenuSourceAttachmentView(
                     bridge: self.bridge,
                     isEnabled: self.isEnabled,
+                    presentationMode: self.presentationMode,
                     sourcePortal: self.sourcePortal,
                     configuration: self.configuration
                 )
@@ -126,6 +130,7 @@ private struct ContextMenuHoldAndDragGesture: UIGestureRecognizerRepresentable {
 private struct ContextMenuSourceAttachmentView: UIViewRepresentable {
     @ObservedObject var bridge: ContextMenuSwiftUISourceBridge
     let isEnabled: Bool
+    let presentationMode: ContextMenuPresentationMode
     let sourcePortal: ContextMenuSourcePortal?
     let configuration: () -> ContextMenuConfiguration?
 
@@ -142,6 +147,7 @@ private struct ContextMenuSourceAttachmentView: UIViewRepresentable {
         self.bridge.update(
             anchorView: uiView,
             isEnabled: self.isEnabled,
+            presentationMode: self.presentationMode,
             sourcePortal: self.sourcePortal,
             configuration: self.configuration
         )

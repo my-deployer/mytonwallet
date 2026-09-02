@@ -62,38 +62,40 @@ struct SwapEstimatePipelineTests {
     }
 
     @Test
-    func `estimate gate prevents overlap and requests one follow up`() {
+    func `estimate gate prevents overlap and requests one follow up`() throws {
         var gate = SwapEstimateGate()
         let first = makeInput(sellingAmount: 100, buyingAmount: 0, inputSource: .selling)
         let second = makeInput(sellingAmount: 200, buyingAmount: 0, inputSource: .selling)
 
-        let didStartFirst = gate.start(first)
-        let didStartSecond = gate.start(second)
-        #expect(didStartFirst)
-        #expect(!didStartSecond)
+        let firstSlot = gate.start(first)
+        let secondSlot = gate.start(second)
+        #expect(firstSlot != nil)
+        #expect(secondSlot == nil)
         #expect(gate.isInFlight)
-        let didRequestFollowUp = gate.finish()
+
+        let didRequestFollowUp = gate.finish(try #require(firstSlot))
         #expect(didRequestFollowUp)
         #expect(!gate.isInFlight)
-        let didStartFollowUp = gate.start(second)
-        let didRequestSecondFollowUp = gate.finish()
-        #expect(didStartFollowUp)
+
+        let followUpSlot = gate.start(second)
+        let didRequestSecondFollowUp = gate.finish(try #require(followUpSlot))
+        #expect(followUpSlot != nil)
         #expect(!didRequestSecondFollowUp)
     }
 
     @Test
-    func `estimate gate can cancel pending follow up`() {
+    func `estimate gate can cancel pending follow up`() throws {
         var gate = SwapEstimateGate()
         let first = makeInput(sellingAmount: 100, buyingAmount: 0, inputSource: .selling)
         let second = makeInput(sellingAmount: 0, buyingAmount: 200, inputSource: .buying)
 
-        let didStartFirst = gate.start(first)
-        let didStartSecond = gate.start(second)
-        #expect(didStartFirst)
-        #expect(!didStartSecond)
+        let firstSlot = gate.start(first)
+        let secondSlot = gate.start(second)
+        #expect(firstSlot != nil)
+        #expect(secondSlot == nil)
         gate.cancelFollowUp()
 
-        let didRequestFollowUp = gate.finish()
+        let didRequestFollowUp = gate.finish(try #require(firstSlot))
         #expect(!didRequestFollowUp)
     }
 
@@ -301,6 +303,19 @@ struct SwapEstimatePipelineTests {
 
     @Test
     @MainActor
+    func `default buying amount starts from buy side`() {
+        let model = makeSwapModel(defaultBuyingAmount: 52.5)
+
+        #expect(model.input.buyingAmount == doubleToBigInt(52.5, decimals: model.input.buyingToken.decimals))
+        if case .buying = model.input.inputSource {
+            #expect(Bool(true))
+        } else {
+            #expect(Bool(false), "Expected the buying side to drive the initial estimate")
+        }
+    }
+
+    @Test
+    @MainActor
     func `buy token selection preserves previous estimate while refresh loads`() {
         let oldBuyingToken = token(slug: "old-usdt", symbol: "USDT", chain: .ton, decimals: 9)
         let newBuyingToken = token(slug: "new-usdt", symbol: "USDT", chain: .ton, decimals: 6)
@@ -338,6 +353,23 @@ struct SwapEstimatePipelineTests {
         let error = SdkError.apiReturnedError(error: "Requests limit exceeded", data: "")
 
         #expect(isSwapEstimateRateLimited(error))
+    }
+
+    @Test
+    func `swap estimate errors share one mapping`() {
+        let error = SdkError.apiReturnedError(error: "Insufficient liquidity", data: "")
+
+        #expect(swapEstimateIssue(from: error) == .insufficientLiquidity)
+    }
+
+    @Test
+    func `swap type separates SDK route from CEX wallet topology`() {
+        #expect(SwapType.onChain.route == .dex)
+        #expect(SwapType.onChain.cexTopology == nil)
+        #expect(SwapType.crosschainInsideWallet.route == .cex)
+        #expect(SwapType.crosschainInsideWallet.cexTopology == .insideWallet)
+        #expect(SwapType.crosschainFromWallet.cexTopology == .fromWallet)
+        #expect(SwapType.crosschainToWallet.cexTopology == .toWallet)
     }
 
     @Test
@@ -498,6 +530,7 @@ struct SwapEstimatePipelineTests {
             slippage: 0.5,
             shouldTryDiesel: false,
             swapVersion: nil,
+            swapMode: .exactIn,
             walletVersion: nil,
             routes: nil,
             networkFee: 0.1,
@@ -509,6 +542,24 @@ struct SwapEstimatePipelineTests {
         let item = ApiSwapHistoryItem.makeFrom(swapBuildRequest: request, swapId: "swap-id")
 
         #expect(item.status == .pendingTrusted)
+    }
+
+    @Test
+    func `swap build request encodes the estimate mode`() throws {
+        func encodedRequest(for side: SwapSide) throws -> String {
+            let request = ApiSwapBuildRequest(
+                from: "TON",
+                to: "GRAM",
+                fromAddress: "sender-address",
+                fromAmount: 1,
+                swapMode: side.swapMode
+            )
+            let data = try JSONEncoder().encode(request)
+            return String(decoding: data, as: UTF8.self)
+        }
+
+        #expect(try encodedRequest(for: .selling).contains(#""swapMode":"exact_in""#))
+        #expect(try encodedRequest(for: .buying).contains(#""swapMode":"exact_out""#))
     }
 
     @Test
@@ -580,8 +631,8 @@ struct SwapEstimatePipelineTests {
     func `amount limit issues use token amount formatting`() {
         let token = token(slug: "usdt", symbol: "USDT", chain: .ton, decimals: 9)
 
-        #expect(SwapIssue.minimumAmount(1.23456789, token).buttonTitle == lang("Minimum amount", arg1: "1.23 USDT"))
-        #expect(SwapIssue.maximumAmount(123.456789, token).buttonTitle == lang("Maximum amount", arg1: "123.46 USDT"))
+        #expect(SwapIssue.minimumAmount(1.23456789, token).buttonTitle == L10n.minimumAmount(value: "1.23 USDT"))
+        #expect(SwapIssue.maximumAmount(123.456789, token).buttonTitle == L10n.maximumAmount(value: "123.46 USDT"))
     }
 
 }
@@ -594,7 +645,7 @@ private func issue(from config: SwapButtonConfiguration) -> SwapIssue? {
 }
 
 @MainActor
-private func makeSwapModel() -> SwapModel {
+private func makeSwapModel(defaultBuyingAmount: Double? = nil) -> SwapModel {
     withDependencies {
         $0[_TokenStore.self] = TokenStore
         $0[_BalancesStore.self] = _BalancesStore.liveValue
@@ -611,6 +662,7 @@ private func makeSwapModel() -> SwapModel {
             defaultSellingToken: TONCOIN_SLUG,
             defaultBuyingToken: TON_USDT_SLUG,
             defaultSellingAmount: nil,
+            defaultBuyingAmount: defaultBuyingAmount,
             accountContext: AccountContext(source: .constant(account))
         )
     }
@@ -695,11 +747,15 @@ private func makeCrosschainPayment(
 private func makeCexEstimate(fromAmount: Double, toAmount: Double) -> ApiSwapCexEstimateResponse {
     let data = """
     {
+      "route": "cex",
+      "cexLabel": "changelly",
       "from": "from-token",
       "fromAmount": "\(fromAmount)",
       "to": "to-token",
       "toAmount": "\(toAmount)",
-      "swapFee": "0"
+      "swapFee": "0",
+      "fromMin": "1",
+      "fromMax": "1000"
     }
     """.data(using: .utf8)!
     return try! JSONDecoder().decode(ApiSwapCexEstimateResponse.self, from: data)

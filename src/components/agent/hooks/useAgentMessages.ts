@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from '../../../lib/teact/teact';
 import { getActions, getGlobal } from '../../../global';
 
-import type { AgentMessage } from '../../../global/types';
+import type { AgentHint, AgentMessage } from '../../../global/types';
 import type { LangFn } from '../../../hooks/useLang';
+import type { TextRevealPresentations } from './textRevealPresentation';
 
 import {
   selectCurrentAccountId, selectCurrentAccountState, selectCurrentAccountTokens, selectOrderedAccounts,
@@ -10,37 +11,47 @@ import {
 import { buildRequestContext, createAgentStream } from '../../../util/agent/agentApi';
 import { clearAgentChat, loadAgentMessages, saveAgentMessages } from '../../../util/agent/agentStorage';
 import { logDebugError } from '../../../util/logs';
+import {
+  createTextRevealPresentation,
+  filterTextRevealPresentations,
+  updateTextRevealPresentation,
+} from './textRevealPresentation';
 
 import useLastCallback from '../../../hooks/useLastCallback';
 import useSyncEffect from '../../../hooks/useSyncEffect';
 
-interface UseAgentMessagesProps {
+export type {
+  TextRevealPresentation,
+  TextRevealPresentations,
+} from './textRevealPresentation';
+
+export interface UseAgentMessagesProps {
+  isActive?: boolean;
   lang: LangFn;
+  agentHints?: AgentHint[];
   agentMessageCount?: number;
 }
 
-export interface TextRevealPresentation {
-  key: string;
-  status: 'active' | 'settled' | 'error';
-  shouldRevealFromStart: boolean;
-}
-
-export type TextRevealPresentations = Record<number, TextRevealPresentation>;
-
 export interface UseAgentMessagesResult {
   messages: AgentMessage[];
+  hints?: AgentHint[];
   isInitialLoadComplete: boolean;
+  isInputDisabled: boolean;
   textRevealPresentations: TextRevealPresentations;
   sendMessage: (text: string, editMessageId?: number) => void;
+  clearChat: NoneToVoidFunction;
   consumeTextRevealSession: (messageId: number, key: string) => void;
   settleTextRevealSession: (messageId: number, key: string) => void;
-  clearChat: NoneToVoidFunction;
 }
 
 // Delay before starting the API stream, so app can render the outgoing message and typing indicator first
 const STREAM_RENDER_DELAY_MS = 300;
 
-export default function useAgentMessages({ lang, agentMessageCount }: UseAgentMessagesProps): UseAgentMessagesResult {
+export function useAgentV1Messages({
+  lang,
+  agentHints,
+  agentMessageCount,
+}: UseAgentMessagesProps): UseAgentMessagesResult {
   const { setAgentMeta } = getActions();
 
   const [messages, setMessages] = useState<AgentMessage[]>([]);
@@ -168,11 +179,11 @@ export default function useAgentMessages({ lang, agentMessageCount }: UseAgentMe
       ]);
     }
     textRevealSequenceRef.current += 1;
-    const textRevealPresentation: TextRevealPresentation = {
-      key: `${generationRef.current}:${inId}:${textRevealSequenceRef.current}`,
-      status: 'active',
-      shouldRevealFromStart: true,
-    };
+    const textRevealPresentation = createTextRevealPresentation(
+      generationRef.current,
+      inId,
+      textRevealSequenceRef.current,
+    );
     setTextRevealPresentations((current) => {
       const next = editMessageId
         ? filterTextRevealPresentations(current, editMessageId)
@@ -332,7 +343,9 @@ export default function useAgentMessages({ lang, agentMessageCount }: UseAgentMe
 
   return {
     messages,
+    hints: agentHints,
     isInitialLoadComplete,
+    isInputDisabled: false,
     textRevealPresentations,
     sendMessage,
     consumeTextRevealSession,
@@ -348,31 +361,4 @@ function finalizeStreamingMessage(message: AgentMessage, text: string) {
   delete finalizedMessage.isStreaming;
 
   return finalizedMessage;
-}
-
-function filterTextRevealPresentations(
-  presentations: TextRevealPresentations,
-  maximumMessageId: number,
-) {
-  return Object.fromEntries(
-    Object.entries(presentations).filter(([messageId]) => Number(messageId) < maximumMessageId),
-  ) as TextRevealPresentations;
-}
-
-function updateTextRevealPresentation(
-  presentations: TextRevealPresentations,
-  messageId: number,
-  key: string,
-  update: Partial<TextRevealPresentation>,
-) {
-  const presentation = presentations[messageId];
-  if (!presentation || presentation.key !== key) return presentations;
-
-  return {
-    ...presentations,
-    [messageId]: {
-      ...presentation,
-      ...update,
-    },
-  };
 }

@@ -1338,29 +1338,78 @@ a.item:hover {
   color: var(--color-gray-2);
 }
 
+.virtualizedBlock {
+  .item {
+    position: absolute;
+    right: 0;
+    left: 0;
+  }
+}
+
 .nftPrimaryCell {
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 0.3125rem;
 }
 
+// The rows are absolutely positioned at a fixed height, so a wrapping name would overlap the next one
 .nftName {
+  overflow: hidden;
+
   font-size: 0.9375rem;
   font-weight: 600;
   color: var(--color-black);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nftCollection {
+  overflow: hidden;
+
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--color-gray-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nftImage {
+  overflow: hidden;
+
   width: 2.625rem;
   height: 2.625rem;
   border-radius: var(--border-radius-normal);
+
   background-color: var(--color-background-second);
+}
+
+.nftImageFill {
+  width: 100%;
+  height: 100%;
+}
+
+.nftImageContent {
+  height: 100%;
+  object-fit: cover;
+}
+
+.nftImageNoData {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  height: 100%;
+
+  :global(html.theme-dark) & {
+    background-color: #131314;
+  }
+}
+
+.nftNoImageIcon {
+  width: 1.75rem;
+  opacity: 0.5;
 }
 
 .nftButtonUnhide {

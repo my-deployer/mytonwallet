@@ -37,6 +37,13 @@ interface OwnProps {
   isMultichainAccount?: boolean;
   selectedNfts?: ApiNft[];
   nftsByAddresses: Record<string, ApiNft>;
+  /**
+   * The actual scroll host, when the list's default container does not scroll itself: the landscape
+   * slide scrolls as a whole, and both the stretched cell body and the `.nfts-container` wrapper
+   * grow freely with the content. Listening to a non-scrolling container would freeze the infinite
+   * scroll on its first slice.
+   */
+  scrollContainerSelector?: string;
 }
 
 const LIST_SLICE = 60;
@@ -64,6 +71,7 @@ function NftList({
   isMultichainAccount,
   selectedNfts,
   nftsByAddresses,
+  scrollContainerSelector,
 }: OwnProps) {
   const containerRef = useRef<HTMLDivElement>();
   const { isPortrait, isLandscape } = useDeviceScreen();
@@ -113,9 +121,9 @@ function NftList({
       ? (width >= LANDSCAPE_WIDE_BREAKPOINT_PX ? 4 : 3)
       : 2;
 
-  const scrollContainerSelector = isWidget
-    ? `.${OVERVIEW_CELL_BODY_CLASS}`
-    : (isLandscape ? '.nfts-container' : '.app-slide-content');
+  const resolvedScrollSelector = isWidget
+    ? (isWidgetStretched && scrollContainerSelector) || `.${OVERVIEW_CELL_BODY_CLASS}`
+    : (isLandscape ? scrollContainerSelector ?? '.nfts-container' : '.app-slide-content');
 
   // Re-center the viewport slice around the current scroll position in a single hop instead
   // of shifting by `LIST_SLICE` per cycle. Equivalent to default `getMore` on slow scroll
@@ -123,7 +131,7 @@ function NftList({
   const handleGetMore = useLastCallback((args: { direction: LoadMoreDirection }) => {
     if (!getMore || !addresses.length) return;
 
-    const scrollContainer = containerRef.current?.closest<HTMLDivElement>(scrollContainerSelector);
+    const scrollContainer = containerRef.current?.closest<HTMLDivElement>(resolvedScrollSelector);
     if (!scrollContainer) {
       getMore(args);
       return;
@@ -220,7 +228,7 @@ function NftList({
       ref={containerRef}
       withAbsolutePositioning
       className={buildClassName(styles.list, isWidget && styles.listWidget, `nft-list-${uniqueId}`)}
-      scrollContainerClosest={scrollContainerSelector}
+      scrollContainerClosest={resolvedScrollSelector}
       items={viewportNftAddresses}
       itemSelector={`.nft-list-${uniqueId} .${styles.item}`}
       preloadBackwards={LIST_SLICE}

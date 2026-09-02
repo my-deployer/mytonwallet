@@ -19,6 +19,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ScrollView
 import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.coordinatorlayout.widget.CoordinatorLayout.LayoutParams
 import androidx.core.graphics.createBitmap
 import androidx.core.view.children
@@ -65,6 +66,20 @@ import org.mytonwallet.app_air.walletcore.stores.AccountStore
 abstract class WViewController(val context: Context) :
     WThemedView,
     WProtectedView {
+    companion object {
+
+        // How long a scrollable must rest before paused blur views resume after an over-scroll.
+        private const val OVER_SCROLL_SETTLE_DELAY = 500L
+
+        // Bottom edge of the top tab bar, measured from the system bars: its top margin plus its
+        // centering offset and height. Kept in sync with the tab container's TOP_TABS_TOP_MARGIN
+        // and TOP_TABS_BOTTOM_EDGE.
+        private const val ROOT_TOP_TABS_HEIGHT = 52
+
+        // Breathing room between the tab bar and the bottom of the blur overlay.
+        private const val ROOT_TOP_BLUR_BOTTOM_MARGIN = 4
+    }
+
     @Suppress("PropertyName")
     abstract val TAG: String
 
@@ -210,6 +225,7 @@ abstract class WViewController(val context: Context) :
         if (!isViewConfigured) return
         isKeyboardOpen = (window?.imeInsets?.bottom ?: 0) > 0
         navigationBar?.insetsUpdated()
+        topReversedCornerView?.let { layoutTopOverlay(it) }
         activeDialogs.forEach { it.insetsUpdated() }
         if (isInCenteredWindow && !centeredWindowCloseButtonAdded) {
             if (navigationBar?.addCloseButton() == true) centeredWindowCloseButtonAdded = true
@@ -518,11 +534,15 @@ abstract class WViewController(val context: Context) :
         isViewConfigured = true
         navigationBar?.bringToFront()
         topBlurViewGuideline?.bringToFront()
-        if (!isDisappeared) insetsUpdated()
+        // A not-yet-appeared bottom-sheet controller gets its insets from `viewWillAppear`. Applying
+        // them here would resize the sheet while the presenting transition is still measuring it.
+        val deferInsetsToAppearance = isDisappeared && navigationController?.isBottomSheet == true
+        if (!deferInsetsToAppearance) insetsUpdated()
     }
 
     open fun didSetupViews() {
         if (overrideShowTopBlurView ?: shouldDisplayTopBar) addTopCornerRadius()
+        if (isRootTopGradientEnabled) topReversedCornerView?.bringToFront()
         if (shouldShowBottomCornerRadius) addBottomCornerRadius()
         updateBlurPaddings()
     }
@@ -577,6 +597,9 @@ abstract class WViewController(val context: Context) :
     open fun onDestroy() {
         isDisappeared = true
         isDestroyed = true
+        pendingOverScrollSettle?.let { overScrollSettleHandler.removeCallbacks(it) }
+        pendingOverScrollSettle = null
+        cancelBottomBlurSettle()
         frameMonitor?.stopMonitoring()
         dismissActiveDialogs()
         view.removeAllViews()
@@ -625,28 +648,19 @@ abstract class WViewController(val context: Context) :
             pendingThemeChange = true
             return
         }
+        applyThemeChanges()
+    }
+
+    fun applyThemeChanges() {
         val themeChanged = ThemeManager.isDark != _isDarkThemeApplied || pendingThemeChange
         _isDarkThemeApplied = ThemeManager.isDark
         pendingThemeChange = false
         if (themeChanged || isTinted) updateTheme()
         updateThemeForChildren(view, onlyTintedViews = !themeChanged)
         syncBottomCornerRadius()
+        if (isRootTopGradientEnabled) refreshRootTopOverlayMode()
         if (themeChanged) {
-            topReversedCornerView?.let { topReversedCornerView ->
-                view.setConstraints {
-                    toTop(
-                        topReversedCornerView
-                    )
-                    (topBlurViewGuideline ?: navigationBar)?.let {
-                        bottomToBottom(
-                            topReversedCornerView,
-                            it,
-                            -ViewConstants.TOOLBAR_RADIUS
-                        )
-                        return@setConstraints
-                    }
-                }
-            }
+            topReversedCornerView?.let { layoutTopOverlay(it, force = true) }
             bottomReversedCornerView?.refreshModeFromSettings()
             refreshBottomCornerRadiusHeight()
         }
@@ -670,6 +684,9 @@ abstract class WViewController(val context: Context) :
             }
             navigationBar!!.setTitle(title ?: "", false)
             navigationBar!!.setSubtitle(subtitle, false)
+            navigationBar!!.setTitleContentVisible(
+                navigationController?.usesRootTopGradient(this) != true
+            )
             navigationBar?.visibility = View.VISIBLE
         } else {
             navigationBar?.visibility = View.GONE
@@ -732,35 +749,92 @@ abstract class WViewController(val context: Context) :
     open val topBlurView: View?
         get() = topReversedCornerView ?: navigationBar
 
-    private fun addTopCornerRadius() {
-        topReversedCornerView = ReversedCornerView(
-            context,
-            topBarConfiguration
-        )
-        if (ignoreSideGuttering) topReversedCornerView?.setHorizontalPadding(0f)
-        view.addView(
-            topReversedCornerView!!,
-            ConstraintLayout.LayoutParams(
-                MATCH_PARENT,
-                0
-            )
-        )
-        view.setConstraints {
-            toTop(
-                topReversedCornerView!!
-            )
-            (topBlurViewGuideline ?: navigationBar)?.let {
-                bottomToBottom(
-                    topReversedCornerView!!,
-                    it,
-                    -ViewConstants.TOOLBAR_RADIUS
-                )
-                return@setConstraints
-            }
+    private var rootTopModeApplied: Pair<Boolean, Boolean>? = null
+
+    internal fun refreshRootTopOverlayMode() {
+        val isRootTop = isRootTopGradientEnabled
+        val useGradient = isRootTop && WGlobalStorage.isGradientNavigationBarActive()
+        topReversedCornerView?.let { overlayView ->
+            overlayView.setGradientMode(useGradient)
+            layoutTopOverlay(overlayView)
         }
+        navigationBar?.setTitleContentVisible(!isRootTop)
+        val style = isRootTop to useGradient
+        if (rootTopModeApplied == style) return
+        rootTopModeApplied = style
+        onRootTopGradientModeChanged(isRootTop)
     }
 
+    private fun layoutTopOverlay(overlayView: ReversedCornerView, force: Boolean = false) {
+        val isRootTop = isRootTopGradientEnabled
+        overlayView.gradientFadeStartY =
+            (
+                (navigationController?.getSystemBars()?.top ?: 0) -
+                    (navigationController?.additionalRootTopInset ?: 0)
+                ).toFloat()
+        val targetHeight = if (isRootTop) rootTopOverlayHeight(overlayView.isGradientMode) else 0
+        if (!force && overlayView.layoutParams?.height == targetHeight) return
+        overlayView.layoutParams?.let { params ->
+            params.height = targetHeight
+            overlayView.layoutParams = params
+        }
+        view.setConstraints {
+            toTop(overlayView)
+            if (isRootTop) {
+                clear(overlayView.id, ConstraintSet.BOTTOM)
+                return@setConstraints
+            }
+            (topBlurViewGuideline ?: navigationBar)?.let {
+                bottomToBottom(overlayView, it, -ViewConstants.TOOLBAR_RADIUS)
+            }
+        }
+        if (isRootTop) overlayView.bringToFront()
+    }
+
+    protected open fun onRootTopGradientModeChanged(enabled: Boolean) {}
+
+    protected val isRootTopGradientEnabled: Boolean
+        get() = navigationController?.usesRootTopGradient(this) == true
+
+    private fun addTopCornerRadius() {
+        if (topReversedCornerView != null) return
+        val overlayView = ReversedCornerView(context, topBarConfiguration)
+        topReversedCornerView = overlayView
+        overlayView.setGradientMode(
+            isRootTopGradientEnabled && WGlobalStorage.isGradientNavigationBarActive()
+        )
+        if (ignoreSideGuttering) overlayView.setHorizontalPadding(0f)
+        view.addView(overlayView, ConstraintLayout.LayoutParams(MATCH_PARENT, 0))
+        layoutTopOverlay(overlayView, force = true)
+    }
+
+    private fun rootTopGradientHeight(): Int {
+        val systemBarsTop = navigationController?.getSystemBars()?.top ?: 0
+        val rootTopInset = navigationController?.additionalRootTopInset ?: 0
+        return systemBarsTop - rootTopInset + ROOT_TOP_TABS_HEIGHT.dp
+    }
+
+    private fun rootTopBlurHeight(): Int {
+        val systemBarsTop = navigationController?.getSystemBars()?.top ?: 0
+        val rootTopInset = navigationController?.additionalRootTopInset ?: 0
+        return systemBarsTop - rootTopInset +
+            (ROOT_TOP_TABS_HEIGHT + ROOT_TOP_BLUR_BOTTOM_MARGIN).dp +
+            ViewConstants.TOOLBAR_RADIUS.dp.roundToInt()
+    }
+
+    private fun rootTopOverlayHeight(isGradient: Boolean): Int =
+        if (isGradient) rootTopGradientHeight() else rootTopBlurHeight()
+
     var bottomReversedCornerView: ReversedCornerViewUpsideDown? = null
+
+    open val additionalBottomGradientHeight: Int
+        get() = 0
+
+    private val bottomGradientFadeEndY: Float
+        get() {
+            val inset = bottomCornerInset.toFloat()
+            return if (navigationController?.tabBarController == null) inset / 2f else inset
+        }
 
     protected fun syncBottomCornerRadius(shouldShow: Boolean = shouldShowBottomCornerRadius) {
         val existing = bottomReversedCornerView
@@ -788,6 +862,7 @@ abstract class WViewController(val context: Context) :
         )
         bottomReversedCornerView = bottomView
         if (ignoreSideGuttering) bottomView.setHorizontalPadding(0f)
+        bottomView.gradientFadeEndY = bottomGradientFadeEndY
         view.addView(
             bottomView,
             ConstraintLayout.LayoutParams(
@@ -804,12 +879,14 @@ abstract class WViewController(val context: Context) :
         val bottomView = bottomReversedCornerView
         return (bottomView?.cornerHeight ?: 0) +
             bottomCornerInset +
-            (bottomView?.extraTopHeight ?: 0)
+            (bottomView?.extraTopHeight ?: 0) +
+            if (bottomView?.isGradientMode == true) additionalBottomGradientHeight else 0
     }
 
     protected fun refreshBottomCornerRadiusHeight() {
         val bottomView = bottomReversedCornerView ?: return
         if (bottomView.parent == null) return
+        bottomView.gradientFadeEndY = bottomGradientFadeEndY
         val targetHeight = bottomReversedCornerViewHeight()
         if (bottomView.layoutParams?.height != targetHeight) {
             bottomView.updateLayoutParams { height = targetHeight }
@@ -847,39 +924,87 @@ abstract class WViewController(val context: Context) :
     ) {
         updateBlurViews(scrollable, offset())
         pendingOverScrollSettle?.let { overScrollSettleHandler.removeCallbacks(it) }
-        if (!isIdle()) return
-        val settle = Runnable {
-            pendingOverScrollSettle = null
-            if (isIdle()) {
-                updateBlurViews(scrollable, offset().coerceAtLeast(1))
+        // Re-arms itself until the scrollable is idle: resting at an edge produces no further
+        // scroll events to trigger a resume, and not every screen reports the idle transition.
+        val settle = object : Runnable {
+            override fun run() {
+                if (pendingOverScrollSettle !== this) return
+                if (isIdle()) {
+                    pendingOverScrollSettle = null
+                    updateBlurViews(scrollable, offset().coerceAtLeast(1), ignoreBottomEdge = true)
+                } else {
+                    overScrollSettleHandler.postDelayed(this, OVER_SCROLL_SETTLE_DELAY)
+                }
             }
         }
         pendingOverScrollSettle = settle
-        overScrollSettleHandler.postDelayed(settle, 500L)
+        overScrollSettleHandler.postDelayed(settle, OVER_SCROLL_SETTLE_DELAY)
     }
 
     fun updateBlurViews(scrollView: ScrollView) {
         updateBlurViews(scrollView = scrollView, computedOffset = scrollView.scrollY)
     }
 
-    private fun updateBlurViews(scrollView: ViewGroup, computedOffset: Int) {
+    private fun updateBlurViews(
+        scrollView: ViewGroup,
+        computedOffset: Int,
+        ignoreBottomEdge: Boolean = false
+    ) {
         val topOffset =
             if (computedOffset >= 0) computedOffset else computedOffset + scrollView.paddingTop
         val isOnTop = topOffset <= 0
+        val isOnBottom = !ignoreBottomEdge && !isOnTop && !scrollView.canScrollVertically(1)
         if (!isOnTop) {
             topReversedCornerView?.resumeBlurring()
             topReversedCornerView?.setBlurAlpha((topOffset / 20f.dp).coerceIn(0f, 1f))
-            bottomReversedCornerView?.resumeBlurring()
-            navigationController?.tabBarController?.resumeBlurring()
+            if (isOnBottom) {
+                pauseBottomBlurViews()
+            } else {
+                bottomReversedCornerView?.resumeBlurring()
+                navigationController?.tabBarController?.resumeBlurring()
+            }
         } else {
             topReversedCornerView?.pauseBlurring(false)
-            bottomReversedCornerView?.pauseBlurring()
-            if (navigationController?.tabBarController?.activeNavigationController ==
-                navigationController
-            ) {
-                navigationController?.tabBarController?.pauseBlurring()
+            pauseBottomBlurViews()
+        }
+    }
+
+    protected fun pauseBottomBlurViews() {
+        bottomReversedCornerView?.pauseBlurring()
+        if (navigationController?.tabBarController?.activeNavigationController ==
+            navigationController
+        ) {
+            navigationController?.tabBarController?.pauseBlurring()
+        }
+    }
+
+    private var pendingBottomBlurSettle: Runnable? = null
+
+    // Pauses the bottom blur views and resumes them once the scrollable has been idle for the
+    // settle delay. The check re-arms itself because resting at the bottom edge produces no
+    // further scroll events to trigger a resume.
+    protected fun pauseBottomBlurViewsUntilSettled(isIdle: () -> Boolean) {
+        pauseBottomBlurViews()
+        cancelBottomBlurSettle()
+        val settle = object : Runnable {
+            override fun run() {
+                if (pendingBottomBlurSettle !== this) return
+                if (isIdle()) {
+                    pendingBottomBlurSettle = null
+                    bottomReversedCornerView?.resumeBlurring()
+                    navigationController?.tabBarController?.resumeBlurring()
+                } else {
+                    overScrollSettleHandler.postDelayed(this, OVER_SCROLL_SETTLE_DELAY)
+                }
             }
         }
+        pendingBottomBlurSettle = settle
+        overScrollSettleHandler.postDelayed(settle, OVER_SCROLL_SETTLE_DELAY)
+    }
+
+    protected fun cancelBottomBlurSettle() {
+        pendingBottomBlurSettle?.let { overScrollSettleHandler.removeCallbacks(it) }
+        pendingBottomBlurSettle = null
     }
 
     // Modal methods

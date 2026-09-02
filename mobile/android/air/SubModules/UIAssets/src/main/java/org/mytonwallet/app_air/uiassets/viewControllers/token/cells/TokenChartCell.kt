@@ -73,6 +73,7 @@ import org.mytonwallet.app_air.walletcontext.utils.AnimUtils.Companion.lerp
 import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
 import org.mytonwallet.app_air.walletcore.WalletCore
 import org.mytonwallet.app_air.walletcore.models.MToken
+import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
 
 @SuppressLint("ViewConstructor")
 class TokenChartCell(
@@ -559,7 +560,7 @@ class TokenChartCell(
         val previousInsight = priceInsight
         val tokenName = token?.displayName ?: token?.name
         val newInsight = if (
-            WGlobalStorage.getAreExperimentalFeaturesEnabled() && tokenName != null
+            EnvironmentStore.isTokenPriceInsightEnabled && tokenName != null
         ) {
             TokenPriceInsight.calculate(activePeriod, historyData, token?.price)
         } else {

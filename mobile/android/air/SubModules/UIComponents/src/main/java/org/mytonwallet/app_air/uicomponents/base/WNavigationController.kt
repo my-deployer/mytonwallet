@@ -54,7 +54,8 @@ open class WNavigationController(
 
     data class PresentationConfig(
         val style: PresentationStyle = PresentationStyle.ForceFullScreen,
-        val aboveKeyboard: Boolean = false
+        val aboveKeyboard: Boolean = false,
+        val floatingSheetInset: Int = 0
     ) {
         companion object {
             val PreferredFullScreen = PresentationConfig(PresentationStyle.PreferredFullScreen)
@@ -95,11 +96,27 @@ open class WNavigationController(
         get() = !isCenteredWindow && !isShortWideWindow &&
             presentationConfig.style == PresentationStyle.BottomSheet
 
+    val floatingSheetInset: Int
+        get() = if (isBottomSheet) presentationConfig.floatingSheetInset else 0
+
+    val floatingSheetBottomGap: Int
+        get() {
+            val inset = floatingSheetInset
+            return if (inset > 0) inset + (window.systemBars?.bottom ?: 0) else 0
+        }
+
     init {
         id = generateViewId()
     }
 
     var tabBarController: ITabsVC? = null
+    var additionalRootTopInset: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            viewControllers.firstOrNull()?.refreshRootTopOverlayMode()
+            insetsUpdated()
+        }
     private var keyboardAnimationInProgress = false
 
     var viewControllers: ArrayList<WViewController> = arrayListOf()
@@ -154,19 +171,29 @@ open class WNavigationController(
 
     fun getSystemBars(): Insets {
         if (isCenteredWindow) return Insets.of(0, 0, 0, 0)
+        val floatingInset = floatingSheetInset
         return Insets.of(
-            window.systemBars?.left ?: 0,
-            window.systemBars?.top ?: 0,
-            window.systemBars?.right ?: 0,
-            tabBarController?.getBottomNavigationHeight() ?: (window.systemBars?.bottom ?: 0)
+            ((window.systemBars?.left ?: 0) - floatingInset).coerceAtLeast(0),
+            (window.systemBars?.top ?: 0) +
+                if (viewControllers.size == 1) additionalRootTopInset else 0,
+            ((window.systemBars?.right ?: 0) - floatingInset).coerceAtLeast(0),
+            tabBarController?.getBottomNavigationHeight()
+                ?: if (floatingInset > 0) 0 else (window.systemBars?.bottom ?: 0)
         )
+    }
+
+    internal fun usesRootTopGradient(viewController: WViewController): Boolean =
+        additionalRootTopInset > 0 && viewControllers.firstOrNull() === viewController
+
+    fun refreshRootTopOverlay() {
+        viewControllers.firstOrNull()?.refreshRootTopOverlayMode()
     }
 
     val bottomInset: Int
         get() {
             if (isCenteredWindow) return 0
-            val baseInset =
-                tabBarController?.getBottomNavigationHeight() ?: (window.systemBars?.bottom ?: 0)
+            val baseInset = tabBarController?.getBottomNavigationHeight()
+                ?: if (floatingSheetInset > 0) 0 else (window.systemBars?.bottom ?: 0)
             val gradientInset =
                 if (baseInset > 0 && WGlobalStorage.isGradientNavigationBarActive()) {
                     ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp.roundToInt()
@@ -246,7 +273,7 @@ open class WNavigationController(
         val newNavHeight = topVC.getModalHalfExpandedHeight() ?: return
         val windowHeight = window.windowView.height.takeIf { it > 0 } ?: return
         updateLayoutParams { height = newNavHeight }
-        this.y = (windowHeight - newNavHeight).toFloat()
+        this.y = (windowHeight - newNavHeight - floatingSheetBottomGap).toFloat()
         topVC.view.requestLayout()
     }
 
@@ -256,8 +283,9 @@ open class WNavigationController(
     fun applyBottomSheetLayout() {
         val topVC = viewControllers.lastOrNull() ?: return
         val windowHeight = window.windowView.height.takeIf { it > 0 } ?: return
+        val floatingInset = floatingSheetInset
         translationX = 0f
-        x = 0f
+        x = floatingInset.toFloat()
         val shouldPresentFullScreen = topVC.isExpandable
         val navHeight = if (shouldPresentFullScreen) {
             MATCH_PARENT
@@ -265,11 +293,24 @@ open class WNavigationController(
             (topVC.getModalHalfExpandedHeight() ?: layoutParams?.height ?: MATCH_PARENT)
         }
         updateLayoutParams {
-            width = MATCH_PARENT
+            width = floatingSheetWidth(window.windowView.width)
             height = navHeight
         }
-        y = if (navHeight == MATCH_PARENT) 0f else (windowHeight - navHeight).toFloat()
+        y = if (navHeight == MATCH_PARENT) {
+            0f
+        } else {
+            (windowHeight - navHeight - floatingSheetBottomGap).toFloat()
+        }
         setupBottomSheetBehaviour(topVC, restoreExpanded = true)
+    }
+
+    fun floatingSheetWidth(windowWidth: Int): Int {
+        val floatingInset = floatingSheetInset
+        return if (floatingInset > 0 && windowWidth > 0) {
+            windowWidth - 2 * floatingInset
+        } else {
+            MATCH_PARENT
+        }
     }
 
     // Set root view controller right after init
@@ -277,6 +318,7 @@ open class WNavigationController(
         if (viewControllers.isNotEmpty()) return
         viewController.navigationController = this
         addViewController(viewController)
+        viewController.refreshRootTopOverlayMode()
         addView(viewController.view, LayoutParams(MATCH_PARENT, MATCH_PARENT))
         if (isBottomSheet) {
             // Presented as modal. Should setup bottom sheet behaviour.
@@ -476,13 +518,44 @@ open class WNavigationController(
     }
 
     /**
+     * Detach the complete stack without destroying its view controllers so another navigation
+     * controller can adopt it.
+     */
+    fun detachAll(): List<WViewController> {
+        if (viewControllers.isEmpty()) return emptyList()
+        val detached = viewControllers.toList()
+        detached.forEach {
+            it.viewWillDisappear()
+            if (it.view.parent == this) removeView(it.view)
+            it.swipeTouchListener = null
+        }
+        viewControllers.clear()
+        return detached
+    }
+
+    /**
      * Re-host controllers previously obtained from [detachAboveRoot] on top of this nav's root,
      * preserving their order. No appearance animation: the last one ends up visible, the rest stay
      * in the back stack with their views detached (mirroring a settled push stack).
      */
     fun adoptAboveRoot(adopted: List<WViewController>) {
         if (adopted.isEmpty()) return
-        val root = viewControllers.firstOrNull() ?: return
+        val root = viewControllers.firstOrNull() ?: run {
+            // Nothing to stack onto: adopt the first as the root instead of dropping the
+            // whole list, which would strand detached, parentless view controllers.
+            val adoptedRoot = adopted.first()
+            val aboveRoot = adopted.drop(1)
+            setRoot(adoptedRoot)
+            if (aboveRoot.isEmpty()) {
+                if (!isDisappeared) {
+                    adoptedRoot.viewWillAppear()
+                    adoptedRoot.viewDidAppear()
+                }
+            } else {
+                adoptAboveRoot(aboveRoot)
+            }
+            return
+        }
         root.viewWillDisappear()
         if (root.view.parent == this) removeView(root.view)
         adopted.forEachIndexed { index, vc ->
@@ -517,6 +590,9 @@ open class WNavigationController(
         (viewController.view.layoutParams as LayoutParams).behavior =
             BottomSheetBehavior<View>(context)
         val bottomSheetBehavior = BottomSheetBehavior.from<View>(viewController.view)
+        // A floating sheet collapses past this nav, down to the window's bottom edge.
+        val floatingGap = floatingSheetBottomGap
+        bottomSheetBehavior.setBottomOverflow(floatingGap)
         val isExpandable = viewController.isExpandable
         if (isExpandable) {
             viewController.getModalHalfExpandedHeight()?.let { calcHalfExpandedHeight ->

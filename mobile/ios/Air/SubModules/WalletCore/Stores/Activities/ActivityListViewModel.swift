@@ -11,6 +11,16 @@ private let log = Log("ActivityListViewModel")
 
 public actor ActivityListViewModel: WalletCoreData.EventsObserver {
 
+    struct LoadRetryPolicy: Equatable, Sendable {
+        let delay: Duration
+
+        static let standard = LoadRetryPolicy(delay: .seconds(10))
+
+        func shouldRetry(isEndReached: Bool?) -> Bool {
+            return isEndReached != true
+        }
+    }
+
     public enum Section: Equatable, Hashable, Sendable {
         case headerPlaceholder
         case custom(String)
@@ -47,10 +57,22 @@ public actor ActivityListViewModel: WalletCoreData.EventsObserver {
     private var snapshotProxy: ActivityListSnapshotProxy
     private var currentIdsByDate: OrderedDictionary<Date, [String]>?
     private var currentIsEndReached: Bool?
+    private let loadRetryPolicy = LoadRetryPolicy.standard
 
     public private(set) var loadMoreTask: Task<Void, Never>?
+    private var loadRetryTask: Task<Void, Never>?
 
-    public init(accountId: String, token: ApiToken?, customSectionIDs: [String] = [], delegate: any ActivityListViewModelDelegate) async {
+    deinit {
+        loadMoreTask?.cancel()
+        loadRetryTask?.cancel()
+    }
+
+    public init(
+        accountId: String,
+        token: ApiToken?,
+        customSectionIDs: [String] = [],
+        delegate: any ActivityListViewModelDelegate
+    ) async {
         self.accountContext = await AccountContext(accountId: accountId)
         self.accountId = accountId
         self.token = token
@@ -72,44 +94,19 @@ public actor ActivityListViewModel: WalletCoreData.EventsObserver {
         
         let poisoningCache = await activitiesStore.getPoisoningCache(accountId)
 
-        var ids = if let slug = token?.slug {
+        let sourceIds = if let slug = token?.slug {
             accountState.idsBySlug?[slug]
         } else {
             accountState.idsMain
         }
-        let hideTinyTransfers = AppStorageHelper.hideTinyTransfers
-        ids = ids?.filter {
-            if let activity = activitiesById?[$0] {
-                switch activity {
-                case .transaction(let transaction):
-                    if activity.shouldHide == true {
-                        return false
-                    }
-                    if NftStore.shouldHideTransaction(accountId: accountId, transaction: transaction) {
-                        return false
-                    }
-                    if poisoningCache.isTransactionWithPoisoning(transaction: transaction) {
-                        return false
-                    }
-                    if hideTinyTransfers {
-                        let tokenPriceUsd = TokenStore.tokens[activity.slug]?.priceUsd
-                        if self.token != nil && tokenPriceUsd == 0 { // do not hide zero value tokens on token page
-                            return true
-                        }
-                        if !activity.isTinyOrScamTransaction {
-                            return true
-                        }
-                        return false
-                    } else {
-                        return true
-                    }
-                case .swap:
-                    return activity.shouldHide != true
-                }
-            } else {
-                return false
-            }
-        }
+        let ids = ActivityVisibilityFilter.visibleIDs(
+            sourceIds,
+            activitiesById: activitiesById,
+            accountId: accountId,
+            token: token,
+            poisoningCache: poisoningCache,
+            hideTinyTransfers: AppStorageHelper.hideTinyTransfers
+        )
 
         log.info("[inf] getState activitiesById: \(activitiesById?.count ?? -1)")
 
@@ -140,14 +137,19 @@ public actor ActivityListViewModel: WalletCoreData.EventsObserver {
             updatedStableIds = []
         }
 
-        let isEndReached = if let slug = token?.slug {
+        let storeIsEndReached = if let slug = token?.slug {
             accountState.isHistoryEndReachedBySlug?[slug]
         } else {
             accountState.isMainHistoryEndReached
         }
+        let isEndReached = storeIsEndReached
 
         currentIdsByDate = idsByDate
         currentIsEndReached = isEndReached
+        if isEndReached == true {
+            loadRetryTask?.cancel()
+            loadRetryTask = nil
+        }
         snapshotProxy.didUpdateData(idsByDate: idsByDate)
         let snapshot = makeSnapshot(idsByDate: idsByDate,
                                     isEndReached: isEndReached,
@@ -202,46 +204,52 @@ public actor ActivityListViewModel: WalletCoreData.EventsObserver {
 
     public func requestMoreIfNeeded() {
         guard loadMoreTask == nil else { return }
+        loadRetryTask?.cancel()
+        loadRetryTask = nil
         loadMoreTask = Task {
+            let didFail: Bool
             do {
                 if let token {
                     try await activitiesStore.fetchTokenActivities(accountId: accountId, limit: 60, token: token, shouldLoadWithBudget: true)
                 } else {
                     try await activitiesStore.fetchAllActivities(accountId: accountId, limit: 60, shouldLoadWithBudget: true)
                 }
+                didFail = false
             } catch {
                 log.error("requestMoreIfNeeded: \(error)")
+                didFail = !Task.isCancelled
             }
             await getState(updatedIds: [], replacedIds: [:])
             self.loadMoreTask = nil
+            if didFail {
+                scheduleLoadRetryIfNeeded()
+            }
         }
+    }
+
+    private func scheduleLoadRetryIfNeeded() {
+        guard loadRetryPolicy.shouldRetry(isEndReached: currentIsEndReached) else { return }
+        let delay = loadRetryPolicy.delay
+        loadRetryTask?.cancel()
+        loadRetryTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: delay)
+            } catch {
+                return
+            }
+            await self?.performScheduledLoadRetry()
+        }
+    }
+
+    private func performScheduledLoadRetry() {
+        loadRetryTask = nil
+        requestMoreIfNeeded()
     }
 
     public func rowDidBecomeVisible(_ row: Row) async {
-        let actions = snapshotProxy.rowDidBecomeVisible(row, isEndReached: currentIsEndReached)
-        if actions.shouldUpdateSnapshot {
-            let snapshot = makeSnapshot(idsByDate: currentIdsByDate,
-                                        isEndReached: currentIsEndReached,
-                                        updatedIds: [])
-            await MainActor.run {
-                self.snapshot = snapshot
-            }
-            await delegate?.activityViewModelChanged()
-        }
-        if actions.shouldRequestRemotePage {
+        if snapshotProxy.rowDidBecomeVisible(row, isEndReached: currentIsEndReached) {
             requestMoreIfNeeded()
         }
-    }
-
-    public func scrollDidStop(lastVisibleRow: Row?) async {
-        guard snapshotProxy.scrollDidStop(lastVisibleRow: lastVisibleRow) else { return }
-        let snapshot = makeSnapshot(idsByDate: currentIdsByDate,
-                                    isEndReached: currentIsEndReached,
-                                    updatedIds: [])
-        await MainActor.run {
-            self.snapshot = snapshot
-        }
-        await delegate?.activityViewModelChanged()
     }
 
     private func updateActivityIdAliases(replacedIds: [String: String], nextIds: [String]) -> [String: String] {

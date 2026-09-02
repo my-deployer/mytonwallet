@@ -5,11 +5,7 @@ import { getActions, getGlobal } from '../../../global';
 import type { ApiChain, ApiNft } from '../../../api/types';
 import type { DropdownItem } from '../../ui/Dropdown';
 
-import {
-  IS_FEATURE_LIMITED,
-  IS_MY_WALLET_BRAND,
-  MW_CARDS_COLLECTION,
-} from '../../../config';
+import { MW_CARDS_COLLECTION } from '../../../config';
 import { formatRelativeDays } from '../../../util/dateFormat';
 import { isDotTonDomainNft, isLinkableDnsNft, isRenewableDnsNft } from '../../../util/dns';
 import { compact } from '../../../util/iteratees';
@@ -27,8 +23,8 @@ import useLang from '../../../hooks/useLang';
 import useLastCallback from '../../../hooks/useLastCallback';
 
 export type NftMenuHandler = 'send' | 'tondns' | 'fragment' | 'marketplace' | 'explorer' | 'collection' | 'hide'
-  | 'unhide' | 'not_scam' | 'burn' | 'select' | 'installCard' | 'resetCard' | 'installAccentColor' | 'resetAccentColor'
-  | 'renew' | 'linkDomain' | 'shareLink';
+  | 'unhide' | 'not_scam' | 'burn' | 'select' | 'installCard' | 'resetCard' | 'installAccentColor'
+  | 'resetAccentColor' | 'renew' | 'linkDomain' | 'shareLink';
 
 const ON_SALE_ITEM: DropdownItem<NftMenuHandler> = {
   name: 'Cannot be sent',
@@ -149,11 +145,11 @@ export default function useNftMenu({
     selectNfts,
     openNftCollection,
     burnNfts,
-    addNftsToBlacklist,
     addNftsToWhitelist,
     closeMediaViewer,
     closeNftAttributesModal,
     openUnhideNftModal,
+    openReportNftModal,
     setCardBackgroundNft,
     clearCardBackgroundNft,
     installAccentColorFromNft,
@@ -263,8 +259,7 @@ export default function useNftMenu({
       }
 
       case 'hide': {
-        addNftsToBlacklist({ addresses: [nft!.address] });
-        closeOverlays();
+        openReportNftModal({ chain: nft!.chain, address: nft!.address });
 
         break;
       }
@@ -320,7 +315,7 @@ export default function useNftMenu({
     const isDotTon = isDotTonDomainNft(nft);
     const isRenewable = isRenewableDnsNft(nft);
     const isLinkable = isLinkableDnsNft(nft);
-    const isCard = IS_MY_WALLET_BRAND && nft.collectionAddress === MW_CARDS_COLLECTION;
+    const isCard = nft.collectionAddress === MW_CARDS_COLLECTION;
 
     return compact([
       ...(isCard ? [!isNftInstalled ? INSTALL_CARD : RESET_CARD] : []),
@@ -339,9 +334,9 @@ export default function useNftMenu({
       getExplorerItem(nft.chain),
       SHARE_LINK_ITEM,
       collectionAddress && COLLECTION_ITEM,
-      !IS_FEATURE_LIMITED && ((!isScam && !isNftBlacklisted) || isNftWhitelisted) && HIDE_ITEM,
-      !IS_FEATURE_LIMITED && isScam && !isNftWhitelisted && NOT_SCAM,
-      !IS_FEATURE_LIMITED && !isScam && isNftBlacklisted && UNHIDE,
+      ((!isScam && !isNftBlacklisted) || isNftWhitelisted) && HIDE_ITEM,
+      isScam && !isNftWhitelisted && NOT_SCAM,
+      !isScam && isNftBlacklisted && UNHIDE,
       ...(!isOnSale && !isViewMode ? [
         BURN_ITEM,
         !isWidget && SELECT_ITEM,

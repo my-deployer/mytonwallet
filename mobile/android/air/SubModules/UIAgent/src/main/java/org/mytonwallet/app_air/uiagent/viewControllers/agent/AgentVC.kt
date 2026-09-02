@@ -62,8 +62,11 @@ import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
 import org.mytonwallet.app_air.walletcore.models.InAppBrowserConfig
 import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
 
-class AgentVC(context: Context, initialPrompt: String? = null) :
-    WViewController(context),
+class AgentVC(
+    context: Context,
+    initialPrompt: String? = null,
+    initialPinnedMessageId: String? = null
+) : WViewController(context),
     WRecyclerViewAdapter.WRecyclerViewDataSource,
     AgentVM.Delegate {
 
@@ -99,8 +102,12 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
     private val vm = AgentSession.acquire()
     private var isAttachedToSession = false
     private var isSessionReleased = false
+    private var hasAppeared = false
+    private var isPreparingAppearance = false
     private var initialPromptAwaitingInsertion = initialPrompt?.takeIf { it.isNotBlank() }
     private var pendingInitialPrompt = initialPromptAwaitingInsertion
+    private var requestedPinnedMessageId = initialPinnedMessageId
+    private var shouldJumpToRequestedMessage = initialPinnedMessageId != null
     private var timelineItems = listOf<AgentTimelineItem>()
     private var animateFromIndex = -1
     private var currentBottom = 0
@@ -302,17 +309,21 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
 
     override fun viewWillAppear() {
         super.viewWillAppear()
+        isPreparingAppearance = true
         vm.setActive(this, true)
         vm.checkAccountChanged(animated = false)
-        if (initialPromptAwaitingInsertion != null) {
-            showInitialPromptAtBottom()
-        } else {
-            restoreSharedScrollPosition()
+        when {
+            initialPromptAwaitingInsertion != null -> showInitialPromptAtBottom()
+            requestedPinnedMessageId != null -> prepareRequestedMessageForAppearance()
+            else -> restoreSharedScrollPosition()
         }
     }
 
     override fun viewDidAppear() {
         super.viewDidAppear()
+        hasAppeared = true
+        isPreparingAppearance = false
+        if (showRequestedMessageIfAvailable() || requestedPinnedMessageId != null) return
         pendingSharedScrollPosition?.let { position ->
             if (restorePendingSharedScrollPosition(position)) {
                 pendingSharedScrollPosition = null
@@ -326,6 +337,8 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
     }
 
     override fun viewWillDisappear() {
+        hasAppeared = false
+        isPreparingAppearance = false
         shareScrollPosition()
         super.viewWillDisappear()
         vm.setActive(this, false)
@@ -398,6 +411,20 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
             composerView.pauseBlurring()
         } else {
             composerView.resumeBlurring()
+        }
+    }
+
+    private fun syncTopBlurAfterLayout() {
+        chatRecyclerView.doOnPreDraw {
+            if (chatRecyclerView.computeVerticalScrollOffset() > 0 || pinnedMessageId != null) {
+                topReversedCornerView?.resumeBlurring()
+                topReversedCornerView?.setBlurAlpha(1f)
+                bottomReversedCornerView?.resumeBlurring()
+                navigationController?.tabBarController?.resumeBlurring()
+                composerView.resumeBlurring()
+            } else {
+                updateBlurViews(chatRecyclerView)
+            }
         }
     }
 
@@ -562,6 +589,15 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         if (text.isNotBlank()) vm.sendMessage(text)
     }
 
+    fun showMessage(messageId: String) {
+        if (messageId.isBlank()) return
+        initialPromptAwaitingInsertion = null
+        pendingInitialPrompt = null
+        shouldJumpToRequestedMessage = false
+        requestedPinnedMessageId = messageId
+        if (hasAppeared) showRequestedMessageIfAvailable()
+    }
+
     private fun presentMoreMenu() {
         val items = mutableListOf<WMenuPopup.Item>()
 
@@ -623,11 +659,71 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         cancelHintsSettleFallback()
         timelineItems = buildTimelineItems(messages)
         rvAdapter.reloadData()
-        if (initialPromptAwaitingInsertion != null) {
-            showInitialPromptAtBottom()
-        } else if (!restoreSharedScrollPosition()) {
-            scrollToBottom()
+        when {
+            initialPromptAwaitingInsertion != null -> showInitialPromptAtBottom()
+
+            requestedPinnedMessageId != null -> {
+                if (hasAppeared) {
+                    showRequestedMessageIfAvailable()
+                } else if (isPreparingAppearance) {
+                    prepareRequestedMessageForAppearance()
+                }
+            }
+
+            !restoreSharedScrollPosition() -> scrollToBottom()
         }
+    }
+
+    private fun prepareRequestedMessageForAppearance() {
+        if (!shouldJumpToRequestedMessage) return
+        val messageId = requestedPinnedMessageId ?: return
+        val index = timelineIndexOf(messageId)
+        if (index < 0) return
+        val layoutManager = chatRecyclerView.layoutManager as? LinearLayoutManager ?: return
+
+        layoutManager.stackFromEnd = false
+        layoutManager.scrollToPositionWithOffset(index, -pinnedTopOffset)
+        if (chatRecyclerView.isLaidOut) {
+            showRequestedMessageIfAvailable()
+            return
+        }
+
+        chatRecyclerView.doOnNextLayout {
+            if (isPreparingAppearance && requestedPinnedMessageId == messageId) {
+                showRequestedMessageIfAvailable()
+            }
+        }
+    }
+
+    private fun showRequestedMessageIfAvailable(): Boolean {
+        val messageId = requestedPinnedMessageId ?: return false
+        if (timelineIndexOf(messageId) < 0) return false
+
+        val animated =
+            !shouldJumpToRequestedMessage && WGlobalStorage.getAreAnimationsActive()
+        shouldJumpToRequestedMessage = false
+        requestedPinnedMessageId = null
+        pendingSharedScrollPosition = null
+        pendingOutgoingPreviousMessageId = null
+        deferredPinMessageId = null
+        unpin()
+        pendingPinMessageId = messageId
+        chatRecyclerView.stopScroll()
+        if (animated) {
+            chatRecyclerView.post {
+                evaluateRequestedMessage(messageId, animated)
+            }
+        } else {
+            evaluateRequestedMessage(messageId, animated)
+        }
+        return true
+    }
+
+    private fun evaluateRequestedMessage(messageId: String, animated: Boolean) {
+        if (pendingPinMessageId == messageId) {
+            evaluatePinning(messageId, animated = animated)
+        }
+        syncTopBlurAfterLayout()
     }
 
     override fun onMessageAdded(message: AgentMessage, animated: Boolean) {
@@ -994,7 +1090,13 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         val pinnedId = pinnedMessageId ?: return
         val messageIndex = timelineIndexOf(messageId)
         val pinnedIndex = timelineIndexOf(pinnedId)
-        if (messageIndex !in 0 until pinnedIndex) return
+        if (messageIndex < 0 || pinnedIndex < 0 || messageIndex == pinnedIndex) return
+        val pinnedTop = (chatRecyclerView.layoutManager as? LinearLayoutManager)
+            ?.findViewByPosition(pinnedIndex)
+            ?.let { pinnedView ->
+                val expectedTop = chatRecyclerView.paddingTop + pinnedMessageOffset(pinnedView)
+                expectedTop.takeIf { pinnedView.top == expectedTop }
+            }
         chatRecyclerView.doOnPreDraw {
             if (isUserScrolling || pinnedMessageId != pinnedId) return@doOnPreDraw
             val currentMessageIndex = chatRecyclerView.getChildAdapterPosition(cell)
@@ -1002,15 +1104,40 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
             val item = timelineItems.getOrNull(currentMessageIndex)
                 as? AgentTimelineItem.Message
             if (item?.message?.id != messageId ||
-                currentMessageIndex !in 0 until currentPinnedIndex
+                currentPinnedIndex < 0 || currentMessageIndex == currentPinnedIndex
             ) {
                 return@doOnPreDraw
             }
             val delta = cell.height - previousHeight
-            if (delta != 0) {
-                chatRecyclerView.scrollBy(0, delta)
+            when {
+                delta != 0 && currentMessageIndex < currentPinnedIndex ->
+                    chatRecyclerView.scrollBy(0, delta)
+
+                delta < 0 && currentMessageIndex > currentPinnedIndex ->
+                    pinnedTop?.let(::preservePinnedMessageAcrossTrailingShrink)
             }
         }
+    }
+
+    private fun preservePinnedMessageAcrossTrailingShrink(pinnedTop: Int) {
+        val requiredPadding = maxOf(
+            baseChatBottomPadding(appliedBottom),
+            pinnedPaddingTarget() ?: return
+        )
+        if (requiredPadding <= chatRecyclerView.paddingBottom) return
+        chatRecyclerView.setPadding(
+            0,
+            chatRecyclerView.paddingTop,
+            0,
+            requiredPadding
+        )
+
+        val pinnedId = pinnedMessageId ?: return
+        val pinnedIndex = timelineIndexOf(pinnedId)
+        val lm = chatRecyclerView.layoutManager as? LinearLayoutManager ?: return
+        val pinnedView = lm.findViewByPosition(pinnedIndex) ?: return
+        val delta = pinnedView.top - pinnedTop
+        if (delta != 0) chatRecyclerView.scrollBy(0, delta)
     }
 
     // isOnBottom only tracks user scrolls; a programmatic content change (e.g. the hints
@@ -1295,7 +1422,8 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
     private fun evaluatePinning(
         messageId: String,
         targetHeight: Int? = null,
-        isRetry: Boolean = false
+        isRetry: Boolean = false,
+        animated: Boolean = WGlobalStorage.getAreAnimationsActive()
     ) {
         if (pendingPinMessageId != messageId) return
         val lm = chatRecyclerView.layoutManager as? LinearLayoutManager ?: return
@@ -1334,7 +1462,7 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
                 cachedPinnedTarget
             )
             lm.stackFromEnd = false
-            if (WGlobalStorage.getAreAnimationsActive()) {
+            if (animated) {
                 val scroller = object : LinearSmoothScroller(context) {
                     override fun getVerticalSnapPreference(): Int = SNAP_TO_START
 
@@ -1346,7 +1474,7 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
                         super.onStop()
                         chatRecyclerView.post {
                             if (pendingPinMessageId == messageId) {
-                                evaluatePinning(messageId, isRetry = true)
+                                evaluatePinning(messageId, isRetry = true, animated = animated)
                             }
                         }
                     }
@@ -1358,7 +1486,7 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
                 lm.scrollToPositionWithOffset(idx, offset)
                 chatRecyclerView.doOnNextLayout {
                     if (pendingPinMessageId == messageId) {
-                        evaluatePinning(messageId, isRetry = true)
+                        evaluatePinning(messageId, isRetry = true, animated = animated)
                     }
                 }
             }
@@ -1376,7 +1504,7 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         pinnedMessageId = messageId
         cachedPinnedTarget = 0
         isOnBottom = false
-        if (WGlobalStorage.getAreAnimationsActive() && !wasOffscreenPin) {
+        if (animated && !wasOffscreenPin) {
             pinScrollExtraSpace = messageView.top
         } else {
             pinScrollExtraSpace = 0
@@ -1391,14 +1519,19 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
             }
         }
         val paddingChanged = syncPinnedPadding()
-        if (wasOffscreenPin && !WGlobalStorage.getAreAnimationsActive()) {
+        if (wasOffscreenPin && !animated) {
             lm.scrollToPositionWithOffset(idx, pinnedMessageOffset(messageView))
+            syncTopBlurAfterLayout()
         } else if (paddingChanged) {
             if (!wasOffscreenPin) {
-                chatRecyclerView.doOnNextLayout { startPinScroll(messageId) }
+                if (animated) {
+                    chatRecyclerView.doOnNextLayout { startPinScroll(messageId, animated = true) }
+                } else {
+                    startPinScroll(messageId, animated = false)
+                }
             }
         } else if (!wasOffscreenPin) {
-            startPinScroll(messageId)
+            startPinScroll(messageId, animated)
         }
     }
 
@@ -1409,7 +1542,10 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         pinScrollSpring?.cancel()
     }
 
-    private fun startPinScroll(messageId: String) {
+    private fun startPinScroll(
+        messageId: String,
+        animated: Boolean = WGlobalStorage.getAreAnimationsActive()
+    ) {
         if (pinnedMessageId != messageId) return
         val lm = chatRecyclerView.layoutManager as? LinearLayoutManager ?: return
         val idx = timelineIndexOf(messageId)
@@ -1419,7 +1555,7 @@ class AgentVC(context: Context, initialPrompt: String? = null) :
         val dy = messageView?.let {
             it.top - (chatRecyclerView.paddingTop + (targetOffset ?: 0))
         }
-        if (dy == null || dy <= 0 || !WGlobalStorage.getAreAnimationsActive()) {
+        if (dy == null || dy <= 0 || !animated) {
             pinScrollExtraSpace = 0
             if (dy == null || dy != 0) {
                 lm.scrollToPositionWithOffset(idx, targetOffset ?: -pinnedTopOffset)

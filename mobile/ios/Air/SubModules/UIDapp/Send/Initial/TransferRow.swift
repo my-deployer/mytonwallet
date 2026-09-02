@@ -30,7 +30,7 @@ struct TransferRow: View {
         var items: [String] = []
 
         if transfer.isNftTransferPayload {
-            items.append(lang("%amount% NFTs", arg1: 1))
+            items.append(L10n.amountNfts(amount: 1))
         }
 
         items.append(contentsOf: transfer.displayedAmounts(chain: chain, includeNativeFee: true).map {

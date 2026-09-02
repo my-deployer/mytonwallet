@@ -4,6 +4,7 @@ import { Cell, type TupleReader } from '@ton/core';
 import type { ApiNetwork } from '../../../types/misc';
 
 import { MFA_EXTENSION_CODE_HASH, MFA_MASTER_ADDRESS } from '../../../../config';
+import { raceWithAbortSignal } from '../../../../util/abortSignal';
 import safeExec from '../../../../util/safeExec';
 import { getTonClient } from '../util/tonCore';
 import { ApiServerError } from '../../../errors';
@@ -18,8 +19,12 @@ export function readCellOpt(stack: TupleReader): Cell | undefined {
   }) ?? undefined;
 }
 
-export async function resolveMfaExtensionAddress(network: ApiNetwork, walletAddress: Address) {
-  const extensions = await getW5WalletExtensionAddresses(network, walletAddress.toString());
+export async function resolveMfaExtensionAddress(
+  network: ApiNetwork,
+  walletAddress: Address,
+  signal?: AbortSignal,
+) {
+  const extensions = await getW5WalletExtensionAddresses(network, walletAddress.toString(), signal);
 
   const extensionCodeHashLibraryRef = getContractCode().hash();
   const extensionCodeHashFull = MFA_EXTENSION_CODE_HASH
@@ -27,7 +32,10 @@ export async function resolveMfaExtensionAddress(network: ApiNetwork, walletAddr
     : undefined;
 
   for (const extension of extensions) {
-    const { code } = await getTonClient(network).getAddressInfo(extension);
+    const { code } = await raceWithAbortSignal(
+      () => getTonClient(network).getAddressInfo(extension),
+      signal,
+    );
     // Inactive addresses return `code: ""`.
     if (!code) continue;
 
@@ -42,9 +50,16 @@ export async function resolveMfaExtensionAddress(network: ApiNetwork, walletAddr
   }
 }
 
-export async function getMfaExtensionSeqno(network: ApiNetwork, extensionAddress: string) {
+export async function getMfaExtensionSeqno(
+  network: ApiNetwork,
+  extensionAddress: string,
+  signal?: AbortSignal,
+) {
   const client = getTonClient(network);
-  const { stack, exit_code } = await client.runMethodWithError(Address.parse(extensionAddress), 'get_seqno');
+  const { stack, exit_code } = await raceWithAbortSignal(
+    () => client.runMethodWithError(Address.parse(extensionAddress), 'get_seqno'),
+    signal,
+  );
   if (exit_code !== 0) {
     throw new ApiServerError(
       `MFA extension is not available (exit_code: ${exit_code}). Try reinstalling MFA.`,

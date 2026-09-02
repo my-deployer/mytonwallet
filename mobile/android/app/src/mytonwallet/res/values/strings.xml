@@ -11,15 +11,15 @@
   <string name="app_blog_url" translatable="false">https://mywallet.io/en/blog</string>
   <string name="app_terms_of_use_url" translatable="false">https://mywallet.io/terms-of-use</string>
   <string name="app_privacy_policy_url" translatable="false">https://mywallet.io/privacy-policy</string>
-  <string name="app_install_url" translatable="false">https://get.mywallet.io/android-store</string>
+  <string name="app_install_url" translatable="false">https://get.mywallet.io/android-store?utm_source=app_share</string>
   <string name="bot_username" translatable="false">MyTonWalletBot</string>
   <string name="app_cards_url" translatable="false">https://cards.mytonwallet.io</string>
   <string name="app_help_url" translatable="false">https://help.mywallet.io</string>
   <string name="app_help_scam_url_en" translatable="false">https://help.mywallet.io/intro/scams/leaked-seed-phrases</string>
   <string name="app_help_scam_url_ru" translatable="false">https://help.mywallet.io/ru/baza-znanii/moshennichestvo-i-skamy/slitye-sid-frazy</string>
   <string name="app_support_telegram_url" translatable="false">https://t.me/mysupport</string>
-  <string name="app_tips_telegram_username_en" translatable="false">MyTonWalletTips</string>
-  <string name="app_tips_telegram_username_ru" translatable="false">MyTonWalletTipsRu</string>
+  <string name="app_tips_telegram_username_en" translatable="false">MyWalletTips</string>
+  <string name="app_tips_telegram_username_ru" translatable="false">MyWalletTipsRu</string>
   <string name="app_desktop_install_url" translatable="false">https://get.mywallet.io/desktop</string>
   <string name="app_multisend_url" translatable="false">https://multisend.mywallet.io/</string>
   <string name="app_portfolio_url" translatable="false">https://portfolio.mywallet.io</string>

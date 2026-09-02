@@ -8,13 +8,10 @@ import org.json.JSONObject
 import org.mytonwallet.app_air.walletbasecontext.logger.Logger
 
 /**
- * Reads the Play Install Referrer once, sanitises the untrusted string, and
- * delivers the resulting channel to the web bridge via
- * `window.airBridge.setInstallChannel(...)`.
- *
- * Best-effort and fire-and-forget: if the referrer is unavailable or malformed,
- * nothing is delivered and the JS claim simply never fires this launch. The
- * Play Install Referrer connection is asynchronous, so this never blocks boot.
+ * Reads the Play Install Referrer once, sanitises it into a canonical bucket, and delivers it to
+ * `window.airBridge.setInstallChannel(...)`. Fire-and-forget: a successful or permanently-failed
+ * read delivers a bucket (`unknown` on permanent failure) so the install is attributed; a transient
+ * failure delivers nothing and the next launch retries. Asynchronous, so it never blocks boot.
  */
 object InstallReferrerChannel {
 
@@ -24,13 +21,12 @@ object InstallReferrerChannel {
             client.startConnection(object : InstallReferrerStateListener {
                 override fun onInstallReferrerSetupFinished(responseCode: Int) {
                     try {
-                        if (responseCode == InstallReferrerClient.InstallReferrerResponse.OK) {
-                            val channel = sanitizeReferrer(client.installReferrer.installReferrer)
-                            if (channel != null) {
-                                deliverChannel(webView, channel)
-                            }
-                        }
+                        handleResponse(responseCode, client, webView)
                     } catch (e: Exception) {
+                        // Transient (binder/service hiccup): deliver nothing and let the next
+                        // launch retry. Delivering `unknown` here would latch the JS claim and
+                        // drop a later real referrer; a device with no Play services reports
+                        // FEATURE_NOT_SUPPORTED as a response code above, not an exception.
                         Logger.e(
                             Logger.LogTag.JS_WEBVIEW_BRIDGE,
                             "InstallReferrerChannel: read failed error=${e.javaClass.simpleName}"
@@ -52,6 +48,7 @@ object InstallReferrerChannel {
                 }
             })
         } catch (e: Exception) {
+            // Connection failure is transient; the next launch retries.
             Logger.e(
                 Logger.LogTag.JS_WEBVIEW_BRIDGE,
                 "InstallReferrerChannel: connection failed error=${e.javaClass.simpleName}"
@@ -63,6 +60,20 @@ object InstallReferrerChannel {
         }
     }
 
+    private fun handleResponse(responseCode: Int, client: InstallReferrerClient, webView: WebView) {
+        when (responseCode) {
+            InstallReferrerClient.InstallReferrerResponse.OK ->
+                deliverChannel(webView, sanitizeReferrer(client.installReferrer.installReferrer))
+
+            // SERVICE_UNAVAILABLE is transient; leave it for the next launch to retry.
+            InstallReferrerClient.InstallReferrerResponse.SERVICE_UNAVAILABLE -> Unit
+
+            // Any other code is permanent (no Play services, developer or permission error):
+            // deliver the fallback bucket so the install is still attributed.
+            else -> deliverChannel(webView, sanitizeReferrer(null))
+        }
+    }
+
     // The referrer is untrusted input, so the channel is escaped with
     // JSONObject.quote and NEVER string-interpolated into the evaluated script.
     private fun deliverChannel(webView: WebView, channel: String) {
@@ -71,8 +82,8 @@ object InstallReferrerChannel {
             try {
                 webView.evaluateJavascript(script, null)
             } catch (e: Exception) {
-                // WebView may already be destroyed/disposed by the time this runs; a lost
-                // install-channel delivery must never crash the app.
+                // WebView may already be destroyed by the time this runs; a lost delivery
+                // must not crash the app.
                 Logger.e(
                     Logger.LogTag.JS_WEBVIEW_BRIDGE,
                     "InstallReferrerChannel: eval failed error=${e.javaClass.simpleName}"

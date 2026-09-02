@@ -5,13 +5,17 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Rect
+import android.graphics.drawable.InsetDrawable
 import android.net.Uri
+import android.text.InputType
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.view.Gravity
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -19,18 +23,27 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.widget.FrameLayout
+import androidx.appcompat.widget.AppCompatImageView
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.animation.doOnEnd
+import androidx.core.graphics.ColorUtils
 import androidx.core.net.toUri
 import androidx.core.view.children
+import androidx.core.view.doOnLayout
 import androidx.core.view.doOnPreDraw
 import androidx.core.view.get
 import androidx.core.view.isGone
+import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
-import androidx.core.widget.doOnTextChanged
+import androidx.core.widget.doAfterTextChanged
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import me.vkryl.android.AnimatorUtils
 import me.vkryl.android.animatorx.BoolAnimator
 import me.vkryl.android.animatorx.FloatAnimator
+import org.mytonwallet.app_air.uiagent.viewControllers.agent.AgentVC
 import org.mytonwallet.app_air.uibrowser.viewControllers.explore.ExploreVC
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
 import org.mytonwallet.app_air.uicomponents.base.WMinimizableBlurHost
@@ -38,14 +51,21 @@ import org.mytonwallet.app_air.uicomponents.base.WNavigationBar
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController
 import org.mytonwallet.app_air.uicomponents.base.WNavigationController.PresentationConfig
 import org.mytonwallet.app_air.uicomponents.base.WViewController
+import org.mytonwallet.app_air.uicomponents.base.WWindow
+import org.mytonwallet.app_air.uicomponents.commonViews.AccountIconView
 import org.mytonwallet.app_air.uicomponents.commonViews.AccountItemView
+import org.mytonwallet.app_air.uicomponents.commonViews.UpdateStatusView
 import org.mytonwallet.app_air.uicomponents.commonViews.toast.ToastHost
+import org.mytonwallet.app_air.uicomponents.drawable.RoundProgressDrawable
 import org.mytonwallet.app_air.uicomponents.drawable.StickyBottomGradientDrawable
 import org.mytonwallet.app_air.uicomponents.drawable.WRippleDrawable
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDpLocalized
+import org.mytonwallet.app_air.uicomponents.extensions.setupSpringFling
+import org.mytonwallet.app_air.uicomponents.extensions.springToItem
 import org.mytonwallet.app_air.uicomponents.extensions.startActivityCatching
 import org.mytonwallet.app_air.uicomponents.helpers.CubicBezierInterpolator
+import org.mytonwallet.app_air.uicomponents.helpers.HomeStatusController
 import org.mytonwallet.app_air.uicomponents.helpers.ToastHelper
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.adaptiveFontSize
@@ -58,6 +78,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.WProtectedView
 import org.mytonwallet.app_air.uicomponents.widgets.WSearchEditText
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
 import org.mytonwallet.app_air.uicomponents.widgets.WView
+import org.mytonwallet.app_air.uicomponents.widgets.clearSegmentedControl.WClearSegmentedControl
 import org.mytonwallet.app_air.uicomponents.widgets.fadeIn
 import org.mytonwallet.app_air.uicomponents.widgets.fadeOut
 import org.mytonwallet.app_air.uicomponents.widgets.hideKeyboard
@@ -65,6 +86,7 @@ import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup
 import org.mytonwallet.app_air.uicomponents.widgets.menu.WMenuPopup.BackgroundStyle
 import org.mytonwallet.app_air.uicomponents.widgets.setBackgroundColor
 import org.mytonwallet.app_air.uiinappbrowser.InAppBrowserVC
+import org.mytonwallet.app_air.uisettings.viewControllers.settings.SettingsVC
 import org.mytonwallet.app_air.walletbasecontext.DEBUG_MODE
 import org.mytonwallet.app_air.walletbasecontext.R as BaseR
 import org.mytonwallet.app_air.walletbasecontext.localization.LocaleController
@@ -88,6 +110,8 @@ import org.mytonwallet.app_air.walletcore.stores.AccountStore
 import org.mytonwallet.app_air.walletcore.stores.ConfigStore
 import org.mytonwallet.app_air.walletcore.stores.EnvironmentStore
 import org.mytonwallet.app_air.walletcore.stores.ExploreHistoryStore
+import org.mytonwallet.uihome.home.HomeVC
+import org.mytonwallet.uihome.home.actions.HomeActionsSheetVC
 import org.mytonwallet.uihome.tabs.views.FloatingBottomNavigationView
 import org.mytonwallet.uihome.tabs.views.IBottomNavigationView
 
@@ -103,10 +127,41 @@ class PhoneTabsVC(context: Context) :
         const val SEARCH_HEIGHT = 48
         const val SEARCH_TOP_MARGIN = 4
         const val SEARCH_BOTTOM_MARGIN = 10
+        private const val ACTIONS_BUTTON_GAP = 12
+        private const val ACTIONS_ICON_SIZE = 18
+
+        private const val ACTIONS_SHEET_INSET = 8
+
+        private const val TOAST_HOST_BOTTOM_MARGIN = 12
 
         const val BOTTOM_TABS_LAYOUT_HEIGHT = 75
         const val BOTTOM_TABS_BOTTOM_MARGIN = -7
         const val BOTTOM_TABS_BOTTOM_TO_NAV_DIFF = 2
+
+        private const val EXPERIMENTAL_BOTTOM_EXTRA_GAP = 7
+
+        private const val SEARCH_OVERLAY_ANIMATION = AnimationConstants.VERY_VERY_QUICK_ANIMATION
+        internal const val TOP_TABS_HEIGHT = 44
+        private const val TOP_TABS_THUMB_HEIGHT = 36f
+        internal const val TOP_TABS_TOP_MARGIN = 8
+        private const val TOP_TABS_START_MARGIN = 16
+        private const val TOP_TABS_END_MARGIN = 70
+        private const val TOP_AVATAR_SIZE = 44
+        private const val TOP_AVATAR_ICON_SIZE = 36
+        private const val TOP_AVATAR_RING_STROKE = 2f
+        private const val TOP_AVATAR_RING_CYCLE_MS = 750L
+        private const val TOP_AVATAR_END_MARGIN = 16
+
+        // The tab bar is shorter than the avatar, so nudge it down to align their centers.
+        internal const val TOP_TABS_CENTERING_OFFSET = (TOP_AVATAR_SIZE - TOP_TABS_HEIGHT) / 2
+
+        // Distance from the tab bar's top margin to its bottom edge, offset included.
+        internal const val TOP_TABS_BOTTOM_EDGE = TOP_TABS_CENTERING_OFFSET + TOP_TABS_HEIGHT
+
+        private val EXPERIMENTAL_PUSHED_TAB_IDS = setOf(
+            IBottomNavigationView.ID_AGENT,
+            IBottomNavigationView.ID_SETTINGS
+        )
 
         private val UPDATE_BUTTON_AVAILABLE_TABS = setOf(
             IBottomNavigationView.ID_HOME,
@@ -114,7 +169,6 @@ class PhoneTabsVC(context: Context) :
         )
 
         private const val GRADIENT_ALPHA = 229
-        private const val COLLAPSED_GRADIENT_STOP_POINT = 1 - (GRADIENT_ALPHA / 255f)
     }
 
     override val isSwipeBackAllowed = false
@@ -123,12 +177,20 @@ class PhoneTabsVC(context: Context) :
     override var currentTabId: Int
         get() = bottomNavigationView.selectedItemId
         set(value) {
-            pendingSelectedTab = value
+            if (experimentalTopTabsEnabled && value in EXPERIMENTAL_PUSHED_TAB_IDS) {
+                pendingSelectedTab = IBottomNavigationView.ID_HOME
+                pendingTabToPresentOverMain = value
+            } else {
+                pendingSelectedTab = value
+            }
         }
     private var pendingSelectedTab: Int? = null
+    private var pendingTabToPresentOverMain: Int? = null
 
     override fun onExploreCreated(exploreVC: ExploreVC) {
-        searchBlurryBackgroundView.setupWith(exploreVC.view)
+        if (!experimentalTopTabsEnabled) {
+            searchBlurryBackgroundView.setupWith(exploreVC.view)
+        }
     }
 
     override fun exportSearchText(): String = if (searchMatchedSite != null) {
@@ -142,15 +204,225 @@ class PhoneTabsVC(context: Context) :
     }
 
     override fun detachMountedStacks() {
+        // With experimental top tabs the stacks live inside the pager's pages rather than directly
+        // in contentView; exportStacks() removes each nav from its own parent.
         contentView.removeAllViews()
     }
 
     private val contentView = WView(context)
 
+    private inner class ExperimentalTabPageView : FrameLayout(context) {
+        init {
+            layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+        }
+
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private val hitRect = Rect()
+        private var initialRawX = 0f
+        private var initialRawY = 0f
+        private var lastRawX = 0f
+        private var trackingGesture = false
+        private var horizontalGesture = false
+        private var verticalGesture = false
+        private var allowParentPager = false
+        private var nestedOwnsHorizontalGesture = false
+
+        fun bind(navigationController: WNavigationController) {
+            if (childCount == 1 && getChildAt(0) === navigationController) return
+            removeAllViews()
+            (navigationController.parent as? ViewGroup)?.removeView(navigationController)
+            addView(navigationController, LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        }
+
+        fun unbind() {
+            // Recycling mid-swipe would otherwise strand the fake drag, since only this view's
+            // touch stream ends it, and every later beginFakeDrag() would fail.
+            if (experimentalTabPager.isFakeDragging) experimentalTabPager.endFakeDrag()
+            resetGestureTracking()
+            removeAllViews()
+        }
+
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialRawX = event.rawX
+                    initialRawY = event.rawY
+                    lastRawX = event.rawX
+                    trackingGesture = true
+                    horizontalGesture = false
+                    verticalGesture = false
+                    val startedInHorizontalChild =
+                        hasTouchedScrollableChild(
+                            this,
+                            initialRawX.toInt(),
+                            initialRawY.toInt(),
+                            -1
+                        ) ||
+                            hasTouchedScrollableChild(
+                                this,
+                                initialRawX.toInt(),
+                                initialRawY.toInt(),
+                                1
+                            )
+                    allowParentPager = !startedInHorizontalChild
+                    super.requestDisallowInterceptTouchEvent(!allowParentPager)
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - initialRawX
+                    val dy = event.rawY - initialRawY
+                    val stepDx = event.rawX - lastRawX
+                    lastRawX = event.rawX
+                    if (!horizontalGesture && !verticalGesture) {
+                        if (abs(dx) > touchSlop && abs(dx) > abs(dy)) {
+                            horizontalGesture = true
+                        } else if (abs(dy) > touchSlop && abs(dy) > abs(dx)) {
+                            verticalGesture = true
+                            allowParentPager = false
+                            super.requestDisallowInterceptTouchEvent(true)
+                        }
+                    }
+                    if (horizontalGesture) {
+                        if (experimentalTabPager.isFakeDragging) {
+                            experimentalTabPager.fakeDragBy(stepDx)
+                            return true
+                        }
+                        if (!nestedOwnsHorizontalGesture) {
+                            val direction = if (dx < 0f) 1 else -1
+                            val nestedCanScroll = hasTouchedScrollableChild(
+                                this,
+                                initialRawX.toInt(),
+                                initialRawY.toInt(),
+                                direction
+                            )
+                            if (!allowParentPager &&
+                                !nestedCanScroll &&
+                                experimentalTabPager.isUserInputEnabled &&
+                                experimentalTabPager.beginFakeDrag()
+                            ) {
+                                val cancelEvent = MotionEvent.obtain(event).apply {
+                                    action = MotionEvent.ACTION_CANCEL
+                                }
+                                super.dispatchTouchEvent(cancelEvent)
+                                cancelEvent.recycle()
+                                experimentalTabPager.fakeDragBy(stepDx)
+                                return true
+                            }
+                            nestedOwnsHorizontalGesture = nestedCanScroll
+                            allowParentPager = !nestedCanScroll
+                            super.requestDisallowInterceptTouchEvent(!allowParentPager)
+                        }
+                    }
+                }
+            }
+
+            if (
+                (
+                    event.actionMasked == MotionEvent.ACTION_UP ||
+                        event.actionMasked == MotionEvent.ACTION_CANCEL
+                    ) &&
+                experimentalTabPager.isFakeDragging
+            ) {
+                experimentalTabPager.endFakeDrag()
+                resetGestureTracking()
+                return true
+            }
+            val handled = super.dispatchTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                resetGestureTracking()
+            }
+            return handled
+        }
+
+        private fun resetGestureTracking() {
+            trackingGesture = false
+            horizontalGesture = false
+            verticalGesture = false
+            allowParentPager = false
+            nestedOwnsHorizontalGesture = false
+            super.requestDisallowInterceptTouchEvent(false)
+        }
+
+        override fun requestDisallowInterceptTouchEvent(disallowIntercept: Boolean) {
+            if (trackingGesture) {
+                super.requestDisallowInterceptTouchEvent(!allowParentPager)
+            } else {
+                super.requestDisallowInterceptTouchEvent(disallowIntercept)
+            }
+        }
+
+        private fun hasTouchedScrollableChild(
+            candidate: View,
+            rawX: Int,
+            rawY: Int,
+            direction: Int
+        ): Boolean {
+            if (!candidate.isShown ||
+                !candidate.getGlobalVisibleRect(hitRect) ||
+                !hitRect.contains(rawX, rawY)
+            ) {
+                return false
+            }
+            if (candidate is ViewGroup) {
+                for (index in candidate.childCount - 1 downTo 0) {
+                    if (
+                        hasTouchedScrollableChild(
+                            candidate.getChildAt(index),
+                            rawX,
+                            rawY,
+                            direction
+                        )
+                    ) {
+                        return true
+                    }
+                }
+            }
+            return candidate !== this && candidate.canScrollHorizontally(direction)
+        }
+    }
+
+    private inner class ExperimentalTabPageHolder(val page: ExperimentalTabPageView) :
+        RecyclerView.ViewHolder(page)
+
+    private inner class ExperimentalTabPagerAdapter :
+        RecyclerView.Adapter<ExperimentalTabPageHolder>() {
+        init {
+            setHasStableIds(true)
+        }
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
+            ExperimentalTabPageHolder(ExperimentalTabPageView())
+
+        override fun onBindViewHolder(holder: ExperimentalTabPageHolder, position: Int) {
+            holder.page.bind(getNavigationStack(topTabIds[position]))
+        }
+
+        override fun onViewRecycled(holder: ExperimentalTabPageHolder) {
+            holder.page.unbind()
+        }
+
+        override fun getItemCount(): Int = topTabIds.size
+
+        override fun getItemId(position: Int): Long = topTabIds[position].toLong()
+    }
+
     private var updateFloatingButton: WLabel? = null
     private var updateFloatingButtonBackground: WRippleDrawable? = null
     private var stickyBackgroundColor =
         if (ThemeManager.isDark) WColor.SecondaryBackground.color else WColor.Background.color
+
+    private val experimentalTopTabsEnabled = WGlobalStorage.areTopTabsEnabled()
+    private val searchHintKey
+        get() = if (experimentalTopTabsEnabled) "Search or Ask" else "Search app or enter address"
+
+    private val bottomTabsHeight: Int
+        get() = if (experimentalTopTabsEnabled) {
+            0
+        } else {
+            BOTTOM_TABS_LAYOUT_HEIGHT.dp + BOTTOM_TABS_BOTTOM_MARGIN.dp
+        }
 
     override val minimizedBlurRootView: ViewGroup?
         get() = contentView
@@ -158,6 +430,12 @@ class PhoneTabsVC(context: Context) :
         get() {
             return (window?.systemBars?.bottom ?: 0) + (-2).dp
         }
+
+    override fun rootTopInsetForTab(id: Int): Int {
+        if (!experimentalTopTabsEnabled) return 0
+        if (id == IBottomNavigationView.ID_SETTINGS) return 0
+        return (WNavigationBar.DEFAULT_HEIGHT + 2).dp
+    }
 
     private var isSwitchingTabs = false
     private var selectingTabId: Int? = null
@@ -173,6 +451,9 @@ class PhoneTabsVC(context: Context) :
             if (isSwitchingTabs) return false
 
             selectingTabId = itemId
+            if (experimentalTopTabsEnabled) {
+                updateTopChromeVisibility(itemId)
+            }
             checkForUpdate(itemId)
             val isAgent = itemId == IBottomNavigationView.ID_AGENT
             ignoreSideGuttering = isAgent
@@ -184,36 +465,34 @@ class PhoneTabsVC(context: Context) :
 
             val newNav = getNavigationStack(itemId)
             updateToastAvailability(itemId)
+            val oldNav = if (experimentalTopTabsEnabled) {
+                activeNavigationController
+            } else {
+                contentView[0] as? WNavigationController
+            }
+
+            val searchVisible = shouldShowSearch(itemId)
+            if (searchView.hasFocus() && (experimentalTopTabsEnabled || !searchVisible)) {
+                searchView.clearFocus()
+            }
+
+            if (experimentalTopTabsEnabled) {
+                switchExperimentalTab(itemId, oldNav, newNav)
+                selectingTabId = null
+                return true
+            }
+
             if (newNav.parent != null) {
                 selectingTabId = null
                 return true // switching navigation bottom bar view type
             }
 
-            val oldNav = contentView[0] as? WNavigationController
             oldNav?.viewWillDisappear()
-
-            val searchVisible = itemId == IBottomNavigationView.ID_EXPLORE
-            if (searchView.hasFocus() && !searchVisible) searchView.clearFocus()
 
             val animationsEnabled = WGlobalStorage.getAreAnimationsActive()
 
             if (animationsEnabled) {
-                if (searchVisible) {
-                    searchView.visibility = View.VISIBLE
-                    searchShadow?.sync()
-                }
-                searchView.animate()
-                    .alpha(if (searchVisible) 1f else 0f)
-                    .setDuration(AnimationConstants.VERY_VERY_QUICK_ANIMATION)
-                    .setInterpolator(CubicBezierInterpolator.EASE_OUT)
-                    .setUpdateListener { searchShadow?.sync() }
-                    .withEndAction {
-                        if (!searchVisible) {
-                            searchView.visibility = View.INVISIBLE
-                        }
-                        searchShadow?.sync()
-                    }
-                    .start()
+                fadeSearchChrome(searchView, searchShadow, searchVisible)
 
                 newNav.alpha = 0f
                 newNav.scaleX = 0.98f
@@ -256,9 +535,7 @@ class PhoneTabsVC(context: Context) :
                     }
                     .start()
             } else {
-                searchView.alpha = if (searchVisible) 1f else 0f
-                searchView.visibility = if (searchVisible) View.VISIBLE else View.INVISIBLE
-                searchShadow?.sync()
+                setSearchChromeVisible(searchVisible)
 
                 oldNav?.let { contentView.removeView(it) }
                 contentView.addView(
@@ -276,6 +553,375 @@ class PhoneTabsVC(context: Context) :
     override val bottomNavigationView: IBottomNavigationView =
         FloatingBottomNavigationView(context, contentView).also { it.listener = tabListener }
 
+    private var topTabIds = emptyList<Int>()
+    private val experimentalTabPagerAdapter = ExperimentalTabPagerAdapter()
+    private var pendingTabAppearance: WNavigationController? = null
+    private val experimentalTabPager by lazy {
+        ViewPager2(context).apply {
+            id = View.generateViewId()
+            adapter = experimentalTabPagerAdapter
+            offscreenPageLimit = ViewPager2.OFFSCREEN_PAGE_LIMIT_DEFAULT
+            registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageScrolled(
+                    position: Int,
+                    positionOffset: Float,
+                    positionOffsetPixels: Int
+                ) {
+                    topTabsControl.updateThumbPosition(
+                        index = position,
+                        offset = position + positionOffset,
+                        targetIndex = currentItem,
+                        force = false,
+                        isAnimatingToPosition = false
+                    )
+                }
+
+                override fun onPageScrollStateChanged(state: Int) {
+                    if (state != ViewPager2.SCROLL_STATE_IDLE) return
+                    val index = currentItem
+                    topTabsControl.updateThumbPosition(
+                        index = index,
+                        offset = index.toFloat(),
+                        targetIndex = index,
+                        force = true,
+                        isAnimatingToPosition = false
+                    )
+                    val tabId = topTabIds.getOrNull(index)
+                    if (selectingTabId == null &&
+                        tabId != null &&
+                        bottomNavigationView.selectedItemId != tabId
+                    ) {
+                        bottomNavigationView.selectedItemId = tabId
+                    }
+                    completePendingTabAppearance()
+                }
+            })
+            (getChildAt(0) as? RecyclerView)?.itemAnimator = null
+            setupSpringFling { it }
+        }
+    }
+
+    private fun switchExperimentalTab(
+        itemId: Int,
+        oldNav: WNavigationController?,
+        newNav: WNavigationController
+    ) {
+        val index = topTabIds.indexOf(itemId)
+        if (index < 0) return
+        if (oldNav !== newNav) {
+            // A switch started before the previous one settled would otherwise drop the earlier
+            // nav's viewDidAppear, leaving its viewWillAppear unmatched.
+            completePendingTabAppearance()
+            oldNav?.viewWillDisappear()
+            newNav.viewWillAppear()
+            pendingTabAppearance = newNav
+        }
+        val previousIndex = experimentalTabPager.currentItem
+        val animated = WGlobalStorage.getAreAnimationsActive()
+        if (animated && previousIndex != index && experimentalTabPager.width > 0) {
+            experimentalTabPager.springToItem(index) {
+                completePendingTabAppearance()
+            }
+        } else {
+            experimentalTabPager.setCurrentItem(index, false)
+            completePendingTabAppearance()
+        }
+    }
+
+    private fun completePendingTabAppearance() {
+        pendingTabAppearance?.let { nav ->
+            if (!nav.isDisappeared) {
+                nav.viewDidAppear()
+            }
+        }
+        pendingTabAppearance = null
+    }
+
+    private val topTabsDelegate = object : WClearSegmentedControl.Delegate {
+        override fun onIndexChanged(to: Int, animated: Boolean) {
+            topTabIds.getOrNull(to)?.let { bottomNavigationView.selectedItemId = it }
+        }
+
+        override fun onItemMoved(from: Int, to: Int) {}
+
+        override fun enterReorderingMode() {}
+    }
+    private val topTabsBlurryBackgroundView =
+        WBlurryBackgroundView(context, fadeSide = null).apply {
+            setOverlayColor(WColor.Background, 204)
+        }
+    private val topTabsControl by lazy {
+        WClearSegmentedControl(
+            context,
+            horizontalPaddingDp = 1f,
+            thumbHeightDp = TOP_TABS_THUMB_HEIGHT
+        ).apply {
+            paintColor = WColor.Tint.color.colorWithAlpha(31)
+            primaryTextColorOverride = WColor.Tint.color
+            fillAvailableWidth = true
+            addView(
+                topTabsBlurryBackgroundView,
+                0,
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+        }
+    }
+    private var topTabsShadow: PillShadowView? = null
+
+    private val topAvatarRipple by lazy {
+        WRippleDrawable.create(TOP_AVATAR_SIZE.dp / 2f)
+    }
+    private val topAvatarIconView by lazy {
+        AccountIconView(
+            context,
+            AccountIconView.Usage.ViewItem(16f.dp)
+        )
+    }
+    private val alternateTopAvatarIconView by lazy {
+        AccountIconView(
+            context,
+            AccountIconView.Usage.ViewItem(16f.dp)
+        ).apply {
+            alpha = 0f
+            isInvisible = true
+        }
+    }
+    private var visibleTopAvatarIconView: AccountIconView? = null
+    private val topAvatarRingDrawable by lazy {
+        RoundProgressDrawable(
+            TOP_AVATAR_SIZE.toFloat(),
+            TOP_AVATAR_RING_STROKE,
+            TOP_AVATAR_RING_CYCLE_MS
+        )
+    }
+    private val topAvatarRingView by lazy {
+        View(context).apply {
+            id = View.generateViewId()
+            background = InsetDrawable(
+                topAvatarRingDrawable,
+                (TOP_AVATAR_RING_STROKE / 2f).dp.roundToInt()
+            )
+            alpha = 0f
+            isInvisible = true
+        }
+    }
+    private var topAvatarStatus: UpdateStatusView.State? = null
+    private val topAvatarStatusListener = HomeStatusController.Listener { state, animated ->
+        applyTopAvatarStatus(state, animated)
+    }
+    private var topAvatarAccountId: String? = null
+    private val topAvatarBlurryBackgroundView =
+        WBlurryBackgroundView(context, fadeSide = null).apply {
+            setOverlayColor(WColor.Background, 204)
+        }
+    private val topAvatarView by lazy {
+        WFrameLayout(context).apply {
+            setBackgroundColor(Color.TRANSPARENT, TOP_AVATAR_SIZE.dp / 2f, clipToBounds = true)
+            foreground = topAvatarRipple
+            addView(
+                topAvatarBlurryBackgroundView,
+                FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+            addView(topAvatarRingView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            contentDescription = LocaleController.getString("Settings")
+            val iconLayoutParams = FrameLayout.LayoutParams(
+                TOP_AVATAR_ICON_SIZE.dp,
+                TOP_AVATAR_ICON_SIZE.dp,
+                Gravity.CENTER
+            )
+            addView(topAvatarIconView, iconLayoutParams)
+            addView(alternateTopAvatarIconView, FrameLayout.LayoutParams(iconLayoutParams))
+            setOnClickListener { switchToSettings(null) }
+            setOnLongClickListener {
+                presentWalletSwitcherPopup(it, WMenuPopup.Positioning.BELOW)
+            }
+        }
+    }
+    private var topAvatarShadow: PillShadowView? = null
+    private var isTopChromeHidden = false
+
+    private fun reloadTopTabs(selectedItemId: Int = bottomNavigationView.selectedItemId) {
+        if (!experimentalTopTabsEnabled) return
+        val tabs = AppTabsManager.orderedTabs.filter {
+            it.intId !in EXPERIMENTAL_PUSHED_TAB_IDS
+        }
+        topTabIds = tabs.map { it.intId }
+        val requestedIndex = topTabIds.indexOf(selectedItemId)
+        val selectedIndex = requestedIndex.coerceAtLeast(0)
+        if (requestedIndex < 0) {
+            // The requested tab has no page (e.g. Agent/Settings, which are pushed instead), so
+            // keep the selected id in sync with the page the pager actually shows.
+            topTabIds.getOrNull(selectedIndex)?.let {
+                if (bottomNavigationView.selectedItemId != it) {
+                    bottomNavigationView.selectedItemId = it
+                }
+            }
+        }
+        topTabsControl.setItems(
+            tabs.map {
+                WClearSegmentedControl.Item(
+                    title = LocaleController.getString(it.labelKey),
+                    onRemove = null,
+                    onClick = null
+                )
+            },
+            selectedIndex,
+            topTabsDelegate
+        )
+        experimentalTabPagerAdapter.notifyDataSetChanged()
+        if (topTabIds.isNotEmpty()) {
+            experimentalTabPager.setCurrentItem(selectedIndex, false)
+        }
+        updateTopChromeVisibility(selectedItemId)
+    }
+
+    private fun updateTopChromeVisibility(selectedItemId: Int) {
+        val shouldShowTabs =
+            !isTopChromeHidden && selectedItemId != IBottomNavigationView.ID_SETTINGS
+        val shouldShowAvatar = shouldShowTabs && AccountStore.activeAccount != null
+        topTabsControl.isVisible = shouldShowTabs
+        topAvatarView.isVisible = shouldShowAvatar
+        if (!isTopChromeHidden) {
+            topTabsControl.alpha = 1f
+            topAvatarView.alpha = 1f
+        }
+        topTabsShadow?.sync()
+        topAvatarShadow?.sync()
+    }
+
+    // The shadows mirror their target's alpha/visibility through sync(), so only the target is
+    // animated here and the shadow is re-synced as the animation progresses.
+    private fun hideTopChromeView(view: View?, syncShadow: () -> Unit) {
+        view ?: return
+        view.animate().cancel()
+        view.fadeOut(AnimationConstants.QUICK_ANIMATION / 2) {
+            if (isTopChromeHidden) view.isInvisible = true
+            syncShadow()
+        }
+        view.animate().setUpdateListener { syncShadow() }
+    }
+
+    private fun showTopChromeView(view: View?, shouldShow: Boolean, syncShadow: () -> Unit) {
+        view ?: return
+        view.animate().cancel()
+        if (!shouldShow) {
+            view.alpha = 1f
+            view.isInvisible = true
+            syncShadow()
+            return
+        }
+        view.isVisible = true
+        view.fadeIn(AnimationConstants.QUICK_ANIMATION / 2)
+        view.animate().setUpdateListener { syncShadow() }
+    }
+
+    private fun applyTopAvatarStatus(state: UpdateStatusView.State, animated: Boolean) {
+        topAvatarStatus = state
+        val shouldShow = state !is UpdateStatusView.State.Updated
+        topAvatarRingView.animate().cancel()
+        if (!animated) {
+            topAvatarRingView.alpha = if (shouldShow) 1f else 0f
+            topAvatarRingView.isInvisible = !shouldShow
+            return
+        }
+        if (shouldShow) {
+            topAvatarRingView.isVisible = true
+            topAvatarRingView.fadeIn(AnimationConstants.QUICK_ANIMATION)
+        } else {
+            topAvatarRingView.fadeOut(AnimationConstants.QUICK_ANIMATION) {
+                if (topAvatarStatus is UpdateStatusView.State.Updated) {
+                    topAvatarRingView.isInvisible = true
+                }
+            }
+        }
+    }
+
+    private fun updateTopAvatar() {
+        if (!experimentalTopTabsEnabled) return
+        val account = AccountStore.activeAccount
+        if (account != null) {
+            val currentIcon = visibleTopAvatarIconView ?: topAvatarIconView.also {
+                visibleTopAvatarIconView = it
+            }
+            if (topAvatarAccountId == null || topAvatarAccountId == account.accountId) {
+                currentIcon.config(account)
+                topAvatarAccountId = account.accountId
+            } else {
+                val nextIcon = if (currentIcon === topAvatarIconView) {
+                    alternateTopAvatarIconView
+                } else {
+                    topAvatarIconView
+                }
+                currentIcon.animate().cancel()
+                nextIcon.animate().cancel()
+                currentIcon.alpha = 1f
+                currentIcon.isVisible = true
+                nextIcon.config(account)
+                nextIcon.alpha = 0f
+                nextIcon.isVisible = true
+                visibleTopAvatarIconView = nextIcon
+                topAvatarAccountId = account.accountId
+
+                if (WGlobalStorage.getAreAnimationsActive() && topAvatarView.isAttachedToWindow) {
+                    currentIcon.animate()
+                        .alpha(0f)
+                        .setDuration(AnimationConstants.VERY_QUICK_ANIMATION)
+                        .setInterpolator(CubicBezierInterpolator.EASE_OUT)
+                        .withEndAction {
+                            if (visibleTopAvatarIconView !== currentIcon) {
+                                currentIcon.isInvisible = true
+                            }
+                        }
+                        .start()
+                    nextIcon.animate()
+                        .alpha(1f)
+                        .setDuration(AnimationConstants.VERY_QUICK_ANIMATION)
+                        .setInterpolator(CubicBezierInterpolator.EASE_OUT)
+                        .start()
+                } else {
+                    currentIcon.alpha = 0f
+                    currentIcon.isInvisible = true
+                    nextIcon.alpha = 1f
+                }
+            }
+        }
+        updateTopChromeVisibility(bottomNavigationView.selectedItemId)
+    }
+
+    private fun updateTopChromeLayout() {
+        if (!experimentalTopTabsEnabled || topTabsControl.parent == null) return
+        val systemBars = window?.systemBars
+        val startSystemInset = if (LocaleController.isRTL) {
+            systemBars?.right ?: 0
+        } else {
+            systemBars?.left ?: 0
+        }
+        val endSystemInset = if (LocaleController.isRTL) {
+            systemBars?.left ?: 0
+        } else {
+            systemBars?.right ?: 0
+        }
+        val top = (systemBars?.top ?: 0) + TOP_TABS_TOP_MARGIN.dp
+        view.setConstraints {
+            toTopPx(topAvatarView, top)
+            toEndPx(
+                topAvatarView,
+                endSystemInset + TOP_AVATAR_END_MARGIN.dp
+            )
+            toTopPx(topTabsControl, top + TOP_TABS_CENTERING_OFFSET.dp)
+            toStartPx(
+                topTabsControl,
+                startSystemInset + TOP_TABS_START_MARGIN.dp
+            )
+            toEndPx(
+                topTabsControl,
+                endSystemInset + TOP_TABS_END_MARGIN.dp
+            )
+        }
+        topTabsShadow?.sync()
+        topAvatarShadow?.sync()
+    }
+
     private val toastHostView by lazy {
         ToastHost(context).apply {
             attachBlurRoot(contentView)
@@ -286,6 +932,12 @@ class PhoneTabsVC(context: Context) :
     private val searchBlurryBackgroundView = WBlurryBackgroundView(context, fadeSide = null).apply {
         setOverlayColor(WColor.SearchFieldBackground, 204)
     }
+    private val topChromeBlurViews
+        get() = listOf(
+            searchBlurryBackgroundView,
+            topTabsBlurryBackgroundView,
+            topAvatarBlurryBackgroundView
+        )
     private val searchEditText by lazy {
         object : WSearchEditText(context) {
             override fun onFocusChanged(
@@ -312,28 +964,39 @@ class PhoneTabsVC(context: Context) :
                         return@doOnPreDraw
                     }
                     isProcessingSearchKeyword = true
-                    setTextKeepCursor(keyword)
+                    removeAutoCompleteSuffix()
                     searchMatchedSite = null
                     isProcessingSearchKeyword = false
                 }
             }
         }.apply {
-            hint =
-                LocaleController.getString("Search app or enter address")
-            doOnTextChanged { text, _, _, _ ->
-                if (text != null && text == searchKeyword) return@doOnTextChanged
-                if (isProcessingSearchKeyword) return@doOnTextChanged
-                isProcessingSearchKeyword = true
-                val keyword = text?.toString() ?: ""
+            hint = LocaleController.getString(searchHintKey)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            doAfterTextChanged { editable ->
+                if (isProcessingSearchKeyword) return@doAfterTextChanged
+                val suffixStart = autoCompleteSuffixStart()
+                val keyword =
+                    if (suffixStart >= 0) {
+                        editable?.substring(0, suffixStart) ?: ""
+                    } else {
+                        editable?.toString() ?: ""
+                    }
+                if (keyword == searchKeyword) return@doAfterTextChanged
+                if (suffixStart >= 0) {
+                    isProcessingSearchKeyword = true
+                    removeAutoCompleteSuffix()
+                    isProcessingSearchKeyword = false
+                }
                 val shouldCheckForMatchingUrl = keyword.length > searchKeyword.length
                 searchKeyword = keyword
                 searchMatchedSite = null
-                cachedExploreVC?.search(searchKeyword, hasFocus())
-                post {
-                    if (shouldCheckForMatchingUrl && searchKeyword == keyword) {
-                        checkForMatchingUrl(keyword)
+                updateSearch(searchKeyword, hasFocus())
+                if (shouldCheckForMatchingUrl) {
+                    post {
+                        if (searchKeyword == keyword && this@apply.text?.toString() == keyword) {
+                            checkForMatchingUrl(keyword)
+                        }
                     }
-                    isProcessingSearchKeyword = false
                 }
             }
             onFocusChangeListener = View.OnFocusChangeListener { _, hasFocus ->
@@ -343,13 +1006,9 @@ class PhoneTabsVC(context: Context) :
                 ) {
                     return@OnFocusChangeListener
                 }
-                isProcessingSearchKeyword = true
                 val query = if (hasFocus) text?.toString() else null
-                cachedExploreVC?.search(query, hasFocus)
+                updateSearch(query, hasFocus)
                 checkForMatchingUrl(query ?: "")
-                post {
-                    isProcessingSearchKeyword = false
-                }
             }
             setOnEditorActionListener { _, actionId, event ->
                 if (actionId == EditorInfo.IME_ACTION_DONE ||
@@ -358,7 +1017,8 @@ class PhoneTabsVC(context: Context) :
                             event.keyCode == KeyEvent.KEYCODE_ENTER
                         )
                 ) {
-                    if (WalletContextManager.delegate?.get()?.handleDeeplink(text.toString()) ==
+                    val submittedText = text.toString()
+                    if (WalletContextManager.delegate?.get()?.handleDeeplink(submittedText) ==
                         true
                     ) {
                         setText("")
@@ -366,33 +1026,49 @@ class PhoneTabsVC(context: Context) :
                         hideKeyboard()
                         return@setOnEditorActionListener true
                     }
-                    val config = searchMatchedSite?.let { searchMatchedSite ->
-                        InAppBrowserConfig(
-                            url = searchMatchedSite.url,
-                            injectDappConnect = true,
-                            saveInVisitedHistory = true
-                        )
-                    } ?: run {
-                        val (isValidUrl, uri) = InAppBrowserVC.convertToUri(text.toString())
-                        if (!isValidUrl) ExploreHistoryStore.saveSearchHistory(text.toString())
-                        InAppBrowserConfig(
-                            url = uri.toString(),
-                            injectDappConnect = true,
-                            saveInVisitedHistory = isValidUrl
-                        )
+                    val matchedSite = searchMatchedSite
+                    val onBestMatchResolved: (Boolean) -> Unit = { opened ->
+                        if (opened) {
+                            setText("")
+                            clearFocus()
+                            hideKeyboard()
+                        } else {
+                            val config = matchedSite?.let {
+                                InAppBrowserConfig(
+                                    url = it.url,
+                                    injectDappConnect = true,
+                                    saveInVisitedHistory = true
+                                )
+                            } ?: run {
+                                val (isValidUrl, uri) = InAppBrowserVC.convertToUri(submittedText)
+                                if (!isValidUrl) {
+                                    ExploreHistoryStore.saveSearchHistory(submittedText)
+                                }
+                                InAppBrowserConfig(
+                                    url = uri.toString(),
+                                    injectDappConnect = true,
+                                    saveInVisitedHistory = isValidUrl
+                                )
+                            }
+                            val inAppBrowserVC = InAppBrowserVC(
+                                context,
+                                this@PhoneTabsVC,
+                                config
+                            )
+                            val nav = WNavigationController(window!!)
+                            nav.setRoot(inAppBrowserVC)
+                            window!!.present(nav, onCompletion = {
+                                setText("")
+                            })
+                            clearFocus()
+                            hideKeyboard()
+                        }
                     }
-                    val inAppBrowserVC = InAppBrowserVC(
-                        context,
-                        this@PhoneTabsVC,
-                        config
-                    )
-                    val nav = WNavigationController(window!!)
-                    nav.setRoot(inAppBrowserVC)
-                    window!!.present(nav, onCompletion = {
-                        setText("")
-                    })
-                    clearFocus()
-                    hideKeyboard()
+                    if (cachedExploreVC?.openBestSearchMatch(onBestMatchResolved) == true) {
+                        return@setOnEditorActionListener true
+                    }
+                    onBestMatchResolved(false)
+                    return@setOnEditorActionListener true
                 }
                 false
             }
@@ -418,9 +1094,118 @@ class PhoneTabsVC(context: Context) :
         }
     }
 
+    // Round "+" button beside the search field (top-tabs mode only); opens the actions sheet,
+    // or morphs into an "X" that closes the search while it has focus.
+    private var actionsButtonShadow: PillShadowView? = null
+    private val actionsButtonIcon by lazy {
+        AppCompatImageView(context).apply {
+            setImageResource(org.mytonwallet.app_air.icons.R.drawable.ic_plus_thick)
+            setColorFilter(WColor.TextOnTint.color)
+        }
+    }
+    private val actionsButtonRipple by lazy {
+        WRippleDrawable.create(SEARCH_HEIGHT.dp / 2f).apply {
+            rippleColor = WColor.TextOnTint.color.colorWithAlpha(64)
+        }
+    }
+    private val actionsButton by lazy {
+        WFrameLayout(context).apply {
+            alpha = 0f
+            visibility = View.INVISIBLE
+            isClickable = true
+            contentDescription = LocaleController.getString("More actions")
+            addView(
+                actionsButtonIcon,
+                FrameLayout.LayoutParams(ACTIONS_ICON_SIZE.dp, ACTIONS_ICON_SIZE.dp, Gravity.CENTER)
+            )
+            foreground = actionsButtonRipple
+            setOnClickListener {
+                if (searchEditText.hasFocus()) {
+                    searchEditText.setText("")
+                    clearSearchFocus()
+                } else {
+                    presentActionsSheet()
+                }
+            }
+        }
+    }
+
+    private fun updateActionsButtonMorph() {
+        val fraction = searchFocused.floatValue
+        actionsButton.contentDescription = LocaleController.getString(
+            if (searchEditText.hasFocus()) "Close" else "More actions"
+        )
+        actionsButtonIcon.rotation = 45f * fraction
+        val iconColor =
+            ColorUtils.blendARGB(WColor.TextOnTint.color, WColor.PrimaryText.color, fraction)
+        actionsButtonIcon.setColorFilter(iconColor)
+        actionsButtonRipple.rippleColor = iconColor.colorWithAlpha(64)
+        actionsButton.setBackgroundColor(
+            ColorUtils.blendARGB(WColor.Tint.color, WColor.Background.color, fraction),
+            SEARCH_HEIGHT.dp / 2f
+        )
+    }
+
+    private fun presentActionsSheet() {
+        val window = window ?: return
+        val homeVC = navForOrNull(IBottomNavigationView.ID_HOME)
+            ?.viewControllers?.firstOrNull() as? HomeVC ?: return
+        clearSearchFocus()
+        val nav = WNavigationController(
+            window,
+            PresentationConfig(
+                style = WNavigationController.PresentationStyle.BottomSheet,
+                floatingSheetInset = ACTIONS_SHEET_INSET.dp
+            )
+        )
+        nav.setRoot(
+            HomeActionsSheetVC(context) { identifier ->
+                homeVC.onHeaderAction(identifier)
+            }
+        )
+        window.present(
+            nav,
+            WWindow.PresentAnimation.ExpandFrom(
+                actionsButton,
+                cornerRadius = SEARCH_HEIGHT.dp / 2f,
+                fillColor = WColor.Tint.color
+            )
+        )
+    }
+
+    private fun fadeSearchChrome(target: View, shadow: PillShadowView?, visible: Boolean) {
+        if (visible) {
+            target.visibility = View.VISIBLE
+            shadow?.sync()
+        }
+        target.animate()
+            .alpha(if (visible) 1f else 0f)
+            .setDuration(AnimationConstants.VERY_VERY_QUICK_ANIMATION)
+            .setInterpolator(CubicBezierInterpolator.EASE_OUT)
+            .setUpdateListener { shadow?.sync() }
+            .withEndAction {
+                if (!visible) {
+                    target.visibility = View.INVISIBLE
+                }
+                shadow?.sync()
+            }
+            .start()
+    }
+
+    private fun setSearchChromeVisible(visible: Boolean) {
+        searchView.alpha = if (visible) 1f else 0f
+        searchView.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+        searchShadow?.sync()
+        if (experimentalTopTabsEnabled) {
+            actionsButton.alpha = searchView.alpha
+            actionsButton.visibility = searchView.visibility
+            actionsButtonShadow?.sync()
+        }
+    }
+
     val searchWidth by lazy {
         val hintWidth = searchEditText.paint.measureText(
-            LocaleController.getString("Search app or enter address")
+            LocaleController.getString(searchHintKey)
         ).ceilToInt()
         (62.dp + hintWidth).coerceAtMost(320.dp)
     }
@@ -439,30 +1224,32 @@ class PhoneTabsVC(context: Context) :
             false
         ) { _, _, _, _ ->
             updateSearchWidth()
+            if (experimentalTopTabsEnabled) updateActionsButtonMorph()
         }
 
     private fun render() {
         val keyboardHeight = keyboardVisible.value.coerceAtLeast(0f)
         val minimizedNavHeightPx = minimizedNavHeight ?: 0f
 
-        val tabsHeight =
-            BOTTOM_TABS_LAYOUT_HEIGHT.dp +
-                BOTTOM_TABS_BOTTOM_MARGIN.dp
+        val tabsHeight = bottomTabsHeight
 
         val contentHeight = tabsHeight + keyboardHeight + minimizedNavHeightPx
 
         val hiddenTranslationY = (1f - visibilityFraction) * contentHeight
 
         // Alpha
-        bottomNavigationView.alpha = visibilityFraction
+        bottomNavigationView.alpha = if (experimentalTopTabsEnabled) 0f else visibilityFraction
         minimizedNav?.alpha = visibilityFraction
 
         // Bottom navigation height
         bottomNavigationView.layoutParams?.let { params ->
-            val newHeight =
+            val newHeight = if (experimentalTopTabsEnabled) {
+                0
+            } else {
                 bottomBarHeight +
                     (visibilityFraction * contentHeight).roundToInt() +
                     ViewConstants.TOOLBAR_RADIUS.dp.roundToInt()
+            }
 
             if (params.height != newHeight) {
                 params.height = newHeight
@@ -471,17 +1258,15 @@ class PhoneTabsVC(context: Context) :
         }
 
         // Bottom navigation translation
-        bottomNavigationView.translationY =
-            (
-                contentHeight -
-                    (
-                        BOTTOM_TABS_LAYOUT_HEIGHT.dp +
-                            BOTTOM_TABS_BOTTOM_MARGIN.dp +
-                            minimizedNavHeightPx
-                        ) +
-                    BOTTOM_TABS_BOTTOM_TO_NAV_DIFF.dp * visibilityFraction
-                )
+        bottomNavigationView.translationY = if (experimentalTopTabsEnabled) {
+            0f
+        } else {
+            contentHeight -
+                (bottomTabsHeight + minimizedNavHeightPx) +
+                BOTTOM_TABS_BOTTOM_TO_NAV_DIFF.dp * visibilityFraction
+        }
         syncToastHostPosition()
+        updateExperimentalSearchPosition()
 
         stickyBottomGradientDrawable?.setStops(computeGradientStops(visibilityFraction))
 
@@ -503,22 +1288,35 @@ class PhoneTabsVC(context: Context) :
         onUpdateAdditionalHeight()
     }
 
+    private fun updateExperimentalSearchPosition() {
+        if (!experimentalTopTabsEnabled) return
+        searchView.translationY = -(searchTopOffset() - SEARCH_HEIGHT.dp)
+        searchShadow?.sync()
+        actionsButton.translationY = searchView.translationY
+        actionsButtonShadow?.sync()
+    }
+
     private fun onUpdateAdditionalHeight() {
         activeNavigationController?.insetsUpdated()
+        // The search overlay reserves the same bottom height, so it has to follow the keyboard too.
+        searchOverlayNav?.insetsUpdated()
     }
 
     private fun updateSearchWidth() {
-        if (searchView.layoutParams != null) {
-            searchView.layoutParams = searchView.layoutParams.apply {
-                width = lerp(
-                    searchWidth.toFloat(),
-                    view.width - 2 * ViewConstants.HORIZONTAL_PADDINGS.dp - 20f.dp,
-                    searchFocused.floatValue
-                ).roundToInt()
+        if (!experimentalTopTabsEnabled && searchView.layoutParams != null) {
+            val newWidth = lerp(
+                searchWidth.toFloat(),
+                view.width - 2 * ViewConstants.HORIZONTAL_PADDINGS.dp - 20f.dp,
+                searchFocused.floatValue
+            ).roundToInt()
+            if (searchView.layoutParams.width != newWidth) {
+                searchView.layoutParams = searchView.layoutParams.apply {
+                    width = newWidth
+                }
             }
         }
         searchEditText.setPaddingDpLocalized(
-            lerp(21f, 16f, searchFocused.floatValue).ceilToInt(),
+            lerp(22f, 16f, searchFocused.floatValue).ceilToInt(),
             0,
             lerp(0f, 48f, searchFocused.floatValue).ceilToInt(),
             0
@@ -530,45 +1328,112 @@ class PhoneTabsVC(context: Context) :
 
         setTopBlur(visible = false, animated = false)
 
+        view.alpha = 0f
+        view.doOnLayout { view.fadeIn() }
+
         WalletCore.registerObserver(this)
 
         bottomNavigationView.clipChildren = false
         bottomNavigationView.clipToPadding = false
+        bottomNavigationView.visibility =
+            if (experimentalTopTabsEnabled) View.INVISIBLE else View.VISIBLE
 
         view.addView(contentView, ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        if (experimentalTopTabsEnabled) {
+            topChromeBlurViews.forEach { it.setupWith(contentView) }
+        }
         view.addView(bottomNavigationView, ViewGroup.LayoutParams(MATCH_PARENT, 0))
         view.addView(toastHostView, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         view.addView(
             searchView,
-            FrameLayout.LayoutParams(searchWidth, SEARCH_HEIGHT.dp, Gravity.BOTTOM)
+            ConstraintLayout.LayoutParams(
+                if (experimentalTopTabsEnabled) 0 else searchWidth,
+                SEARCH_HEIGHT.dp
+            )
         )
         searchShadow = PillShadowView.attachTo(searchView, 24f.dp)
+        if (experimentalTopTabsEnabled) {
+            view.addView(
+                actionsButton,
+                ConstraintLayout.LayoutParams(SEARCH_HEIGHT.dp, SEARCH_HEIGHT.dp)
+            )
+            actionsButtonShadow = PillShadowView.attachTo(actionsButton, SEARCH_HEIGHT.dp / 2f)
+            actionsButton.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                actionsButtonShadow?.sync()
+            }
+        }
         ensureStickyBottomGradientView()
+        if (experimentalTopTabsEnabled) {
+            view.addView(
+                topAvatarView,
+                ConstraintLayout.LayoutParams(TOP_AVATAR_SIZE.dp, TOP_AVATAR_SIZE.dp)
+            )
+            topAvatarShadow = PillShadowView.attachTo(
+                topAvatarView,
+                TOP_AVATAR_SIZE.dp / 2f
+            )
+            view.addView(
+                topTabsControl,
+                ConstraintLayout.LayoutParams(0, TOP_TABS_HEIGHT.dp)
+            )
+            topTabsShadow = PillShadowView.attachTo(
+                topTabsControl,
+                TOP_TABS_HEIGHT.dp / 2f
+            )
+            topAvatarView.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                topAvatarShadow?.sync()
+            }
+            HomeStatusController.addListener(topAvatarStatusListener)
+            topTabsControl.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                topTabsShadow?.sync()
+            }
+        }
         view.setConstraints {
-            toCenterX(searchView)
-            bottomToTop(searchView, bottomNavigationView)
+            if (experimentalTopTabsEnabled) {
+                val searchHorizontalMargin =
+                    (ViewConstants.HORIZONTAL_PADDINGS + 6).toFloat()
+                toStart(searchView, searchHorizontalMargin)
+                endToStart(searchView, actionsButton, ACTIONS_BUTTON_GAP.toFloat())
+                toBottom(searchView)
+                toEnd(actionsButton, searchHorizontalMargin)
+                toBottom(actionsButton)
+            } else {
+                toCenterX(searchView)
+                bottomToTop(searchView, bottomNavigationView)
+            }
             toCenterX(toastHostView)
-            bottomToTop(toastHostView, bottomNavigationView)
+            if (experimentalTopTabsEnabled) {
+                toBottom(toastHostView)
+            } else {
+                bottomToTop(toastHostView, bottomNavigationView)
+            }
             toBottom(bottomNavigationView)
             toCenterX(bottomNavigationView)
             stickyBottomGradientView?.let {
                 toBottom(it)
             }
         }
+        updateTopChromeLayout()
 
         val initialTab = pendingSelectedTab ?: IBottomNavigationView.ID_HOME
-        contentView.addView(
-            getNavigationStack(initialTab),
-            ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
-        )
+        reloadTopTabs(initialTab)
+        if (experimentalTopTabsEnabled) {
+            contentView.addView(
+                experimentalTabPager,
+                ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+        } else {
+            contentView.addView(
+                getNavigationStack(initialTab),
+                ViewGroup.LayoutParams(MATCH_PARENT, MATCH_PARENT)
+            )
+        }
         pendingSelectedTab?.let { tab ->
             pendingSelectedTab = null
             if (tab != IBottomNavigationView.ID_HOME) bottomNavigationView.selectedItemId = tab
         }
-        val searchVisible = initialTab == IBottomNavigationView.ID_EXPLORE
-        searchView.alpha = if (searchVisible) 1f else 0f
-        searchView.visibility = if (searchVisible) View.VISIBLE else View.INVISIBLE
-        searchShadow?.sync()
+        updateTopAvatar()
+        setSearchChromeVisible(shouldShowSearch(initialTab))
         adoptPendingSearchText()
         view.post {
             activeNavigationController?.insetsUpdated()
@@ -576,11 +1441,15 @@ class PhoneTabsVC(context: Context) :
             if (AppTabsManager.contains(IBottomNavigationView.ID_EXPLORE)) {
                 getNavigationStack(IBottomNavigationView.ID_EXPLORE)
             }
-            getNavigationStack(IBottomNavigationView.ID_SETTINGS)
+            if (!experimentalTopTabsEnabled) {
+                getNavigationStack(IBottomNavigationView.ID_SETTINGS)
+            }
         }
 
-        bottomNavigationView.post {
-            setupWalletSwitcherPopup()
+        if (!experimentalTopTabsEnabled) {
+            bottomNavigationView.post {
+                setupWalletSwitcherPopup()
+            }
         }
         updateToastAvailability()
         checkForUpdate()
@@ -591,139 +1460,146 @@ class PhoneTabsVC(context: Context) :
     private fun setupWalletSwitcherPopup() {
         val settingsItemView = bottomNavigationView.getSettingsItemView() ?: return
         settingsItemView.setOnLongClickListener { settingsItemView ->
-            val accounts = WalletCore.getAllAccounts()
-            val addAccountItem = WMenuPopup.Item(
-                config = WMenuPopup.Item.Config.Item(
-                    icon = WMenuPopup.Item.Config.Icon(
-                        iconResId = org.mytonwallet.app_air.icons.R.drawable.ic_add,
-                        tintColor = WColor.SubtitleText,
-                        iconSize = 28.dp,
-                        iconMargin = 17.dp
-                    ),
-                    title = LocaleController.getString("Add Wallet")
+            presentWalletSwitcherPopup(settingsItemView, WMenuPopup.Positioning.ABOVE)
+        }
+    }
+
+    private fun presentWalletSwitcherPopup(
+        anchorView: View,
+        positioning: WMenuPopup.Positioning
+    ): Boolean {
+        val accounts = WalletCore.getAllAccounts()
+        val manageWalletsItem = WMenuPopup.Item(
+            config = WMenuPopup.Item.Config.Item(
+                icon = WMenuPopup.Item.Config.Icon(
+                    iconResId = org.mytonwallet.app_air.icons.R.drawable.ic_manage_30,
+                    tintColor = WColor.SubtitleText,
+                    iconSize = 28.dp,
+                    iconMargin = 17.dp
                 ),
-                hasSeparator = true,
-                onTap = {
-                    val nav = WNavigationController(
-                        window!!,
-                        PresentationConfig(
-                            style = WNavigationController.PresentationStyle.BottomSheet,
-                            aboveKeyboard = true
-                        )
+                title = LocaleController.getString("Manage Wallets")
+            ),
+            hasSeparator = true,
+            onTap = {
+                val navVC = WNavigationController(
+                    window!!,
+                    PresentationConfig(
+                        style = WNavigationController.PresentationStyle.BottomSheet
                     )
-                    nav.setRoot(
-                        WalletContextManager.delegate?.get()
-                            ?.getAddAccountVC(MBlockchainNetwork.MAINNET) as WViewController
+                )
+                navVC.setRoot(
+                    WalletContextManager.delegate?.get()?.getWalletsTabsVC(
+                        MWalletSettingsViewMode.LIST
+                    ) as WViewController
+                )
+                window?.present(navVC)
+            }
+        )
+        val addAccountItem = WMenuPopup.Item(
+            config = WMenuPopup.Item.Config.Item(
+                icon = WMenuPopup.Item.Config.Icon(
+                    iconResId = org.mytonwallet.app_air.icons.R.drawable.ic_add,
+                    tintColor = WColor.SubtitleText,
+                    iconSize = 28.dp,
+                    iconMargin = 17.dp
+                ),
+                title = LocaleController.getString("Add Wallet")
+            ),
+            hasSeparator = false,
+            onTap = {
+                val nav = WNavigationController(
+                    window!!,
+                    PresentationConfig(
+                        style = WNavigationController.PresentationStyle.BottomSheet,
+                        aboveKeyboard = true
                     )
-                    window?.present(nav)
-                }
-            )
-            val freeSpaceToShowAccounts = view.height -
+                )
+                nav.setRoot(
+                    WalletContextManager.delegate?.get()
+                        ?.getAddAccountVC(MBlockchainNetwork.MAINNET) as WViewController
+                )
+                window?.present(nav)
+            }
+        )
+        val freeSpaceToShowAccounts = if (positioning == WMenuPopup.Positioning.BELOW) {
+            view.height -
+                anchorView.bottom -
+                (navigationController?.getSystemBars()?.bottom ?: 0) -
+                110.dp
+        } else {
+            view.height -
                 (navigationController?.getSystemBars()?.top ?: 0) -
                 WNavigationBar.DEFAULT_HEIGHT.dp -
                 bottomNavigationView.height -
-                55.dp
+                110.dp
+        }
 
-            val numberOfAccountsCapacity = freeSpaceToShowAccounts / 56.dp
+        if (freeSpaceToShowAccounts < 0) return false
 
-            val numberOfAccountsToShow = when {
-                numberOfAccountsCapacity < 1 -> return@setOnLongClickListener false
-                accounts.size <= numberOfAccountsCapacity -> accounts.size.coerceAtMost(10)
-                else -> (numberOfAccountsCapacity - 1).coerceAtMost(10)
-            }
+        val numberOfAccountsCapacity = freeSpaceToShowAccounts / 56.dp
 
-            val allAccountsShown = accounts.size <= numberOfAccountsToShow
+        val numberOfAccountsToShow =
+            accounts.size.coerceAtMost(numberOfAccountsCapacity.coerceAtMost(10))
 
-            val showAllItem = if (allAccountsShown) {
-                null
-            } else {
-                WMenuPopup.Item(
-                    config = WMenuPopup.Item.Config.Item(
-                        icon = WMenuPopup.Item.Config.Icon(
-                            iconResId = org.mytonwallet.app_air.icons.R.drawable.ic_show_all,
-                            tintColor = WColor.SubtitleText,
-                            iconSize = 28.dp,
-                            iconMargin = 17.dp
-                        ),
-                        title = LocaleController.getString("Show All Wallets")
-                    ),
-                    hasSeparator = false,
-                    onTap = {
-                        val navVC = WNavigationController(
-                            window!!,
-                            PresentationConfig(
-                                style = WNavigationController.PresentationStyle.BottomSheet
-                            )
-                        )
-                        navVC.setRoot(
-                            WalletContextManager.delegate?.get()?.getWalletsTabsVC(
-                                MWalletSettingsViewMode.LIST
-                            ) as WViewController
-                        )
-                        window?.present(navVC)
-                    }
-                )
-            }
-
-            lateinit var popup: IPopup
-            val menuItems =
-                listOf(addAccountItem) +
-                    accounts.take(numberOfAccountsToShow).mapIndexed { i, account ->
-                        val hasSeparator = !allAccountsShown && i == numberOfAccountsToShow - 1
-                        WMenuPopup.Item(
-                            config = WMenuPopup.Item.Config.CustomView(
-                                AccountItemView(
-                                    context = context,
-                                    accountData = AccountItemView.AccountData(
-                                        accountId = account.accountId,
-                                        title = account.name,
-                                        network = account.network,
-                                        byChain = account.byChain,
-                                        accountType = account.accountType
-                                    ),
-                                    showArrow = false,
-                                    isTrusted = true,
-                                    hasSeparator = hasSeparator,
-                                    onSelect = {
-                                        popup.dismiss()
-                                        val isActive =
-                                            account.accountId == AccountStore.activeAccountId
-                                        if (isActive) return@AccountItemView
-                                        WalletCore.activateAccount(
-                                            account.accountId,
-                                            notifySDK = true
-                                        ) { res, _ ->
-                                            if (res != null) {
-                                                WalletCore.notifyEvent(
-                                                    WalletEvent.AccountChangedInApp(
-                                                        persistedAccountsModified = false
-                                                    )
+        lateinit var popup: IPopup
+        val menuItems =
+            listOf(manageWalletsItem) +
+                accounts.take(numberOfAccountsToShow).mapIndexed { i, account ->
+                    val hasSeparator = i == numberOfAccountsToShow - 1
+                    WMenuPopup.Item(
+                        config = WMenuPopup.Item.Config.CustomView(
+                            AccountItemView(
+                                context = context,
+                                accountData = AccountItemView.AccountData(
+                                    accountId = account.accountId,
+                                    title = account.name,
+                                    network = account.network,
+                                    byChain = account.byChain,
+                                    accountType = account.accountType
+                                ),
+                                showArrow = false,
+                                isTrusted = true,
+                                hasSeparator = hasSeparator,
+                                showBalance = true,
+                                onSelect = {
+                                    popup.dismiss()
+                                    val isActive =
+                                        account.accountId == AccountStore.activeAccountId
+                                    if (isActive) return@AccountItemView
+                                    WalletCore.activateAccount(
+                                        account.accountId,
+                                        notifySDK = true
+                                    ) { res, _ ->
+                                        if (res != null) {
+                                            WalletCore.notifyEvent(
+                                                WalletEvent.AccountChangedInApp(
+                                                    persistedAccountsModified = false
                                                 )
-                                            }
+                                            )
                                         }
                                     }
-                                )
-                            ),
-                            hasSeparator = hasSeparator
-                        )
-                    } +
-                    listOfNotNull(showAllItem)
+                                }
+                            )
+                        ),
+                        hasSeparator = hasSeparator
+                    )
+                } +
+                listOf(addAccountItem)
 
-            popup = WMenuPopup.present(
-                view = settingsItemView,
-                items = menuItems,
-                yOffset = 3.dp,
-                positioning = WMenuPopup.Positioning.ABOVE,
-                centerHorizontally = true,
-                windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
-                    settingsItemView,
-                    roundRadius = 100f.dp,
-                    horizontalOffset = 0,
-                    verticalOffset = (-4).dp
-                )
+        popup = WMenuPopup.present(
+            view = anchorView,
+            items = menuItems,
+            yOffset = if (positioning == WMenuPopup.Positioning.BELOW) (-3).dp else 3.dp,
+            positioning = positioning,
+            centerHorizontally = true,
+            windowBackgroundStyle = BackgroundStyle.Cutout.fromView(
+                anchorView,
+                roundRadius = 100f.dp,
+                horizontalOffset = 0,
+                verticalOffset = if (positioning == WMenuPopup.Positioning.BELOW) 0 else (-4).dp
             )
-            true
-        }
+        )
+        return true
     }
 
     override fun notifyThemeChanged() {
@@ -734,6 +1610,13 @@ class PhoneTabsVC(context: Context) :
             }
             return
         }
+        if (experimentalTopTabsEnabled) {
+            navStacks.forEach { nav ->
+                if (nav === activeNavigationController) return@forEach
+                nav.updateTheme()
+                nav.viewControllers.lastOrNull()?.applyThemeChanges()
+            }
+        }
     }
 
     override val isTinted = true
@@ -742,15 +1625,45 @@ class PhoneTabsVC(context: Context) :
 
         val tintColor = WColor.Tint.color
 
+        if (experimentalTopTabsEnabled) {
+            updateActionsButtonMorph()
+        }
+
         for (navView in navStacks) {
-            if (navView.parent != null) continue
+            if (navView.parent != null) {
+                navView.refreshRootTopOverlay()
+                continue
+            }
             navView.updateTheme()
         }
 
         updateFloatingButtonBackground?.apply {
             backgroundColor = tintColor
         }
+        if (experimentalTopTabsEnabled) {
+            topTabsControl.setBackgroundColor(
+                Color.TRANSPARENT,
+                TOP_TABS_HEIGHT.dp / 2f,
+                clipToBounds = true
+            )
+            topTabsBlurryBackgroundView.updateTheme()
+            topAvatarBlurryBackgroundView.updateTheme()
+            topTabsControl.paintColor = WColor.Tint.color.colorWithAlpha(31)
+            topTabsControl.primaryTextColorOverride = WColor.Tint.color
+            topTabsControl.updateTheme()
+            topTabsControl.secondaryTextColor = WColor.SecondaryText.color
+            topTabsControl.invalidate()
+            topAvatarRipple.backgroundColor = Color.TRANSPARENT
+            topAvatarRipple.rippleColor = WColor.BackgroundRipple.color
+            topAvatarIconView.updateTheme()
+            alternateTopAvatarIconView.updateTheme()
+            topAvatarRingDrawable.color = WColor.Tint.color
+            topAvatarRingView.invalidate()
+            topTabsShadow?.updateTheme()
+            topAvatarShadow?.updateTheme()
+        }
         updateBottomNavigationBackground()
+        updateExperimentalSearchPosition()
 
         searchEditText.highlightColor = tintColor.colorWithAlpha(51)
         isProcessingSearchKeyword = true
@@ -761,6 +1674,9 @@ class PhoneTabsVC(context: Context) :
     }
 
     override fun viewWillAppear() {
+        if (experimentalTopTabsEnabled && isDisappeared && !isKeyboardOpen) {
+            keyboardVisible.forcedValue = 0f
+        }
         super.viewWillAppear()
         activeNavigationController?.viewWillAppear()
         resumeBlurring()
@@ -772,12 +1688,51 @@ class PhoneTabsVC(context: Context) :
         updateToastAvailability()
         // Re-host any full-screen VCs carried over from the tablet container, now that this VC is the
         // root of the window nav (which is the phone's main navigation controller).
-        adoptPendingPushedOverMain()
+        val tabToPresentOverMain = pendingTabToPresentOverMain
+        if (tabToPresentOverMain != null) {
+            pendingTabToPresentOverMain = null
+            val stack = detachNavigationStack(tabToPresentOverMain).ifEmpty {
+                listOf(
+                    when (tabToPresentOverMain) {
+                        IBottomNavigationView.ID_AGENT -> AgentVC(context)
+                        else -> SettingsVC(context)
+                    }
+                )
+            }
+            adoptPushedOverMain(stack + takePendingPushedOverMain())
+        } else {
+            adoptPendingPushedOverMain()
+        }
+    }
+
+    override fun selectedTabForExport(selectedItemId: Int): Int {
+        if (!experimentalTopTabsEnabled) return selectedItemId
+        val pushedRoot = navigationController?.viewControllers?.getOrNull(1)
+        return when (pushedRoot) {
+            is SettingsVC -> IBottomNavigationView.ID_SETTINGS
+            is AgentVC -> IBottomNavigationView.ID_AGENT
+            else -> selectedItemId
+        }
     }
 
     // Full-screen pushes on phone live in the window nav, above this PhoneTabsVC root.
-    override fun exportPushedOverMain(): List<WViewController> =
-        navigationController?.detachAboveRoot() ?: emptyList()
+    override fun exportPushedOverMain(): List<WViewController> {
+        val pushed = navigationController?.detachAboveRoot() ?: return emptyList()
+        val tabId = if (experimentalTopTabsEnabled) {
+            when (pushed.firstOrNull()) {
+                is SettingsVC -> IBottomNavigationView.ID_SETTINGS
+                is AgentVC -> IBottomNavigationView.ID_AGENT
+                else -> null
+            }
+        } else {
+            null
+        }
+        if (tabId != null) {
+            replaceNavigationStack(tabId, pushed)
+            return emptyList()
+        }
+        return pushed
+    }
 
     override fun adoptPushedOverMain(pushed: List<WViewController>) {
         navigationController?.adoptAboveRoot(pushed)
@@ -813,8 +1768,7 @@ class PhoneTabsVC(context: Context) :
                 (
                     (window?.imeInsets?.bottom ?: 0) -
                         (window?.systemBars?.bottom ?: 0) -
-                        BOTTOM_TABS_LAYOUT_HEIGHT.dp -
-                        BOTTOM_TABS_BOTTOM_MARGIN.dp -
+                        bottomTabsHeight -
                         (if (minimizedNav != null) 56.dp else 0)
                     ).toFloat(),
                 0f
@@ -826,11 +1780,20 @@ class PhoneTabsVC(context: Context) :
 
         keyboardVisible.animatedValue = keyboardHeight
         onUpdateAdditionalHeight()
-        bottomNavigationView.insetsUpdated(bottomBarHeight)
+        if (!experimentalTopTabsEnabled) bottomNavigationView.insetsUpdated(bottomBarHeight)
         render()
-        searchView.translationY = ViewConstants.TOOLBAR_RADIUS.dp - SEARCH_BOTTOM_MARGIN.dp
+        if (experimentalTopTabsEnabled) {
+            updateExperimentalSearchPosition()
+        } else {
+            searchView.translationY =
+                ViewConstants.TOOLBAR_RADIUS.dp - SEARCH_BOTTOM_MARGIN.dp.toFloat()
+        }
+        updateTopChromeLayout()
 
-        if (!isKeyboardOpen && searchEditText.hasFocus()) {
+        if (!isKeyboardOpen &&
+            searchEditText.hasFocus() &&
+            cachedExploreVC?.shouldKeepSearchActiveOnKeyboardDismiss != true
+        ) {
             searchEditText.clearFocus()
         }
         if (searchMatchedSite != null && !isKeyboardOpen) {
@@ -842,6 +1805,13 @@ class PhoneTabsVC(context: Context) :
 
     private val shouldShowStickyBottomGradientView: Boolean
         get() = WGlobalStorage.isGradientNavigationBarActive()
+
+    private val bottomOverlayExtraGap: Int
+        get() = if (experimentalTopTabsEnabled && !shouldShowStickyBottomGradientView) {
+            EXPERIMENTAL_BOTTOM_EXTRA_GAP.dp
+        } else {
+            0
+        }
 
     private fun ensureStickyBottomGradientView() {
         if (stickyBottomGradientView != null) return
@@ -855,16 +1825,39 @@ class PhoneTabsVC(context: Context) :
                 stickyGradientFullHeight()
             )
         )
-        bottomNavigationView.bringToFront()
-        searchShadow?.bringToFront()
-        searchView.bringToFront()
-        toastHostView.bringToFront()
+        restackChromeAboveGradient()
     }
 
-    private fun stickyGradientFullHeight(): Int = BOTTOM_TABS_LAYOUT_HEIGHT.dp +
-        BOTTOM_TABS_BOTTOM_MARGIN.dp +
+    private fun restackChromeAboveGradient() {
+        bottomNavigationView.bringToFront()
+        if (experimentalTopTabsEnabled && topTabsControl.parent != null) {
+            topAvatarShadow?.bringToFront()
+            topAvatarView.bringToFront()
+            topTabsShadow?.bringToFront()
+            topTabsControl.bringToFront()
+        }
+        if (experimentalTopTabsEnabled) {
+            searchOverlayNav?.bringToFront()
+            bottomReversedCornerView?.bringToFront()
+            stickyBottomGradientView?.bringToFront()
+            minimizedNavShadow?.bringToFront()
+            minimizedNav?.bringToFront()
+            searchShadow?.bringToFront()
+            searchView.bringToFront()
+            actionsButtonShadow?.bringToFront()
+            actionsButton.bringToFront()
+            toastHostView.bringToFront()
+        }
+    }
+
+    private fun stickyGradientFullHeight(): Int = bottomTabsHeight +
         bottomBarHeight +
-        (minimizedNavHeight ?: 0f).roundToInt()
+        (minimizedNavHeight ?: 0f).roundToInt() +
+        if (experimentalTopTabsEnabled) {
+            (SEARCH_BOTTOM_MARGIN + SEARCH_HEIGHT).dp
+        } else {
+            0
+        }
 
     private fun updateStickyGradientHeight() {
         val gradient = stickyBottomGradientView ?: return
@@ -877,24 +1870,19 @@ class PhoneTabsVC(context: Context) :
         stickyBottomGradientDrawable?.setStops(computeGradientStops(visibilityFraction))
     }
 
-    private val expandedGradientStops = floatArrayOf(0f, 0.333f, 0.666f, 1f)
-
+    // The fade always turns solid at the top of the bottom inset. Expanded, it spans the
+    // whole chrome above the inset; collapsed, only ADDITIONAL_GRADIENT_HEIGHT above it.
     private fun computeGradientStops(vis: Float): FloatArray {
         val full = stickyGradientFullHeight()
-        val minHeight =
-            ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp + (window?.systemBars?.bottom ?: 0)
-        val minRatio = if (full > 0) (minHeight / full).coerceIn(0f, 1f) else 0f
-        val collapsed = floatArrayOf(
-            1f - minRatio,
-            1f - minRatio * COLLAPSED_GRADIENT_STOP_POINT,
-            1f - minRatio * COLLAPSED_GRADIENT_STOP_POINT,
-            1f
-        )
+        if (full <= 0) return floatArrayOf(0f, 1f, 1f)
+        val insetRatio = ((window?.systemBars?.bottom ?: 0).toFloat() / full).coerceIn(0f, 1f)
+        val solidStart = 1f - insetRatio
+        val collapsedFadeStart =
+            (solidStart - ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp / full).coerceIn(0f, 1f)
         return floatArrayOf(
-            lerp(collapsed[0], expandedGradientStops[0], vis),
-            lerp(collapsed[1], expandedGradientStops[1], vis),
-            lerp(collapsed[2], expandedGradientStops[2], vis),
-            lerp(collapsed[3], expandedGradientStops[3], vis)
+            lerp(collapsedFadeStart, 0f, vis),
+            solidStart,
+            1f
         )
     }
 
@@ -918,8 +1906,7 @@ class PhoneTabsVC(context: Context) :
                 intArrayOf(
                     stickyBackgroundColor.colorWithAlpha(0),
                     stickyBackgroundColor.colorWithAlpha(GRADIENT_ALPHA),
-                    stickyBackgroundColor.colorWithAlpha(GRADIENT_ALPHA),
-                    stickyBackgroundColor
+                    stickyBackgroundColor.colorWithAlpha(GRADIENT_ALPHA)
                 )
             )
             drawable.setStops(computeGradientStops(visibilityFraction))
@@ -941,17 +1928,39 @@ class PhoneTabsVC(context: Context) :
         targetUri?.let { cachedExploreVC?.findSiteAndOpenTargetUri(it) }
     }
 
-    override fun switchToAgent(prompt: String?): Boolean {
+    override fun switchToAgent(prompt: String?, pinnedMessageId: String?): Boolean {
+        if (experimentalTopTabsEnabled) {
+            navigationController?.popToRoot(false)
+            window?.dismissToRoot()
+            navigationController?.push(
+                AgentVC(
+                    context,
+                    initialPrompt = prompt,
+                    initialPinnedMessageId = pinnedMessageId
+                )
+            )
+            return true
+        }
         if (!AppTabsManager.contains(IBottomNavigationView.ID_AGENT)) return false
         navigationController?.popToRoot(false)
         bottomNavigationView.selectedItemId = IBottomNavigationView.ID_AGENT
         window?.dismissToRoot()
-        submitAgentPrompt(prompt)
+        if (!pinnedMessageId.isNullOrBlank()) {
+            showAgentMessage(pinnedMessageId)
+        } else {
+            submitAgentPrompt(prompt)
+        }
         return true
     }
 
     override fun switchToSettings(pushVC: WViewController?) {
         navigationController?.popToRoot(false)
+        if (experimentalTopTabsEnabled) {
+            window?.dismissToRoot()
+            navigationController?.push(SettingsVC(context), animated = pushVC == null)
+            pushVC?.let { navigationController?.push(it) }
+            return
+        }
         bottomNavigationView.selectedItemId = IBottomNavigationView.ID_SETTINGS
         window?.dismissToRoot()
         pushVC?.let {
@@ -1019,11 +2028,18 @@ class PhoneTabsVC(context: Context) :
                 )
             )
             view.setConstraints {
-                bottomToTop(
-                    updateFloatingButton!!,
-                    bottomNavigationView,
-                    ViewConstants.GAP.toFloat()
-                )
+                if (experimentalTopTabsEnabled) {
+                    toBottomPx(
+                        updateFloatingButton!!,
+                        bottomBarHeight + ViewConstants.GAP.dp
+                    )
+                } else {
+                    bottomToTop(
+                        updateFloatingButton!!,
+                        bottomNavigationView,
+                        ViewConstants.GAP.toFloat()
+                    )
+                }
                 toCenterX(updateFloatingButton!!)
             }
         }
@@ -1067,7 +2083,7 @@ class PhoneTabsVC(context: Context) :
         searchKeyword = keyword
         if (keyword.isEmpty()) return
         searchMatchedSite =
-            if (keyword.isEmpty() || !isKeyboardOpen) {
+            if (!isKeyboardOpen) {
                 null
             } else {
                 ExploreHistoryStore.exploreHistory?.visitedSites?.firstOrNull {
@@ -1075,6 +2091,10 @@ class PhoneTabsVC(context: Context) :
                         it.url.startsWith(keyword)
                 }
             }
+        val wasProcessingSearchKeyword = isProcessingSearchKeyword
+        isProcessingSearchKeyword = true
+        searchEditText.removeAutoCompleteSuffix()
+        isProcessingSearchKeyword = wasProcessingSearchKeyword
         searchMatchedSite?.let { matchedSite ->
             val urlPart = matchedSite.url.toUri().let { uri ->
                 if (uri.host?.startsWith(keyword) == true) {
@@ -1084,19 +2104,22 @@ class PhoneTabsVC(context: Context) :
                 }
             }
             val txt = "$urlPart — ${matchedSite.title}"
-            val spannable = SpannableString(txt)
-            spannable.setSpan(
+            if (txt.length <= keyword.length ||
+                !txt.startsWith(keyword) ||
+                searchEditText.text?.toString() != keyword
+            ) {
+                return
+            }
+            val suffix = SpannableString(txt.substring(keyword.length))
+            suffix.setSpan(
                 ForegroundColorSpan(WColor.Tint.color),
-                (urlPart?.length ?: 0),
-                txt.length,
+                ((urlPart?.length ?: 0) - keyword.length).coerceIn(0, suffix.length),
+                suffix.length,
                 Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
             )
-            searchEditText.setTextKeepCursor(spannable)
-            val length = searchEditText.length()
-            searchEditText.setSelection(
-                keyword.length.coerceAtMost(length),
-                txt.length.coerceAtMost(length)
-            )
+            isProcessingSearchKeyword = true
+            searchEditText.appendAutoCompleteSuffix(suffix)
+            isProcessingSearchKeyword = wasProcessingSearchKeyword
             searchView.post {
                 searchView.scrollTo(0, 0)
             }
@@ -1104,24 +2127,27 @@ class PhoneTabsVC(context: Context) :
     }
 
     private fun clearSearchAutoComplete() {
-        searchEditText.setTextKeepCursor(searchKeyword)
+        searchEditText.removeAutoCompleteSuffix()
         checkForMatchingUrl(searchKeyword)
     }
 
     override fun onWalletEvent(walletEvent: WalletEvent) {
         when (walletEvent) {
             is WalletEvent.AccountChanged -> {
+                updateTopAvatar()
                 if (!AccountStore.isPushedTemporary && !walletEvent.isSavingTemporaryAccount) {
                     navigationController?.popToRoot(false)
                 }
             }
 
             is WalletEvent.TemporaryAccountSaved -> {
+                updateTopAvatar()
                 navigationController?.popToRoot(false)
                 ToastHelper.notifyViewWalletAdded(this, accountId = walletEvent.accountId)
             }
 
             is WalletEvent.AccountChangedInApp, WalletEvent.AddNewWalletCompletion -> {
+                updateTopAvatar()
                 if (bottomNavigationView.selectedItemId != IBottomNavigationView.ID_HOME) {
                     bottomNavigationView.selectedItemId = IBottomNavigationView.ID_HOME
                 }
@@ -1137,6 +2163,7 @@ class PhoneTabsVC(context: Context) :
                     bottomNavigationView.selectedItemId = IBottomNavigationView.ID_HOME
                 }
                 bottomNavigationView.reloadTabs()
+                reloadTopTabs()
             }
 
             else -> {
@@ -1149,6 +2176,7 @@ class PhoneTabsVC(context: Context) :
     private var visibilityTarget = 1f
     private var activeVisibilityValueAnimator: ValueAnimator? = null
     override fun scrollingUp() {
+        if (experimentalTopTabsEnabled) return
         if (visibilityTarget == 1f) return
         bottomNavigationView.setTabsEnabled(true)
         activeVisibilityValueAnimator?.cancel()
@@ -1166,6 +2194,7 @@ class PhoneTabsVC(context: Context) :
     }
 
     override fun scrollingDown() {
+        if (experimentalTopTabsEnabled) return
         if (visibilityTarget == 0f) return
         bottomNavigationView.setTabsEnabled(false)
         activeVisibilityValueAnimator?.cancel()
@@ -1182,18 +2211,29 @@ class PhoneTabsVC(context: Context) :
         }
     }
 
-    override fun onBackPressed(): Boolean = activeNavigationController?.onBackPressed() ?: true
+    override fun onBackPressed(): Boolean {
+        searchOverlayNav?.takeIf { it.viewControllers.isNotEmpty() }?.let { nav ->
+            if (nav.viewControllers.size > 1) return nav.onBackPressed()
+            if (searchEditText.hasFocus()) {
+                clearSearchFocus()
+            } else {
+                updateSearch(null, focused = false)
+            }
+            return false
+        }
+        return activeNavigationController?.onBackPressed() ?: true
+    }
 
     override fun getBottomNavigationHeight(): Int {
         val keyboard = keyboardHeight
         val minimizedNavHeight = minimizedNavHeight ?: 0f
         val selectedItemId = selectingTabId ?: bottomNavigationView.selectedItemId
+        val isSearchOverlayingContent = experimentalTopTabsEnabled ||
+            selectedItemId == IBottomNavigationView.ID_EXPLORE
         val additionalHeight =
             (
                 (
-                    if (selectedItemId ==
-                        IBottomNavigationView.ID_EXPLORE
-                    ) {
+                    if (isSearchOverlayingContent) {
                         (
                             SEARCH_BOTTOM_MARGIN + SEARCH_HEIGHT +
                                 SEARCH_TOP_MARGIN
@@ -1205,7 +2245,125 @@ class PhoneTabsVC(context: Context) :
                     keyboard +
                     minimizedNavHeight
                 ).roundToInt()
-        return BOTTOM_TABS_LAYOUT_HEIGHT.dp + additionalHeight + bottomBarHeight
+        return bottomTabsHeight + additionalHeight + bottomBarHeight + bottomOverlayExtraGap
+    }
+
+    private fun shouldShowSearch(tabId: Int): Boolean =
+        experimentalTopTabsEnabled || tabId == IBottomNavigationView.ID_EXPLORE
+
+    /**
+     * Hosts the global search screen. It sits above the top tabs but below the search field, so the
+     * tabs stay in place under the search screen and are already in position once it fades out.
+     */
+    private var searchOverlayNav: WNavigationController? = null
+
+    /**
+     * Attaches the layer on first use. It stays transparent until [revealSearchOverlay], so a caller
+     * that ends up not pushing anything leaves the chrome untouched.
+     */
+    override val searchOverlayNavigationController: WNavigationController?
+        get() {
+            if (!experimentalTopTabsEnabled) return null
+            searchOverlayNav?.let { return it }
+            val window = window ?: return null
+            val nav = WNavigationController(window)
+            nav.tabBarController = this
+            nav.alpha = 0f
+            searchOverlayNav = nav
+            view.addView(nav, ConstraintLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            restackChromeAboveGradient()
+            topChromeBlurViews.forEach {
+                it.setupWith(nav)
+                it.updateTheme()
+            }
+            nav.insetsUpdated()
+            return nav
+        }
+
+    override fun revealSearchOverlay() {
+        val nav = searchOverlayNav?.takeIf { it.viewControllers.isNotEmpty() } ?: return
+        experimentalTabPager.isUserInputEnabled = false
+        topTabsControl.isEnabled = false
+        topAvatarView.isEnabled = false
+        nav.fadeIn(SEARCH_OVERLAY_ANIMATION)
+        fadeTopChromeForSearch(visible = false)
+    }
+
+    override fun hideSearchOverlay() {
+        val nav = searchOverlayNav ?: return
+        searchOverlayNav = null
+        topChromeBlurViews.forEach {
+            it.setupWith(contentView)
+            it.updateTheme()
+        }
+        if (nav.viewControllers.isEmpty()) {
+            // Never revealed, so nothing to fade and the chrome was left alone.
+            view.removeView(nav)
+            return
+        }
+        if (!isTopChromeHidden) {
+            experimentalTabPager.isUserInputEnabled = true
+            topTabsControl.isEnabled = true
+            topAvatarView.isEnabled = true
+        }
+        // Keep the search screen on-screen through the fade, then tear the stack down. Touches are
+        // blocked meanwhile so the outgoing layer cannot swallow taps meant for what is behind it.
+        nav.blockTouches()
+        nav.fadeOut(SEARCH_OVERLAY_ANIMATION) {
+            nav.viewControllers.forEach { it.viewWillDisappear() }
+            nav.onDestroy()
+            view.removeView(nav)
+        }
+        fadeTopChromeForSearch(visible = true)
+    }
+
+    /**
+     * The shadows mirror their target through sync(), so only the targets animate here and the
+     * shadows are re-synced as the fade progresses.
+     */
+    private fun fadeTopChromeForSearch(visible: Boolean) {
+        val showTabs = visible &&
+            !isTopChromeHidden &&
+            bottomNavigationView.selectedItemId != IBottomNavigationView.ID_SETTINGS
+        val showAvatar = showTabs && AccountStore.activeAccount != null
+        fadeTopChromeView(topTabsControl, showTabs) { topTabsShadow?.sync() }
+        fadeTopChromeView(topAvatarView, showAvatar) { topAvatarShadow?.sync() }
+    }
+
+    private fun fadeTopChromeView(view: View?, visible: Boolean, syncShadow: () -> Unit) {
+        view ?: return
+        view.animate().cancel()
+        view.animate().setUpdateListener { syncShadow() }
+        if (visible) {
+            view.isVisible = true
+            view.fadeIn(SEARCH_OVERLAY_ANIMATION) {
+                view.animate().setUpdateListener(null)
+                syncShadow()
+            }
+        } else {
+            view.fadeOut(SEARCH_OVERLAY_ANIMATION) {
+                view.animate().setUpdateListener(null)
+                view.isInvisible = true
+                syncShadow()
+            }
+        }
+    }
+
+    private fun updateSearch(query: String?, focused: Boolean) {
+        if (cachedExploreVC == null && AppTabsManager.contains(IBottomNavigationView.ID_EXPLORE)) {
+            getNavigationStack(IBottomNavigationView.ID_EXPLORE)
+        }
+        val exploreVC = cachedExploreVC ?: return
+        if (experimentalTopTabsEnabled) {
+            exploreVC.search(
+                query,
+                focused,
+                targetNavigationController = searchOverlayNavigationController,
+                isGlobalSearch = true
+            )
+        } else {
+            exploreVC.search(query, focused)
+        }
     }
 
     private var minimizedNav: WNavigationController? = null
@@ -1264,10 +2422,12 @@ class PhoneTabsVC(context: Context) :
         nav.window.detachLastNav()
         attachMinimizedShadow(nav)
         view.addView(nav)
+        if (experimentalTopTabsEnabled) restackChromeAboveGradient()
         val initialHeight = nav.height
         val finalHeight = 48.dp
         val initialWidth = nav.width
-        val customFinalWidth = bottomNavigationView.getMinimizedWidth()
+        val customFinalWidth =
+            if (experimentalTopTabsEnabled) null else bottomNavigationView.getMinimizedWidth()
         val finalWidth = customFinalWidth ?: (initialWidth - 20.dp)
         val finalTranslationX =
             if (customFinalWidth != null) (initialWidth - finalWidth) / 2f else 10.dp.toFloat()
@@ -1275,16 +2435,22 @@ class PhoneTabsVC(context: Context) :
             ?: (window?.windowView?.height ?: 0)
         val finalY = containerHeight -
             bottomBarHeight -
-            finalHeight - 4.dp
-        minimizedNavHeight = finalHeight + 8f.dp
+            finalHeight - 4.dp - bottomOverlayExtraGap
+        val finalMinimizedNavHeight = finalHeight + 8f.dp
+        minimizedNavHeight = if (experimentalTopTabsEnabled) 0f else finalMinimizedNavHeight
         updateStickyGradientHeight()
         bottomNavigationView.translationY =
-            -(BOTTOM_TABS_BOTTOM_MARGIN.dp + bottomBarHeight + minimizedNavHeight!!) +
+            -(BOTTOM_TABS_BOTTOM_MARGIN.dp + bottomBarHeight + finalMinimizedNavHeight) +
             BOTTOM_TABS_BOTTOM_TO_NAV_DIFF.dp
         syncToastHostPosition()
         render()
 
         fun onUpdate(animatedFraction: Float) {
+            if (experimentalTopTabsEnabled) {
+                minimizedNavHeight = animatedFraction * finalMinimizedNavHeight
+                updateStickyGradientHeight()
+                render()
+            }
             minimizedNavY = animatedFraction * finalY
             nav.translationY = minimizedNavY!!
             val animatedHeight = finalHeight +
@@ -1341,9 +2507,15 @@ class PhoneTabsVC(context: Context) :
         val initialWidth = nav.width
         val finalWidth = view.width
         val initialY = nav.y
+        val initialMinimizedNavHeight = minimizedNavHeight ?: 0f
         val minimizedNavTranslationX = nav.translationX
 
         fun onUpdate(animatedFraction: Float) {
+            if (experimentalTopTabsEnabled) {
+                minimizedNavHeight = (1 - animatedFraction) * initialMinimizedNavHeight
+                updateStickyGradientHeight()
+                render()
+            }
             onMaximizeProgress?.invoke(animatedFraction)
             val topY = (1 - animatedFraction) * initialY
             nav.translationY = topY
@@ -1407,8 +2579,14 @@ class PhoneTabsVC(context: Context) :
 
     override fun dismissMinimized(animated: Boolean) {
         val nav = minimizedNav ?: return
+        val initialMinimizedNavHeight = if (experimentalTopTabsEnabled) {
+            minimizedNavHeight ?: 0f
+        } else {
+            48.dp.toFloat()
+        }
+
         fun onUpdate(animatedFraction: Float) {
-            minimizedNavHeight = (1 - animatedFraction) * 48.dp
+            minimizedNavHeight = (1 - animatedFraction) * initialMinimizedNavHeight
             updateStickyGradientHeight()
             bottomNavigationView.translationY =
                 -(BOTTOM_TABS_BOTTOM_MARGIN.dp + bottomBarHeight + minimizedNavHeight!!) +
@@ -1419,6 +2597,7 @@ class PhoneTabsVC(context: Context) :
             nav.alpha = fadedAlpha
             minimizedNavShadow?.alpha = fadedAlpha
         }
+
         fun onEnd() {
             if (minimizedNav !== nav) return
             nav.willBeDismissed()
@@ -1453,7 +2632,7 @@ class PhoneTabsVC(context: Context) :
         get() = bottomNavigationView.pausedBlurViews
 
     override fun pauseBlurring() {
-        searchBlurryBackgroundView.pauseBlurring()
+        topChromeBlurViews.forEach { it.pauseBlurring() }
         toastHostView.pauseBlurring()
         bottomNavigationView.pauseBlurring()
         bottomReversedCornerView?.pauseBlurring()
@@ -1462,7 +2641,7 @@ class PhoneTabsVC(context: Context) :
     }
 
     override fun resumeBlurring() {
-        searchBlurryBackgroundView.resumeBlurring()
+        topChromeBlurViews.forEach { it.resumeBlurring() }
         toastHostView.resumeBlurring()
         bottomNavigationView.resumeBlurring()
         bottomReversedCornerView?.resumeBlurring()
@@ -1475,6 +2654,12 @@ class PhoneTabsVC(context: Context) :
         searchEditText.setText(text)
     }
 
+    override fun clearSearchFocus() {
+        // hideKeyboard() drops focus too. Clearing focus alone would leave the IME up, so the
+        // search screen popped out from behind a keyboard with nothing left to type into.
+        searchEditText.hideKeyboard()
+    }
+
     override fun switchToFirstTab(): Boolean {
         if (bottomNavigationView.selectedItemId != IBottomNavigationView.ID_HOME) {
             bottomNavigationView.selectedItemId = IBottomNavigationView.ID_HOME
@@ -1484,11 +2669,34 @@ class PhoneTabsVC(context: Context) :
     }
 
     override fun hideTabBar() {
-        bottomNavigationView.fadeOut()
+        if (experimentalTopTabsEnabled) {
+            if (isTopChromeHidden) return
+            isTopChromeHidden = true
+            experimentalTabPager.isUserInputEnabled = false
+            topTabsControl.isEnabled = false
+            topAvatarView.isEnabled = false
+            hideTopChromeView(topTabsControl) { topTabsShadow?.sync() }
+            hideTopChromeView(topAvatarView) { topAvatarShadow?.sync() }
+        } else {
+            bottomNavigationView.fadeOut()
+        }
     }
 
     override fun showTabBar() {
-        bottomNavigationView.fadeIn()
+        if (experimentalTopTabsEnabled) {
+            if (!isTopChromeHidden) return
+            isTopChromeHidden = false
+            experimentalTabPager.isUserInputEnabled = true
+            topTabsControl.isEnabled = true
+            topAvatarView.isEnabled = true
+            val shouldShowTabs =
+                bottomNavigationView.selectedItemId != IBottomNavigationView.ID_SETTINGS
+            val shouldShowAvatar = shouldShowTabs && AccountStore.activeAccount != null
+            showTopChromeView(topTabsControl, shouldShowTabs) { topTabsShadow?.sync() }
+            showTopChromeView(topAvatarView, shouldShowAvatar) { topAvatarShadow?.sync() }
+        } else {
+            bottomNavigationView.fadeIn()
+        }
     }
 
     private fun updateToastAvailability(selectedItemId: Int = bottomNavigationView.selectedItemId) {
@@ -1502,13 +2710,24 @@ class PhoneTabsVC(context: Context) :
     }
 
     private fun syncToastHostPosition() {
-        toastHostView.translationY =
+        toastHostView.translationY = if (experimentalTopTabsEnabled) {
+            -(searchTopOffset() + ViewConstants.GAP.dp - TOAST_HOST_BOTTOM_MARGIN.dp)
+        } else {
             bottomNavigationView.translationY + ViewConstants.TOOLBAR_RADIUS.dp
+        }
     }
+
+    // Distance from the container bottom to the top edge of the search bar.
+    private fun searchTopOffset(): Float = bottomBarHeight +
+        keyboardVisible.value.coerceAtLeast(0f) +
+        (minimizedNavHeight ?: 0f) +
+        3.dp + bottomOverlayExtraGap +
+        SEARCH_HEIGHT.dp
 
     override fun onDestroy() {
         super.onDestroy()
         WalletCore.unregisterObserver(this)
+        HomeStatusController.removeListener(topAvatarStatusListener)
         minimizedNav?.let { nav ->
             nav.willBeDismissed()
             detachMinimizedShadow(nav)
@@ -1516,6 +2735,12 @@ class PhoneTabsVC(context: Context) :
             nav.onDestroy()
         }
         minimizedNav = null
+        searchOverlayNav?.let { nav ->
+            nav.viewControllers.forEach { it.viewWillDisappear() }
+            view.removeView(nav)
+            nav.onDestroy()
+        }
+        searchOverlayNav = null
         onMaximizeProgress = null
         bottomNavigationView.listener = null
     }

@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.os.Build
+import android.text.NoCopySpan
+import android.text.Spanned
 import android.util.TypedValue
 import android.view.Gravity
 import androidx.appcompat.content.res.AppCompatResources
@@ -30,7 +32,7 @@ open class WSearchEditText @JvmOverloads constructor(
     private val searchDrawable: Drawable? =
         AppCompatResources.getDrawable(
             context,
-            org.mytonwallet.app_air.icons.R.drawable.ic_search_24
+            org.mytonwallet.app_air.icons.R.drawable.ic_search_22
         )?.mutate()?.apply {
             setTint(WColor.SecondaryText.color)
         }
@@ -93,13 +95,13 @@ open class WSearchEditText @JvmOverloads constructor(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec)
         val isRtl = layoutDirection == LAYOUT_DIRECTION_RTL
-        val searchX = if (isRtl) measuredWidth - 12.dp - 24.dp else 12.dp
-        val y = measuredHeight / 2 - 12.dp
+        val searchX = if (isRtl) measuredWidth - 14.dp - 22.dp else 14.dp
+        val y = measuredHeight / 2 - 11.dp
         searchDrawable?.setBounds(
             searchX,
             y,
-            searchX + 24.dp,
-            y + 24.dp
+            searchX + 22.dp,
+            y + 22.dp
         )
         if (isRtl) {
             clearButtonTouchBounds.set(0f, 0f, 48f.dp, 48f.dp)
@@ -156,19 +158,44 @@ open class WSearchEditText @JvmOverloads constructor(
         setTextColor(WColor.PrimaryText.color)
     }
 
-    fun setTextKeepCursor(newText: CharSequence) {
-        val currentSelectionStart = selectionStart
-        val currentSelectionEnd = selectionEnd
+    private val autoCompleteSuffixMarker = NoCopySpan.Concrete()
 
-        clearComposingText()
-        text?.replace(0, length(), newText) ?: setText(newText)
-
-        if (currentSelectionStart >= 0 && currentSelectionEnd >= 0) {
-            val newLength = text?.length ?: 0
-            val safeStart = currentSelectionStart.coerceAtMost(newLength)
-            val safeEnd = currentSelectionEnd.coerceAtMost(newLength)
-            setSelection(safeStart, safeEnd)
+    /**
+     * Start of the inline autocomplete suffix, or -1 when none is attached.
+     * Everything before it is the user's own text (possibly still composing in the IME).
+     */
+    fun autoCompleteSuffixStart(): Int {
+        val editable = text ?: return -1
+        val start = editable.getSpanStart(autoCompleteSuffixMarker)
+        if (start < 0) return -1
+        if (editable.getSpanEnd(autoCompleteSuffixMarker) <= start) {
+            editable.removeSpan(autoCompleteSuffixMarker)
+            return -1
         }
+        return start
+    }
+
+    fun appendAutoCompleteSuffix(suffix: CharSequence) {
+        val editable = text ?: return
+        removeAutoCompleteSuffix()
+        val start = editable.length
+        editable.append(suffix)
+        editable.setSpan(
+            autoCompleteSuffixMarker,
+            start,
+            editable.length,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
+        setSelection(start, editable.length)
+    }
+
+    fun removeAutoCompleteSuffix() {
+        val editable = text ?: return
+        val start = editable.getSpanStart(autoCompleteSuffixMarker)
+        if (start < 0) return
+        val end = editable.getSpanEnd(autoCompleteSuffixMarker)
+        editable.removeSpan(autoCompleteSuffixMarker)
+        if (end > start) editable.delete(start, end)
     }
 
     override fun onStartMoveToState(targetState: ViewState) {

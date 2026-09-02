@@ -2,6 +2,40 @@
 
 This directory contains scripts for managing and validating localization files.
 
+## Generation pipeline
+
+`import_localizations.py` treats `src/i18n/*.yaml` as the source of truth and generates:
+
+- the WalletResources, app, and widget `.xcstrings` catalogs;
+- `WalletContext/Localization/GeneratedLocalizations.swift`, the public, typed `L10n` API.
+
+Formatted entries keep their existing localization key and use named placeholders:
+
+```yaml
+"%amount% NFTs":
+  zeroValue: No NFTs
+  oneValue: "%amount% NFT"
+  otherValue: "%amount% NFTs"
+```
+
+The importer derives a lower-camel-case Swift symbol from the raw key, including placeholder names
+and excluding punctuation. For example, `Open %nft_marketplace%` becomes `openNftMarketplace`.
+Generation fails if two formatted keys produce the same symbol. The importer also infers argument
+types, converts placeholders to Apple's named format syntax in the catalog, and disables Xcode's
+automatic symbol generation for every catalog entry. Integer/plural heuristics and the small
+exception table live in `import_localizations.py`; a wrong inferred type therefore fails at a typed
+Swift call site during compilation instead of reaching `String(format:)` at runtime.
+
+Run the importer from the repository root with:
+
+```bash
+mobile/ios/Air/scripts/strings/.venv/bin/python \
+  mobile/ios/Air/scripts/strings/import_localizations.py
+```
+
+Do not add positional `%@`, `%d`, or `%1$…` placeholders to YAML. Non-iOS clients keep the named
+placeholder spelling and use the English definition to map existing positional call arguments.
+
 ## Scripts
 
 ### `check_localization_completeness.py`
@@ -98,7 +132,8 @@ BASE_DIR=/path/to/repo ./check_localizations.sh
 ```
 
 This script will automatically:
-- Check main localizations (src/i18n/)
+- Check every non-English main localization in `src/i18n/` against English
+- Check literal Swift `lang("...")` keys against the English catalog
 - Provide colored output for easy reading
 - Show summary of all checks
 
@@ -109,7 +144,10 @@ The scripts work with the following localization structure:
 ```
 src/i18n/
 ├── en.yaml          # Base English localization
-└── ru.yaml          # Russian localization
+├── ar.yaml          # Arabic localization
+├── de.yaml          # German localization
+├── ...
+└── zh-Hant.yaml     # Traditional Chinese localization
 ```
 
 ## Requirements

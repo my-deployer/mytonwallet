@@ -43,7 +43,7 @@ final class NftSendSuccessViewController: WViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         navigationItem.title = model.confirmed.mode == .burn
-            ? lang("$nfts_burned", arg1: model.confirmed.nfts.count)
+            ? L10n.nftsBurned(count: model.confirmed.nfts.count)
             : lang("Sent")
         addCloseNavigationItemIfNeeded()
         view.backgroundColor = .air.sheetBackground

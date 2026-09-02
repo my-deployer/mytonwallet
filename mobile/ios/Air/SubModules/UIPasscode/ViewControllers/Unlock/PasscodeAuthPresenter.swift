@@ -12,6 +12,7 @@ public enum PasscodeAuthPresenter {
         customHeaderVC: UIViewController,
         compactHeaderVC: UIViewController? = nil,
         sessionKind: AuthSessionKind = .oneShot,
+        extraAuthUsages: Int = 0,
         useBioOnPresent: Bool = true,
         biometricPassAllowed: Bool = true,
         prefersNavigationTitleWithCustomHeader: Bool = false,
@@ -36,7 +37,8 @@ public enum PasscodeAuthPresenter {
             onCancel: onCancel,
             useBioOnPresent: useBioOnPresent,
             biometricPassAllowed: biometricPassAllowed,
-            authSessionKind: sessionKind
+            authSessionKind: sessionKind,
+            extraAuthUsages: extraAuthUsages
         )
         navigationController.pushViewController(unlockVC, animated: true)
         return unlockVC
@@ -49,6 +51,7 @@ public enum PasscodeAuthPresenter {
         subtitle: String? = nil,
         customHeaderVC: UIViewController? = nil,
         compactHeaderVC: UIViewController? = nil,
+        extraAuthUsages: Int = 0,
         prefersNavigationTitleWithCustomHeader: Bool = false,
         onAuthTask: ((_ enclaveToken: EnclaveToken, _ onTaskDone: @escaping () -> Void) -> Void)? = nil,
         onDone: @escaping (_ enclaveToken: EnclaveToken?) -> Void,
@@ -73,7 +76,8 @@ public enum PasscodeAuthPresenter {
                 onDone: { enclaveToken in onDone(enclaveToken) },
                 cancellable: cancellable,
                 onCancel: onCancel,
-                useBioOnPresent: useBioOnPresent
+                useBioOnPresent: useBioOnPresent,
+                extraAuthUsages: extraAuthUsages
             )
             if cancellable {
                 let navVC = WNavigationController(rootViewController: unlockVC)
@@ -95,6 +99,7 @@ public enum PasscodeAuthPresenter {
         subtitle: String? = nil,
         customHeaderVC: UIViewController? = nil,
         compactHeaderVC: UIViewController? = nil,
+        extraAuthUsages: Int = 0,
         prefersNavigationTitleWithCustomHeader: Bool = false,
         authTask: (@MainActor (_ enclaveToken: EnclaveToken) async -> Void)? = nil
     ) async -> EnclaveToken? {
@@ -123,6 +128,7 @@ public enum PasscodeAuthPresenter {
                 subtitle: subtitle,
                 customHeaderVC: customHeaderVC,
                 compactHeaderVC: compactHeaderVC,
+                extraAuthUsages: extraAuthUsages,
                 prefersNavigationTitleWithCustomHeader: prefersNavigationTitleWithCustomHeader,
                 onAuthTask: onAuthTask,
                 onDone: { enclaveToken in

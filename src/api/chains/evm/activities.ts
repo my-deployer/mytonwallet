@@ -1,6 +1,7 @@
 import type { ApiActivity, ApiFetchActivitySliceOptions, ApiNetwork, EVMChain } from '../../types';
 import type { ZerionNftTransfer, ZerionTokenTransfer, ZerionTransaction, ZerionTransactionsResponse } from './types';
 
+import { throwIfAborted } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { getChainConfig, getIsSupportedChain } from '../../../util/chain';
 import { toDecimal } from '../../../util/decimals';
@@ -28,6 +29,7 @@ export async function fetchActivitySlice(
     toTimestamp,
     fromTimestamp,
     limit,
+    signal,
   }: ApiFetchActivitySliceOptions,
 ): Promise<ApiActivity[]> {
   const { network } = parseAccountId(accountId);
@@ -41,6 +43,8 @@ export async function fetchActivitySlice(
     toTimestamp,
     fromTimestamp,
     limit,
+    undefined,
+    signal,
   );
 
   return activities;
@@ -55,6 +59,7 @@ export async function getTokenActivitySlice(
   fromTimestamp?: number,
   limit?: number,
   isCrossChain?: boolean,
+  signal?: AbortSignal,
 ): Promise<{ activities: ApiActivity[]; hasMore: boolean }> {
   const checksumAddress = normalizeAddress(address);
 
@@ -67,6 +72,7 @@ export async function getTokenActivitySlice(
     fromTimestamp,
     limit,
     isCrossChain,
+    signal,
   });
 
   // hasMore is computed from the raw API response length, not the post-transform `activities`.
@@ -75,7 +81,7 @@ export async function getTokenActivitySlice(
   const hasMore = limit !== undefined && txs.length >= limit;
 
   if (isCrossChain) {
-    await collectCrossChainTokensFromTransactions(network, address, txs);
+    await collectCrossChainTokensFromTransactions(network, address, txs, signal);
 
     const activities = compact(txs.map((tx) => {
       const txChain = getZerionTransactionChain(tx);
@@ -86,7 +92,7 @@ export async function getTokenActivitySlice(
     return { activities, hasMore };
   }
 
-  await collectTokensFromTransactions(network, chain, address, txs);
+  await collectTokensFromTransactions(network, chain, address, txs, signal);
 
   const activities = compact(txs.map((tx) => transformEvmTxToUnified(chain, tx, address)));
 
@@ -103,10 +109,13 @@ export async function fetchEvmTxs(options: {
   limit?: number;
   isCrossChain?: boolean;
   hash?: string;
+  signal?: AbortSignal;
 }) {
-  const { chain, network, address, slug, toTimestamp, fromTimestamp, limit, isCrossChain, hash } = options;
+  const {
+    chain, network, address, slug, toTimestamp, fromTimestamp, limit, isCrossChain, hash, signal,
+  } = options;
 
-  const isUntrackableGuarded = getIsNegVerdictCacheEnabled();
+  const isUntrackableGuarded = !signal && getIsNegVerdictCacheEnabled();
   if (isUntrackableGuarded && untrackableRegistry.has(network, address)) {
     // Zerion already told us this address is untrackable; skip the round-trip and return an
     // empty, terminal result so the activity state machine converges (history end reached).
@@ -133,10 +142,12 @@ export async function fetchEvmTxs(options: {
     const data = await fetchJson<ZerionTransactionsResponse>(
       `${getEvmApiUrl(network)}/v1/wallets/${address}/transactions/`,
       params,
+      { signal },
     );
 
     return data.data;
   } catch (err) {
+    throwIfAborted(signal);
     // Only a plain address-scoped history request (no hash, no token filter) proves the ADDRESS
     // itself is untrackable. A 4xx on a hash- or token-scoped request can be caused by those
     // params rather than the address, so marking here would wrongly freeze a real wallet - e.g.
@@ -183,6 +194,7 @@ export async function collectTokensFromTransactions(
   chain: EVMChain,
   address: string,
   rawTxs: ZerionTransaction[],
+  signal?: AbortSignal,
 ) {
   const addresses = new Set<string>();
   const zerionChain = getZerionChainByApiChain(chain);
@@ -201,13 +213,14 @@ export async function collectTokensFromTransactions(
     }
   }
 
-  await updateTokensMetadataByAddress(network, chain, [...addresses]);
+  await updateTokensMetadataByAddress(network, chain, [...addresses], signal);
 }
 
 async function collectCrossChainTokensFromTransactions(
   network: ApiNetwork,
   address: string,
   rawTxs: ZerionTransaction[],
+  signal?: AbortSignal,
 ) {
   const txsByChain = new Map<EVMChain, ZerionTransaction[]>();
 
@@ -224,7 +237,9 @@ async function collectCrossChainTokensFromTransactions(
   }
 
   await Promise.all(
-    [...txsByChain.entries()].map(([chain, txs]) => collectTokensFromTransactions(network, chain, address, txs)),
+    [...txsByChain.entries()].map(([chain, txs]) => (
+      collectTokensFromTransactions(network, chain, address, txs, signal)
+    )),
   );
 }
 
@@ -240,20 +255,16 @@ function getZerionTransactionChain(tx: ZerionTransaction) {
   return chain;
 }
 
-export async function fetchCrossChainActivitySlice(options: {
-  accountId: string;
-  tokenSlug?: string;
-  toTimestamp?: number;
-  fromTimestamp?: number;
-  limit?: number;
-}): Promise<ApiActivity[]> {
-  const { accountId, tokenSlug, toTimestamp, fromTimestamp, limit } = options;
+export async function fetchCrossChainActivitySlice(options: ApiFetchActivitySliceOptions): Promise<ApiActivity[]> {
+  const {
+    accountId, tokenSlug, toTimestamp, fromTimestamp, limit, signal,
+  } = options;
 
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'ethereum');
 
   const { activities } = await getTokenActivitySlice(
-    'ethereum', network, address, tokenSlug, toTimestamp, fromTimestamp, limit, true,
+    'ethereum', network, address, tokenSlug, toTimestamp, fromTimestamp, limit, true, signal,
   );
 
   return activities;

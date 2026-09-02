@@ -38,16 +38,7 @@ public final class ShyMask: UIView {
     private var updateTimer: Timer?
     private var widthConstraint: NSLayoutConstraint?
     private var currentColor: CGColor {
-        switch theme {
-        case .light:
-            return LIGHT_COLOR.cgColor
-        case .dark:
-            return DARK_COLOR.cgColor
-        case .adaptive:
-            return ADAPTIVE_COLOR.resolvedColor(with: .current).cgColor
-        case .color(let color):
-            return color.resolvedColor(with: .current).cgColor
-        }
+        theme.color.resolvedColor(with: .current).cgColor
     }
 
     public init(cols: Int, rows: Int, cellSize: CGFloat, theme: Theme) {
@@ -288,6 +279,20 @@ public final class ShyMask: UIView {
     }
 }
 
+public extension ShyMask.Theme {
+    var color: UIColor {
+        switch self {
+        case .light:
+            LIGHT_COLOR
+        case .dark:
+            DARK_COLOR
+        case .adaptive:
+            ADAPTIVE_COLOR
+        case .color(let color):
+            color
+        }
+    }
+}
 
 // MARK: - SwiftUI support
 
@@ -309,6 +314,8 @@ public struct WUIShyMask: UIViewRepresentable {
     }
     
     public func updateUIView(_ uiView: ShyMask, context: Context) {
+        uiView.setCols(cols)
+        uiView.setTheme(theme)
     }
     
     public func sizeThatFits(_ proposal: ProposedViewSize, uiView: ShyMask, context: Context) -> CGSize {

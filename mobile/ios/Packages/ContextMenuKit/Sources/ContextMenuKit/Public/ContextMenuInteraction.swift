@@ -14,6 +14,7 @@ public struct ContextMenuInteractionTriggers: OptionSet, Sendable {
 @MainActor
 public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate {
     private let triggers: ContextMenuInteractionTriggers
+    private let presentationMode: ContextMenuPresentationMode
     private let longPressDuration: TimeInterval
     private let sourcePortal: ContextMenuSourcePortal?
     private let pressAnimation: ContextMenuPressAnimation?
@@ -28,10 +29,11 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
     private var tapGestureRecognizer: UITapGestureRecognizer?
     private var longPressGestureRecognizer: UILongPressGestureRecognizer?
     private var pressAnimationGestureRecognizer: ContextMenuPressAnimationGestureRecognizer?
-    private weak var presentedOverlayView: ContextMenuOverlayView?
+    private weak var presentedSession: (any ContextMenuPresentationSession)?
 
     public init(
         triggers: ContextMenuInteractionTriggers = [.tap, .longPress],
+        presentationMode: ContextMenuPresentationMode = .overlay,
         longPressDuration: TimeInterval = 0.32,
         sourcePortal: ContextMenuSourcePortal? = nil,
         pressAnimation: ContextMenuPressAnimation? = nil,
@@ -42,6 +44,7 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
         configurationProvider: @escaping (UIView) -> ContextMenuConfiguration?
     ) {
         self.triggers = triggers
+        self.presentationMode = presentationMode
         self.longPressDuration = longPressDuration
         self.sourcePortal = sourcePortal
         self.pressAnimation = pressAnimation
@@ -56,6 +59,7 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
 
     init(
         triggers: ContextMenuInteractionTriggers = [.tap, .longPress],
+        presentationMode: ContextMenuPresentationMode = .overlay,
         longPressDuration: TimeInterval = 0.32,
         sourcePortal: ContextMenuSourcePortal? = nil,
         pressAnimation: ContextMenuPressAnimation? = nil,
@@ -67,6 +71,7 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
         configurationProvider: @escaping (UIView) -> ContextMenuConfiguration?
     ) {
         self.triggers = triggers
+        self.presentationMode = presentationMode
         self.longPressDuration = longPressDuration
         self.sourcePortal = sourcePortal
         self.pressAnimation = pressAnimation
@@ -140,7 +145,7 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
     }
 
     @objc private func handleTap() {
-        guard self.presentedOverlayView == nil else {
+        guard self.presentedSession == nil else {
             return
         }
         self.presentMenu(triggeredByLongPress: false)
@@ -162,17 +167,17 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
         let pointInWindow = sourceView.convert(recognizer.location(in: sourceView), to: nil)
         switch recognizer.state {
         case .began:
-            if self.presentedOverlayView == nil {
+            if self.presentedSession == nil {
                 self.cancelCompetingGestureRecognizers(on: sourceView, excluding: recognizer)
                 self.presentMenu(triggeredByLongPress: true)
             }
         case .changed:
-            self.presentedOverlayView?.beginExternalSelection(at: pointInWindow)
-            self.presentedOverlayView?.updateExternalSelection(at: pointInWindow)
+            self.presentedSession?.beginExternalSelection(at: pointInWindow)
+            self.presentedSession?.updateExternalSelection(at: pointInWindow)
         case .ended:
-            self.presentedOverlayView?.endExternalSelection(performAction: true)
+            self.presentedSession?.endExternalSelection(performAction: true)
         case .cancelled, .failed:
-            self.presentedOverlayView?.endExternalSelection(performAction: false)
+            self.presentedSession?.endExternalSelection(performAction: false)
         default:
             break
         }
@@ -190,24 +195,25 @@ public final class ContextMenuInteraction: NSObject, UIGestureRecognizerDelegate
         }
         let presentationReference = self.resolvePresentationReference(for: sourceView)
         self.onWillPresent?()
-        guard let overlayView = ContextMenuPresenter.present(
+        guard let session = ContextMenuPresenter.present(
             configuration: configuration,
             from: sourceView,
+            presentation: self.presentationMode,
             presentationReference: presentationReference
         ) else {
             self.onDidDismiss?()
             return
         }
-        overlayView.onDidDismiss = { [weak self, weak overlayView] in
+        session.onDidDismiss = { [weak self, weak session] in
             guard let self else {
                 return
             }
-            if self.presentedOverlayView === overlayView {
-                self.presentedOverlayView = nil
+            if self.presentedSession === session {
+                self.presentedSession = nil
             }
             self.onDidDismiss?()
         }
-        self.presentedOverlayView = overlayView
+        self.presentedSession = session
     }
 
     public func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

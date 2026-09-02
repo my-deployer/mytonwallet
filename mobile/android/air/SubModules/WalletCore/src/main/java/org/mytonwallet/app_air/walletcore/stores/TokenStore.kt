@@ -23,6 +23,7 @@ import org.mytonwallet.app_air.walletcore.models.MBridgeError
 import org.mytonwallet.app_air.walletcore.models.MToken
 import org.mytonwallet.app_air.walletcore.moshi.ApiTokenWithPrice
 import org.mytonwallet.app_air.walletcore.moshi.MApiSwapAsset
+import org.mytonwallet.app_air.walletcore.moshi.MApiTokenDetails
 import org.mytonwallet.app_air.walletcore.moshi.api.ApiUpdate
 
 object TokenStore : IStore {
@@ -53,6 +54,7 @@ object TokenStore : IStore {
     // ///
 
     fun loadFromCache() {
+        TokenDetailsCacheHelper.loadFromCache()
         try {
             currencyRates = WGlobalStorage.getCurrencyRates()?.let { jsonObject ->
                 jsonObject.keys().asSequence().associateWith { key -> jsonObject.getDouble(key) }
@@ -177,6 +179,23 @@ object TokenStore : IStore {
             tokens[slug]?.priceUsd?.let { token.priceUsd = it }
         }
         tokens[slug] = token
+    }
+
+    fun onBridgeReady() {
+        TokenDetailsCacheHelper.onBridgeReady()
+    }
+
+    fun cachedTokenDetails(tokenSlug: String): MApiTokenDetails? =
+        TokenDetailsCacheHelper.cachedTokenDetails(tokenSlug)
+
+    suspend fun awaitCachedTokenDetails(accountId: String, tokenSlug: String): MApiTokenDetails? =
+        TokenDetailsCacheHelper.awaitCachedTokenDetails(accountId, tokenSlug)
+
+    suspend fun refreshTokenDetails(accountId: String, token: MToken): MApiTokenDetails? =
+        TokenDetailsCacheHelper.refreshTokenDetails(accountId, token)
+
+    fun removeTokenDetailsAccount(accountId: String) {
+        TokenDetailsCacheHelper.removeAccount(accountId)
     }
 
     private fun seedDefaultTokensIfRequired() {
@@ -336,8 +355,10 @@ object TokenStore : IStore {
     }
 
     override fun wipeData() {
+        clearCache()
     }
 
     override fun clearCache() {
+        TokenDetailsCacheHelper.clear()
     }
 }

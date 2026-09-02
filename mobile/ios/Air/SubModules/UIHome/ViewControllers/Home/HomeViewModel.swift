@@ -23,7 +23,6 @@ private let UPDATING_DELAY = 2
     func changeAccountTo(accountId: String, isNew: Bool) async
     func transactionsUpdated(accountChanged: Bool, isUpdateEvent: Bool)
     func tokensChanged()
-    func scrollToTop(animated: Bool)
     func removeSelfFromStack()
 }
 
@@ -189,20 +188,11 @@ private let UPDATING_DELAY = 2
         self.setUpdatingAfterDelayTask?.cancel()
         self.setUpdatingAfterDelayTask = nil
         delegate?.update(state: waitingForNetwork == true ? .waitingForNetwork : .updated, animated: true)
-        
+
         Task {
             await delegate?.changeAccountTo(accountId: account.id, isNew: isNew)
         }
         // get all data again
         initWalletInfo()
-        
-        // feel free to fix this monstrosity
-        self.delegate?.scrollToTop(animated: false)
-        DispatchQueue.main.async {
-            self.delegate?.scrollToTop(animated: false)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-            self.delegate?.scrollToTop(animated: false)
-        }
     }
 }

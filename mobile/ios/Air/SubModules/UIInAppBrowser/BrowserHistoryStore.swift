@@ -14,9 +14,14 @@ public final class BrowserHistoryStore: WalletCoreData.EventsObserver {
     private static let maxItemsPerTag = 100
 
     private let onLoadedSubject = PassthroughSubject<Void, Never>()
+    private let onChangedSubject = PassthroughSubject<Void, Never>()
     
     public var onLoaded: AnyPublisher<Void, Never> {
         onLoadedSubject.eraseToAnyPublisher()
+    }
+
+    public var onChanged: AnyPublisher<Void, Never> {
+        onChangedSubject.eraseToAnyPublisher()
     }
 
     private var cachedAccountId: String?
@@ -39,6 +44,7 @@ public final class BrowserHistoryStore: WalletCoreData.EventsObserver {
             let newItem = BrowserHistoryItem(accountId: accountId, tag: tag,
                                              url: url, title: title, favicon: favicon, visitDate: now)
             items.insert(newItem, at: 0)
+            onChangedSubject.send()
         }
 
         // Persist asynchronously off the main thread.
@@ -75,6 +81,7 @@ public final class BrowserHistoryStore: WalletCoreData.EventsObserver {
     public func clear(accountId: String, tag: String) {
         if cachedAccountId == accountId, isLoaded {
             items.removeAll { $0.tag == tag }
+            onChangedSubject.send()
         }
         Task.detached {
             guard let db else { return }
@@ -101,11 +108,13 @@ public final class BrowserHistoryStore: WalletCoreData.EventsObserver {
                 items = []
                 isLoaded = false
                 cachedAccountId = nil
+                onChangedSubject.send()
             }
         case .accountsReset:
             items = []
             isLoaded = false
             cachedAccountId = nil
+            onChangedSubject.send()
         default:
             break
         }
@@ -135,6 +144,7 @@ public final class BrowserHistoryStore: WalletCoreData.EventsObserver {
                     self.items = loaded
                     self.isLoaded = true
                     self.onLoadedSubject.send()
+                    self.onChangedSubject.send()
                 }
             } catch {
                 log.error("loadForAccount failed: \(error, .public)")

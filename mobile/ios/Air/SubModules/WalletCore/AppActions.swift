@@ -18,6 +18,24 @@ public struct ActivityDetailsPresentation {
     }
 }
 
+public enum StakePrefilledAmount: Equatable, Sendable {
+    case exact(String)
+    case all
+}
+
+public enum AssetListInitialPosition: Hashable, Sendable {
+    case token(TokenID)
+    case nft(String)
+
+    public var tokenID: TokenID? {
+        if case .token(let tokenID) = self { tokenID } else { nil }
+    }
+
+    public var nftID: String? {
+        if case .nft(let nftID) = self { nftID } else { nil }
+    }
+}
+
 // Please keep methods in alphabetical order
 
 @MainActor public protocol AppActionsProtocol {
@@ -40,8 +58,8 @@ public struct ActivityDetailsPresentation {
     static func showAddToken()
     static func showAddWallet(network: ApiNetwork)
     static func showAnyAccountTx(accountId: String, chain: ApiChain, txId: String, showError: Bool)
-    static func showAgent()
-    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter)
+    static func showAgent(query: String?)
+    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?)
     static func showAssetsAndActivity()
     static func showBuyWithCard(accountContext: AccountContext, chain: ApiChain?, push: Bool?)
     static func showConnectedDapps(push: Bool)
@@ -50,7 +68,7 @@ public struct ActivityDetailsPresentation {
     static func showCustomizeWallet(accountId: String?)
     static func showDebugView()
     static func showDeleteAccount(accountId: String)
-    static func showEarn(accountContext: AccountContext, tokenSlug: String?)
+    static func showEarn(accountContext: AccountContext, tokenSlug: String?, prefilledAmount: StakePrefilledAmount?)
     static func showError(error: Error?)
     static func showExplore()
     static func showExploreSite(siteHost: String)
@@ -62,14 +80,14 @@ public struct ActivityDetailsPresentation {
     static func showNftByAddress(_ nftAddress: String)
     static func showPromotion(_ promotion: ApiPromotion)
     static func showPortfolio(accountContext: AccountContext)
-    static func showReceive(accountContext: AccountContext, chain: ApiChain?)
+    static func showReceive(accountContext: AccountContext, chain: ApiChain?, buyingToken: String?)
     static func showRenewDomain(accountSource: AccountSource, nftsToRenew: [String])
     static func showRenameAccount(accountId: String)
     static func showSaveAddressDialog(accountContext: AccountContext, chain: ApiChain, address: String)
     static func showSettings(section: AppSettingsSection?)
     static func showSend(accountContext: AccountContext, prefilledValues: SendPrefilledValues)
     static func showSell(accountContext: AccountContext, tokenSlug: String?)
-    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, push: Bool?)
+    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, defaultBuyingAmount: Double?, push: Bool?)
     static func showTemporaryViewAccount(network: ApiNetwork, addressOrDomainByChain: [String: String])
     static func showToast(_ config: ToastConfig)
     static func showToken(accountSource: AccountSource, token: ApiToken, isInModal: Bool)
@@ -91,12 +109,48 @@ public extension AppActionsProtocol {
         Self.openInBrowser(url, title: title, injectDappConnect: injectDappConnect, historyTag: nil)
     }
 
+    static func showAgent() {
+        showAgent(query: nil)
+    }
+
+    static func showAssets(
+        accountSource: AccountSource,
+        selectedTab: DisplayAssetTab,
+        collectionsFilter: NftCollectionFilter
+    ) {
+        showAssets(
+            accountSource: accountSource,
+            selectedTab: selectedTab,
+            collectionsFilter: collectionsFilter,
+            initialPosition: nil
+        )
+    }
+
+    static func showReceive(accountContext: AccountContext, chain: ApiChain?) {
+        showReceive(accountContext: accountContext, chain: chain, buyingToken: nil)
+    }
+
+    static func showEarn(accountContext: AccountContext, tokenSlug: String?) {
+        showEarn(accountContext: accountContext, tokenSlug: tokenSlug, prefilledAmount: nil)
+    }
+
     static func showToast(style: ToastStyle? = nil, icon: ToastIcon? = nil, message: String, duration: Double? = nil,
                           transition: ToastTransition? = nil, actionTitle: String? = nil, action: (() -> ())? = nil) {
         showToast(.init(
             style: style, icon: icon, message: message,
             duration: duration, transition: transition,
             actionTitle: actionTitle, action: action)
+        )
+    }
+
+    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, push: Bool?) {
+        showSwap(
+            accountContext: accountContext,
+            defaultSellingToken: defaultSellingToken,
+            defaultBuyingToken: defaultBuyingToken,
+            defaultSellingAmount: defaultSellingAmount,
+            defaultBuyingAmount: nil,
+            push: push
         )
     }
     
@@ -131,8 +185,8 @@ private class DummyAppActionProtocolImpl: AppActionsProtocol {
     static func showAddToken() { }
     static func showAddWallet(network: ApiNetwork) { }
     static func showAnyAccountTx(accountId: String, chain: ApiChain, txId: String, showError: Bool) { }
-    static func showAgent() { }
-    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter) { }
+    static func showAgent(query: String?) { }
+    static func showAssets(accountSource: AccountSource, selectedTab: DisplayAssetTab, collectionsFilter: NftCollectionFilter, initialPosition: AssetListInitialPosition?) { }
     static func showAssetsAndActivity() { }
     static func showBuyWithCard(accountContext: AccountContext, chain: ApiChain?, push: Bool?) { }
     static func showConnectedDapps(push: Bool) { }
@@ -141,7 +195,7 @@ private class DummyAppActionProtocolImpl: AppActionsProtocol {
     static func showCustomizeAppTabs() { }
     static func showDebugView() { }
     static func showDeleteAccount(accountId: String) { }
-    static func showEarn(accountContext: AccountContext, tokenSlug: String?) { }
+    static func showEarn(accountContext: AccountContext, tokenSlug: String?, prefilledAmount: StakePrefilledAmount?) { }
     static func showError(error: Error?) { }
     static func showExplore() { }
     static func showExploreSite(siteHost: String) { }
@@ -153,14 +207,14 @@ private class DummyAppActionProtocolImpl: AppActionsProtocol {
     static func showNftByAddress(_ nftAddress: String) { }
     static func showPromotion(_ promotion: ApiPromotion) { }
     static func showPortfolio(accountContext: AccountContext) { }
-    static func showReceive(accountContext: AccountContext, chain: ApiChain?) { }
+    static func showReceive(accountContext: AccountContext, chain: ApiChain?, buyingToken: String?) { }
     static func showRenewDomain(accountSource: AccountSource, nftsToRenew: [String]) { }
     static func showRenameAccount(accountId: String) { }
     static func showSaveAddressDialog(accountContext: AccountContext, chain: ApiChain, address: String) { }
     static func showSettings(section: AppSettingsSection?) { }
     static func showSend(accountContext: AccountContext, prefilledValues: SendPrefilledValues) { }
     static func showSell(accountContext: AccountContext, tokenSlug: String?) { }
-    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, push: Bool?) { }
+    static func showSwap(accountContext: AccountContext, defaultSellingToken: String?, defaultBuyingToken: String?, defaultSellingAmount: Double?, defaultBuyingAmount: Double?, push: Bool?) { }
     static func showTemporaryViewAccount(network: ApiNetwork, addressOrDomainByChain: [String: String]) { }
     static func showToast(_ config: ToastConfig) { }
     static func showToken(accountSource: AccountSource, token: ApiToken, isInModal: Bool) { }

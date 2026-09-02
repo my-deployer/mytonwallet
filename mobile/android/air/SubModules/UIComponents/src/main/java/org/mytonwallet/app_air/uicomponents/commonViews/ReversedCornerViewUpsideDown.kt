@@ -15,7 +15,6 @@ import org.mytonwallet.app_air.uicomponents.drawable.StickyBottomGradientDrawabl
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.widgets.WBlurryBackgroundView
 import org.mytonwallet.app_air.uicomponents.widgets.WThemedView
-import org.mytonwallet.app_air.walletbasecontext.theme.ThemeManager
 import org.mytonwallet.app_air.walletbasecontext.theme.ViewConstants
 import org.mytonwallet.app_air.walletbasecontext.theme.WColor
 import org.mytonwallet.app_air.walletbasecontext.theme.color
@@ -34,6 +33,10 @@ class ReversedCornerViewUpsideDown(
     override val appliesAdditionalTabletPadding: Boolean
         get() = additionalTabletPadding
 
+    companion object {
+        private const val GRADIENT_ALPHA = 229
+    }
+
     init {
         id = generateViewId()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
@@ -49,6 +52,14 @@ class ReversedCornerViewUpsideDown(
 
     var isGradientMode: Boolean = !forceBlurView && WGlobalStorage.isGradientNavigationBarActive()
         private set
+
+    // Y offset (px) from the bottom edge where the gradient fade ends; the region below it stays solid.
+    var gradientFadeEndY = 0f
+        set(value) {
+            if (field == value) return
+            field = value
+            if (isGradientMode) rebuildGradientDrawable()
+        }
 
     val extraTopHeight: Int
         get() = if (isGradientMode) ViewConstants.ADDITIONAL_GRADIENT_HEIGHT.dp.toInt() else 0
@@ -163,20 +174,28 @@ class ReversedCornerViewUpsideDown(
     }
 
     private fun rebuildGradientDrawable() {
-        val bgColor = overlayColor ?: if (ThemeManager.isDark) {
-            WColor.SecondaryBackground.color
-        } else {
-            WColor.Background.color
-        }
+        val bgColor = overlayColor ?: WColor.SecondaryBackground.color
         val drawable = StickyBottomGradientDrawable(
             intArrayOf(
                 bgColor.colorWithAlpha(0),
-                bgColor
+                bgColor.colorWithAlpha(GRADIENT_ALPHA),
+                bgColor.colorWithAlpha(GRADIENT_ALPHA)
             )
         )
-        drawable.setStops(floatArrayOf(0f, 1f))
+        drawable.setStops(gradientStops())
         gradientDrawable = drawable
         gradientView.background = drawable
+    }
+
+    private fun gradientStops(): FloatArray {
+        val h = height
+        val fadeEnd = if (h > 0) ((h - gradientFadeEndY) / h).coerceIn(0f, 1f) else 1f
+        return floatArrayOf(0f, fadeEnd, 1f)
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (isGradientMode && h != oldh) gradientDrawable?.setStops(gradientStops())
     }
 
     private fun attachGradientView() {

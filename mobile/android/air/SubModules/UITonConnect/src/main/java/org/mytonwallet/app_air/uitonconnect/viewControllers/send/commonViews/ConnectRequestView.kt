@@ -156,7 +156,10 @@ class ConnectRequestView(context: Context) :
                 hideSkeleton()
             }
             titleTextView.text =
-                LocaleController.getFormattedString("Connect to %1$@?", listOf(dApp.name ?: "dApp"))
+                LocaleController.getStringWithKeyValues(
+                    "Connect to %name%?",
+                    listOf("%name%" to (dApp.name ?: "dApp"))
+                )
             linkTextView.text = buildDappAddressLabel(dApp)
             linkTextView.movementMethod = LinkMovementMethod.getInstance()
             dApp.iconUrl?.let { iconUrl ->

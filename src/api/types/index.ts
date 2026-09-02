@@ -13,3 +13,4 @@ export * from './ledger';
 export * from './transfer';
 export * from './wallet';
 export * from './portfolio';
+export * from './market';

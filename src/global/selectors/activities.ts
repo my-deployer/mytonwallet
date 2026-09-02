@@ -1,8 +1,8 @@
 import type { ApiActivity, ApiActivityTimestamps, ApiChain } from '../../api/types';
 import type { GlobalState } from '../types';
 
-import { getIsActivitySuitableForFetchingTimestamp, getIsTxIdLocal } from '../../util/activities';
-import { compact, findLast, mapValues } from '../../util/iteratees';
+import { getActivityContinuationTimestamp, getIsTxIdLocal } from '../../util/activities';
+import { compact, mapValues } from '../../util/iteratees';
 import { selectAccountState } from './accounts';
 
 export function selectNewestActivityTimestamps(global: GlobalState, accountId: string): ApiActivityTimestamps {
@@ -22,10 +22,8 @@ export function selectLastActivityTimestamp(
 
   const { byId, idsMain, idsBySlug } = activities;
   const ids = (tokenSlug ? idsBySlug?.[tokenSlug] : idsMain) || [];
-  const txId = findLast(ids, (id) => getIsActivitySuitableForFetchingTimestamp(byId[id]));
-  if (!txId) return undefined;
 
-  return byId[txId].timestamp;
+  return getActivityContinuationTimestamp(ids, (id) => byId[id]);
 }
 
 export function selectLocalActivitiesSlow(global: GlobalState, accountId: string) {

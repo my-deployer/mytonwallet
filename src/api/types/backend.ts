@@ -1,4 +1,5 @@
 import type { DieselStatus } from '../../global/types';
+import type { AgentProtocolVersion } from '../../util/agent/agentOverride';
 import type { StakingPoolConfig } from '../chains/ton/contracts/JettonStaking/StakingPool';
 import type { ApiTonWalletVersion } from '../chains/ton/types';
 import type { ApiChain, ApiCountryCode, ApiLoyaltyType, ApiMtwCardType, ApiTokenWithPrice } from './misc';
@@ -104,7 +105,7 @@ export type ApiSwapEstimateVariant = {
   toAmount: string;
   toMinAmount: string;
   impact: number;
-  dexLabel: ApiSwapDexLabel;
+  dexLabel?: ApiSwapDexLabel;
   other?: ApiSwapEstimateVariant[];
   routes?: ApiSwapRoute[][];
   // Fees
@@ -127,7 +128,7 @@ export type ApiSwapDexEstimateResponse = {
   shouldTryDiesel?: boolean;
   toMinAmount: string;
   impact: number;
-  dexLabel: ApiSwapDexLabel;
+  dexLabel?: ApiSwapDexLabel;
   dexRouterLabel?: ApiSwapDexRouterLabel;
   dieselStatus: DieselStatus;
   other?: ApiSwapEstimateVariant[]; // Only in V2
@@ -174,6 +175,8 @@ export type ApiSwapBuildTransactionRequest = {
   dexLabel?: ApiSwapDexLabel;
   dexRouterLabel?: ApiSwapDexRouterLabel;
   swapVersion?: ApiSwapVersion;
+  /** Which side of the trade the user fixed, so a finished swap can still be told which one it was. */
+  swapMode?: 'exact_in' | 'exact_out';
   networkFee?: string;
   shouldTryDiesel?: boolean;
   dieselFee?: string;
@@ -494,6 +497,7 @@ export type ApiBackendConfig = {
   swapVersion?: ApiSwapVersion;
   seasonalTheme?: 'newYear' | 'valentine';
   knowledgeBaseVersion?: string;
+  agentProtocolVersion?: AgentProtocolVersion;
   preferredAgent?: 'local' | 'online' | 'hybrid';
   // Lower-case currency codes the on/off-ramp surfaces may offer; the client may only narrow its own baseline with it
   allowedOnOffRampCurrencies?: string[];

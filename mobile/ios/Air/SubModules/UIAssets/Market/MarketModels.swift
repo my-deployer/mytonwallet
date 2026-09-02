@@ -2,11 +2,17 @@ import SwiftUI
 import WalletContext
 import WalletCore
 
-struct MarketToken: Hashable, Identifiable {
-    struct Chart: Hashable {
-        let fillImageName: String
-        let lineImageName: String
-        let tint: UInt32
+struct MarketToken: Hashable, Identifiable, Sendable {
+    enum Chart: Hashable, Sendable {
+        case bundled(fillImageName: String, lineImageName: String, tint: UInt32)
+        case sparkline(points: [Double], tint: UInt32)
+
+        var tint: UInt32 {
+            switch self {
+            case .bundled(_, _, let tint), .sparkline(_, let tint):
+                tint
+            }
+        }
     }
 
     let token: ApiToken
@@ -16,7 +22,7 @@ struct MarketToken: Hashable, Identifiable {
 
     var id: String { token.slug }
     var name: String { token.displayName(strippingLabelWhenShown: true) }
-    var price: Double? { token.price ?? fallbackPrice }
+    var price: Double? { token.price ?? fallbackPrice.map { $0 * TokenStore.baseCurrencyRate } }
     var change: Double { token.percentChange24h ?? fallbackChange }
     var changeText: String { formatPercent(change / 100) }
     var isPositive: Bool { change >= 0 }
@@ -29,8 +35,8 @@ struct MarketToken: Hashable, Identifiable {
     }
 }
 
-struct MarketSection: Hashable, Identifiable {
-    enum Layout: Hashable {
+struct MarketSection: Hashable, Identifiable, Sendable {
+    enum Layout: Hashable, Sendable {
         case largeHorizontal
         case grid
         case rows
@@ -40,12 +46,21 @@ struct MarketSection: Hashable, Identifiable {
     let title: String
     let layout: Layout
     let tokens: [MarketToken]
+    let visibleLimit: Int?
     let showsSeeAll: Bool
+
+    var visibleTokens: [MarketToken] {
+        guard let visibleLimit, visibleLimit > 0 else { return tokens }
+        return Array(tokens.prefix(visibleLimit))
+    }
 }
 
 extension MarketSection {
-    static func samples() -> [MarketSection] {
-        let storeTokens = TokenStore.tokens
+    @concurrent static func samples() async -> [MarketSection] {
+        samples(tokens: TokenStore.tokens)
+    }
+
+    static func samples(tokens storeTokens: [String: ApiToken]) -> [MarketSection] {
         let knownFallbacks: [ApiToken] = [
             .TONCOIN, .ETH, .BNB, .SOLANA, .MYCOIN, .HYPERLIQUID, .TRX, .POLYGON,
             .ROBINHOOD, .AVALANCHE, .ARBITRUM, .MONAD, .BASE,
@@ -85,17 +100,17 @@ extension MarketSection {
             changes: [6.63, -0.74, -3.52],
             fallbackPrices: [5.21, 65.85, 163.44],
             charts: [
-                .init(
+                .bundled(
                     fillImageName: "MarketMyWalletChartFill",
                     lineImageName: "MarketMyWalletChartLine",
                     tint: 0x016FFA
                 ),
-                .init(
+                .bundled(
                     fillImageName: "MarketJupiterChartFill",
                     lineImageName: "MarketJupiterChartLine",
                     tint: 0x1BB0CA
                 ),
-                .init(
+                .bundled(
                     fillImageName: "MarketHyperliquidChartFill",
                     lineImageName: "MarketHyperliquidChartLine",
                     tint: 0x208D80
@@ -149,41 +164,141 @@ extension MarketSection {
         return [
             MarketSection(
                 id: "movers",
-                title: "Today's Movers",
+                title: lang("Today's Movers"),
                 layout: .largeHorizontal,
                 tokens: movers,
+                visibleLimit: nil,
                 showsSeeAll: false
             ),
             MarketSection(
                 id: "popular-tokens",
-                title: "Popular Tokens",
+                title: lang("Popular Tokens"),
                 layout: .grid,
                 tokens: popular,
+                visibleLimit: nil,
                 showsSeeAll: true
             ),
             MarketSection(
                 id: "tokenized-stocks",
-                title: "Tokenized Stocks",
+                title: lang("Tokenized Stocks"),
                 layout: .grid,
                 tokens: stocks,
+                visibleLimit: nil,
                 showsSeeAll: true
             ),
             MarketSection(
                 id: "tokenized-gold",
-                title: "Tokenized Gold",
+                title: lang("Tokenized Gold"),
                 layout: .rows,
                 tokens: gold,
+                visibleLimit: nil,
                 showsSeeAll: false
             ),
             MarketSection(
                 id: "index-funds",
-                title: "Index Funds",
+                title: lang("Index Funds"),
                 layout: .grid,
                 tokens: indices,
+                visibleLimit: nil,
                 showsSeeAll: true
             ),
         ]
     }
+}
+
+enum MarketSectionBuilder {
+    @concurrent static func build(from response: ApiMarketAssetsResponse) async -> [MarketSection] {
+        build(from: response, storeTokens: TokenStore.tokens)
+    }
+
+    static func build(
+        from response: ApiMarketAssetsResponse,
+        storeTokens: [String: ApiToken]
+    ) -> [MarketSection] {
+        response.sections.compactMap { section in
+            let tokens = section.assets.map { asset in
+                marketToken(from: asset, storeTokens: storeTokens)
+            }
+            guard !tokens.isEmpty else { return nil }
+
+            let layout: MarketSection.Layout = switch section.layout {
+            case .largeHorizontal: .largeHorizontal
+            case .grid: .grid
+            case .rows: .rows
+            }
+            let visibleLimit = section.limit.flatMap { $0 > 0 ? $0 : nil }
+
+            return MarketSection(
+                id: section.id,
+                title: section.title,
+                layout: layout,
+                tokens: tokens,
+                visibleLimit: visibleLimit,
+                showsSeeAll: section.hasMore
+                    || visibleLimit.map { tokens.count > $0 } == true
+            )
+        }
+    }
+
+    private static func marketToken(
+        from asset: ApiMarketAsset,
+        storeTokens: [String: ApiToken]
+    ) -> MarketToken {
+        let token: ApiToken
+        if var storedToken = storeTokens[asset.slug] {
+            storedToken.localizedName = asset.name
+            storedToken.image = storedToken.image?.nilIfEmpty ?? asset.image.nilIfEmpty
+            storedToken.label = storedToken.label?.nilIfEmpty ?? asset.label?.nilIfEmpty
+            token = storedToken
+        } else {
+            token = ApiToken(
+                slug: asset.slug,
+                name: asset.name,
+                localizedName: asset.name,
+                symbol: asset.symbol,
+                decimals: 9,
+                chain: asset.chain,
+                tokenAddress: asset.tokenAddress,
+                image: asset.image,
+                label: asset.label,
+                priceUsd: asset.price,
+                percentChange24h: asset.percentChange24h
+            )
+        }
+
+        return MarketToken(
+            token: token,
+            fallbackPrice: asset.price,
+            fallbackChange: asset.percentChange24h,
+            chart: .sparkline(values: asset.sparkline, tintColor: asset.tintColor)
+        )
+    }
+}
+
+extension MarketToken.Chart {
+    static func sparkline(values: [Double]?, tintColor: String?) -> Self? {
+        guard let tint = tintColor.flatMap(parseRGBColor),
+              let values else { return nil }
+        let finiteValues = values.filter(\.isFinite)
+        guard finiteValues.count >= 2,
+              let minimum = finiteValues.min(),
+              let maximum = finiteValues.max() else { return nil }
+
+        let range = maximum - minimum
+        let points = finiteValues.map { value in
+            range > 0 ? 1 - (value - minimum) / range : 0.5
+        }
+        return .sparkline(points: points, tint: tint)
+    }
+}
+
+private func parseRGBColor(_ value: String) -> UInt32? {
+    var hex = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if hex.hasPrefix("#") {
+        hex.removeFirst()
+    }
+    guard hex.count == 6 else { return nil }
+    return UInt32(hex, radix: 16)
 }
 
 private extension Collection {

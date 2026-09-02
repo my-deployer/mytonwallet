@@ -78,7 +78,7 @@ struct IntroView: View {
     
     var moreAbout: some View {
         Button(action: onMoreAbout) {
-            let text = lang("More about %app_name%", arg1: APP_NAME)
+            let text = L10n.moreAboutAppName(appName: APP_NAME)
             Text("\(text) ›")
                 .foregroundStyle(Color.air.secondaryLabel)
                 .textStyle(.body)
@@ -93,8 +93,8 @@ struct IntroView: View {
     var useResposibly: some View {
         let link = "[\(lang("use the wallet responsibly"))](responsibly://s)"
         let accessibilityLinkText = lang("use the wallet responsibly")
-        let accessibilityText = langMd("I agree to %term%", arg1: accessibilityLinkText)
-        let text = langMd("I agree to %term%", arg1: link)
+        let accessibilityText = LocalizedStringKey(L10n.iAgreeToTerm(term: accessibilityLinkText))
+        let text = LocalizedStringKey(L10n.iAgreeToTerm(term: link))
         
         HStack(spacing: 10) {
             Checkmark(isOn: didAgreeToTerms)

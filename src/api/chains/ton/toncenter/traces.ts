@@ -19,8 +19,11 @@ export async function fetchTrace(options: {
   network: ApiNetwork;
   msgHashNormalized: string;
   isActionPending?: boolean;
+  signal?: AbortSignal;
 }): Promise<FetchTraceResult> {
-  const { network, msgHashNormalized, isActionPending } = options;
+  const {
+    network, msgHashNormalized, isActionPending, signal,
+  } = options;
 
   const response = await callToncenterV3<TracesResponse>(
     network,
@@ -29,6 +32,7 @@ export async function fetchTrace(options: {
       [isActionPending ? 'ext_msg_hash' : 'msg_hash']: msgHashNormalized,
       include_actions: true,
     },
+    signal,
   );
 
   return {

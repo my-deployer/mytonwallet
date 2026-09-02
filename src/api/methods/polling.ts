@@ -7,12 +7,14 @@ import type {
   ApiCurrencyRates,
   ApiNetwork,
   ApiSwapAsset,
+  ApiUpdateConfig,
   ApiUpdatingStatus,
   OnApiUpdate,
 } from '../types';
 
-import { IS_FEATURE_LIMITED, IS_STAKING_DISABLED, NO_MFA, NO_STAKING, NO_SWAP } from '../../config';
+import { NO_EXTRA_FEATURES } from '../../config';
 import { parseAccountId } from '../../util/account';
+import { parseAgentProtocolVersion } from '../../util/agent/agentOverride';
 import { areDeepEqual } from '../../util/areDeepEqual';
 import { omit } from '../../util/iteratees';
 import { logDebugError } from '../../util/logs';
@@ -49,10 +51,13 @@ import {
 } from '../common/tokens';
 import { MINUTE, SEC } from '../constants';
 import { storage } from '../storages';
-import { refreshMfaStateAndNotify } from './mfa';
+import {
+  requireAgentV2Lifecycle,
+  requireMfaMethods,
+  requireStakingMethods,
+  requireSwapMethods,
+} from './optional';
 import { resolveDataPreloadPromise } from './preload';
-import { tryUpdateStakingCommonData } from './staking';
-import { swapGetAssets } from './swap';
 
 const BACKEND_INTERVAL = 30 * SEC;
 const LONG_BACKEND_INTERVAL = MINUTE;
@@ -67,6 +72,7 @@ const TOKEN_DETAILS_THROTTLE = 3 * SEC;
 let onUpdate: OnApiUpdate;
 let stopCommonBackendPolling: NoneToVoidFunction | undefined;
 let stopActiveAccountPolling: NoneToVoidFunction | undefined;
+let configUpdateGeneration = 0;
 const inactiveAccountPolling = createInactiveAccountsPollingManager();
 const setUpdatingStatus = createUpdatingStatusManager();
 
@@ -88,8 +94,8 @@ export function initPolling(_onUpdate: OnApiUpdate) {
     tryUpdateKnownAddresses(),
     tryUpdateTokens(),
     tryUpdateCurrencyRates(),
-    !IS_STAKING_DISABLED && !NO_SWAP && tryUpdateSwapTokens(),
-    !NO_STAKING && tryUpdateStakingCommonData(),
+    !NO_EXTRA_FEATURES && tryUpdateSwapTokens(),
+    !NO_EXTRA_FEATURES && requireStakingMethods().tryUpdateStakingCommonData(),
   ]).then(() => resolveDataPreloadPromise());
 
   void tryUpdateConfig();
@@ -99,6 +105,7 @@ export function initPolling(_onUpdate: OnApiUpdate) {
 }
 
 export async function destroyPolling() {
+  configUpdateGeneration += 1;
   stopCommonBackendPolling?.();
   stopCommonBackendPolling = undefined;
   removeAllPollingAccounts();
@@ -119,9 +126,9 @@ function setupCommonBackendPolling() {
         await Promise.all([
           tryUpdateTokens(),
           tryUpdateKnownAddresses(),
-          !IS_STAKING_DISABLED && !NO_STAKING && tryUpdateStakingCommonData(),
+          !NO_EXTRA_FEATURES && requireStakingMethods().tryUpdateStakingCommonData(),
           tryUpdateConfig(),
-          !NO_SWAP && tryUpdateSwapTokens(),
+          !NO_EXTRA_FEATURES && tryUpdateSwapTokens(),
         ]);
       },
     }).stop,
@@ -178,7 +185,7 @@ async function tryUpdateCurrencyRates() {
 
 async function tryUpdateSwapTokens() {
   try {
-    const assets = await swapGetAssets();
+    const assets = await requireSwapMethods().swapGetAssets();
 
     await tokensPreload.promise;
 
@@ -205,8 +212,15 @@ async function tryUpdateSwapTokens() {
 }
 
 export async function tryUpdateConfig() {
+  const generation = ++configUpdateGeneration;
   try {
-    const config = await callBackendGet<ApiBackendConfig>('/utils/get-config');
+    const rawConfig = await callBackendGet<ApiBackendConfig>('/utils/get-config');
+    if (generation !== configUpdateGeneration) return;
+
+    const config = {
+      ...rawConfig,
+      agentProtocolVersion: parseAgentProtocolVersion(rawConfig.agentProtocolVersion),
+    };
     setBackendConfigCache(config);
 
     const {
@@ -219,11 +233,12 @@ export async function tryUpdateConfig() {
       seasonalTheme,
       isUpdateRequired: isAppUpdateRequired,
       knowledgeBaseVersion,
+      agentProtocolVersion,
       preferredAgent,
       allowedOnOffRampCurrencies,
     } = config;
 
-    onUpdate({
+    const updateConfig: ApiUpdateConfig = {
       type: 'updateConfig',
       isLimited,
       isCopyStorageEnabled,
@@ -233,9 +248,28 @@ export async function tryUpdateConfig() {
       swapVersion,
       seasonalTheme,
       knowledgeBaseVersion,
+      agentProtocolVersion,
       preferredAgent,
       allowedOnOffRampCurrencies,
-    });
+    };
+
+    if (!NO_EXTRA_FEATURES) {
+      const lifecycle = requireAgentV2Lifecycle();
+      const reconciliation = lifecycle.reconcileAgentV2ProtocolVersion(agentProtocolVersion);
+      updateConfig.agentProtocolVersion = lifecycle.resolveAgentV2ProtocolVersionForRouting(agentProtocolVersion);
+      void reconciliation.then(() => {
+        if (generation !== configUpdateGeneration) return;
+
+        const reconciledVersion = lifecycle.resolveAgentV2ProtocolVersionForRouting(agentProtocolVersion);
+        if (reconciledVersion === updateConfig.agentProtocolVersion) return;
+        onUpdate({
+          ...updateConfig,
+          agentProtocolVersion: reconciledVersion,
+        });
+      }).catch((err) => logDebugError('reconcileAgentV2ProtocolVersion', err));
+    }
+
+    onUpdate(updateConfig);
 
     const localUtc = (new Date()).getTime();
     if (Math.abs(serverUtc - localUtc) > INCORRECT_TIME_DIFF) {
@@ -261,8 +295,8 @@ export async function setActivePollingAccount(
     const account = await fetchStoredAccount(accountId);
 
     const stopPollingFns = [
-      !IS_FEATURE_LIMITED ? setupAccountConfigPolling(accountId, account).stop : undefined,
-      !NO_MFA && doesAccountHaveChain(account, 'ton') ? setupMfaPolling(accountId).stop : undefined,
+      canPollAccountConfig(account) ? setupAccountConfigPolling(accountId, account).stop : undefined,
+      !NO_EXTRA_FEATURES && doesAccountHaveChain(account, 'ton') ? setupMfaPolling(accountId).stop : undefined,
 
       ...(Object.keys(chains) as (keyof typeof chains)[]).map((chain) => {
         if (doesAccountHaveChain(account, chain)) {
@@ -312,6 +346,15 @@ export function removeAllPollingAccounts() {
   forgetAllHeldTokens();
 }
 
+/**
+ * The endpoint answers a `view` account with an empty config, and keys every other type by its TON
+ * address. An account of another type that carries no TON address therefore has nothing to ask for,
+ * and asking anyway is a request the backend can only reject.
+ */
+function canPollAccountConfig(account: ApiAccountAny) {
+  return account.type === 'view' || doesAccountHaveChain(account, 'ton');
+}
+
 function setupAccountConfigPolling(accountId: string, account: ApiAccountAny) {
   let lastResult: ApiAccountConfig | undefined;
 
@@ -353,7 +396,7 @@ function setupMfaPolling(accountId: string) {
     period: MFA_INTERVAL,
     async poll() {
       try {
-        await refreshMfaStateAndNotify(accountId);
+        await requireMfaMethods().refreshMfaStateAndNotify(accountId);
       } catch (err) {
         logDebugError('setupMfaPolling', err);
       }
@@ -465,7 +508,7 @@ function createInactiveAccountsPollingManager() {
     if (stopByAccount[accountId]) return;
 
     const stopFns = [
-      !NO_MFA && doesAccountHaveChain(account, 'ton') ? setupMfaPolling(accountId).stop : undefined,
+      !NO_EXTRA_FEATURES && doesAccountHaveChain(account, 'ton') ? setupMfaPolling(accountId).stop : undefined,
       ...(Object.keys(chains) as (keyof typeof chains)[]).map((chain) => {
         if (doesAccountHaveChain(account, chain)) {
           return chains[chain].setupInactivePolling(accountId, account, onUpdate);

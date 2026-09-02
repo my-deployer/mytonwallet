@@ -11,7 +11,11 @@ public class NftsFullScreenVC: WViewController {
     private let filter: NftCollectionFilter
     private let nftsVCManager: NftsVCManager
     
-    public init(accountSource: AccountSource, filter: NftCollectionFilter) {
+    public init(
+        accountSource: AccountSource,
+        filter: NftCollectionFilter,
+        initialNftID: String? = nil
+    ) {
         self.filter = filter
         self.nftsVCManager = NftsVCManager(tabsViewModel: WalletAssetsViewModel(accountSource: accountSource))
         self.nftsVC = .init(
@@ -19,7 +23,8 @@ public class NftsFullScreenVC: WViewController {
             manager: nftsVCManager,
             layoutMode: .regular,
             canOpenCollection: false,
-            filter: filter
+            filter: filter,
+            initialNftID: initialNftID
         )
         
         super.init(nibName: nil, bundle: nil)

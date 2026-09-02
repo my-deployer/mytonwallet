@@ -34,12 +34,6 @@ final class SceneDelegate: UIResponder, UISceneDelegate, UIWindowSceneDelegate {
         let window = WWindow(windowScene: windowScene)
         self.window = window
 
-        #if DEBUG
-        if launchProtectedActionPresentationSnapshot(in: window) {
-            return
-        }
-        #endif
-
         AirLauncher.launch(window: window)
         window.makeKeyAndVisible()
         StartupTrace.mark("sceneDelegate.window.ready")
@@ -143,25 +137,4 @@ final class SceneDelegate: UIResponder, UISceneDelegate, UIWindowSceneDelegate {
     private func summarize(_ connectionOptions: UIScene.ConnectionOptions) -> String {
         "urlContexts=\(connectionOptions.urlContexts.count) userActivities=\(connectionOptions.userActivities.count) notificationResponse=\(connectionOptions.notificationResponse != nil) shortcutItem=\(connectionOptions.shortcutItem != nil)"
     }
-
-    #if DEBUG
-    private func launchProtectedActionPresentationSnapshot(in window: WWindow) -> Bool {
-        guard let identifier = ProcessInfo.processInfo.environment["PROTECTED_ACTION_PRESENTATION_SNAPSHOT"] else {
-            return false
-        }
-        guard let viewController = ProtectedActionPresentationSnapshots.makeViewController(identifier: identifier) else {
-            fatalError("Unknown protected action presentation snapshot: \(identifier)")
-        }
-
-        UIView.setAnimationsEnabled(false)
-        window.overrideUserInterfaceStyle = .light
-        window.rootViewController = viewController
-        window.makeKeyAndVisible()
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-            ProtectedActionPresentationSnapshots.prepareForCapture(viewController)
-        }
-        return true
-    }
-    #endif
 }

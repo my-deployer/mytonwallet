@@ -1,7 +1,7 @@
 import type { ApiStakingState } from '../../api/types';
 import type { Account, GlobalState } from '../types';
 
-import { DEFAULT_NOMINATORS_STAKING_STATE, IS_STAKING_DISABLED, TONCOIN } from '../../config';
+import { DEFAULT_NOMINATORS_STAKING_STATE, TONCOIN } from '../../config';
 import { buildCollectionByKey } from '../../util/iteratees';
 import memoize from '../../util/memoize';
 import withCache from '../../util/withCache';
@@ -51,7 +51,7 @@ export function selectAccountStakingTotalProfit(global: GlobalState, accountId: 
 }
 
 export function selectIsStakingDisabled(global: GlobalState) {
-  return Boolean(IS_STAKING_DISABLED || global.settings.isTestnet);
+  return Boolean(global.settings.isTestnet);
 }
 
 export function selectMultipleAccountsStakingStatesSlow(

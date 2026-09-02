@@ -1,7 +1,7 @@
 import UIKit
 
 @MainActor
-final class ContextMenuOverlayView: UIView, ContextMenuNavigationViewDelegate {
+final class ContextMenuOverlayView: UIView, ContextMenuNavigationViewDelegate, ContextMenuPresentationSession {
     private static let externalSelectionActivationDistance: CGFloat = 4.0
     private static let panelDismissalSafetyMargin: CGFloat = 8.0
 
@@ -305,6 +305,30 @@ final class ContextMenuOverlayView: UIView, ContextMenuNavigationViewDelegate {
                 sourceRect: sourceRect
             )
             return PanelPlacement(panelSize: panelSize, panelOrigin: panelOrigin, verticalDirection: direction)
+        case .screenBottom:
+            let availableHeight = max(
+                1.0,
+                self.bounds.maxY
+                    - self.configuration.style.screenInsets.bottom
+                    - safeFrame.minY
+            )
+            let panelSize = self.navigationView.preferredPanelSize(
+                constrainedTo: CGSize(width: maxPanelWidth, height: availableHeight)
+            )
+            let panelOrigin = CGPoint(
+                x: min(
+                    max(sourceRect.midX - panelSize.width * 0.5, safeFrame.minX),
+                    safeFrame.maxX - panelSize.width
+                ),
+                y: self.bounds.maxY
+                    - self.configuration.style.screenInsets.bottom
+                    - panelSize.height
+            )
+            return PanelPlacement(
+                panelSize: panelSize,
+                panelOrigin: panelOrigin,
+                verticalDirection: .above
+            )
         case .sourceAttached:
             let idealPanelSize = self.navigationView.preferredPanelSize(
                 constrainedTo: CGSize(width: maxPanelWidth, height: max(1.0, safeFrame.height))

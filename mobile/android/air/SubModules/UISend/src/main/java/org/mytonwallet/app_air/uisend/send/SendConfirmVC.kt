@@ -28,6 +28,7 @@ import org.mytonwallet.app_air.uicomponents.commonViews.cells.HeaderCell
 import org.mytonwallet.app_air.uicomponents.extensions.dp
 import org.mytonwallet.app_air.uicomponents.extensions.setPaddingDp
 import org.mytonwallet.app_air.uicomponents.extensions.styleDots
+import org.mytonwallet.app_air.uicomponents.helpers.SpannableHelpers
 import org.mytonwallet.app_air.uicomponents.helpers.WFont
 import org.mytonwallet.app_air.uicomponents.helpers.adaptiveFontSize
 import org.mytonwallet.app_air.uicomponents.helpers.spans.ScamLabelSpan
@@ -507,32 +508,8 @@ class SendConfirmVC(
                 append(" · ")
             }
 
-            append(buildAddressSpan(address)).styleDots()
+            append(SpannableHelpers.addressSpan(address)).styleDots()
         }.replaceSpacesWithNbsp()
-    }
-
-    private fun buildAddressSpan(address: String): CharSequence {
-        if (address.length <= 12) {
-            return buildSpannedString {
-                inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
-                    append(address)
-                }
-            }
-        }
-        val prefix = address.take(6)
-        val suffix = address.takeLast(6)
-        val middle = address.substring(6, address.length - 6)
-        return buildSpannedString {
-            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
-                append(prefix)
-            }
-            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.SecondaryText.color)) {
-                append(middle)
-            }
-            inSpans(WTypefaceSpan(WFont.Regular.typeface, WColor.PrimaryText.color)) {
-                append(suffix)
-            }
-        }
     }
 
     private fun confirmHardware(transferOptions: MApiSubmitTransferOptions) {

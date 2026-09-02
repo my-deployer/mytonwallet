@@ -61,7 +61,7 @@ final class TokenSendReviewViewController: WViewController {
         case .sellToMoonpay:
             navigationItem.title = lang("Sell")
             confirmButton.setTitle(
-                lang("Sell %symbol%", arg1: model.token.symbol),
+                L10n.sellSymbol(symbol: model.token.symbol),
                 for: .normal
             )
         }
@@ -206,10 +206,7 @@ final class TokenSendReviewViewController: WViewController {
         case .unavailable(.insufficientFee):
             lang("Insufficient Fee")
         case .authorizeDiesel:
-            lang(
-                "Authorize %token% Fee",
-                arg1: model.token.symbol
-            )
+            L10n.authorizeTokenFeeCapitalized(token: model.token.symbol)
         case .awaitingPreviousDiesel:
             lang("Awaiting Previous Fee")
         case .retryDraft, .retryMaximum:
@@ -227,7 +224,7 @@ final class TokenSendReviewViewController: WViewController {
         case .send:
             lang("Confirm")
         case .sellToMoonpay:
-            lang("Sell %symbol%", arg1: model.token.symbol)
+            L10n.sellSymbol(symbol: model.token.symbol)
         }
     }
 }

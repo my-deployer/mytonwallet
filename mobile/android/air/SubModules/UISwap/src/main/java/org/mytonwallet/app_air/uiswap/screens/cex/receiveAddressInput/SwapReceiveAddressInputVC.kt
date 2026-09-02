@@ -80,12 +80,14 @@ class SwapReceiveAddressInputVC(
 
     private val inputView = SwapInputView(context).apply {
         layoutParams = ConstraintLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT)
-        editText.hint = LocaleController.getFormattedString(
-            "Enter %1$@ address",
+        editText.hint = LocaleController.getStringWithKeyValues(
+            "Enter %token% address",
             listOf(
-                estimate.request.tokenToReceive.symbol
-                    ?: estimate.request.tokenToReceive.name
-                    ?: ""
+                "%token%" to (
+                    estimate.request.tokenToReceive.symbol
+                        ?: estimate.request.tokenToReceive.name
+                        ?: ""
+                    )
             )
         )
     }

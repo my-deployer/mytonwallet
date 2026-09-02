@@ -1,6 +1,7 @@
 package org.mytonwallet.app_air.uicomponents.widgets
 
 import android.view.MotionEvent
+import android.view.View
 import androidx.dynamicanimation.animation.FloatPropertyCompat
 import androidx.dynamicanimation.animation.SpringAnimation
 import androidx.dynamicanimation.animation.SpringForce
@@ -19,7 +20,8 @@ import kotlin.math.abs
 class SpringSnapHelper(
     private val velocityThreshold: Int = 300,
     private val stiffness: Float = 500f,
-    private val dampingRatio: Float = SpringForce.DAMPING_RATIO_NO_BOUNCY
+    private val dampingRatio: Float = SpringForce.DAMPING_RATIO_NO_BOUNCY,
+    private val snapToStart: Boolean = false
 ) {
 
     private var recyclerView: RecyclerView? = null
@@ -61,6 +63,51 @@ class SpringSnapHelper(
     }
 
     private val snapHelper = object : LinearSnapHelper() {
+        override fun calculateDistanceToFinalSnap(
+            layoutManager: RecyclerView.LayoutManager,
+            targetView: View
+        ): IntArray? {
+            if (!snapToStart) {
+                return super.calculateDistanceToFinalSnap(layoutManager, targetView)
+            }
+            return intArrayOf(distanceToSnap(layoutManager, targetView), 0)
+        }
+
+        override fun findSnapView(layoutManager: RecyclerView.LayoutManager): View? {
+            if (!snapToStart) return super.findSnapView(layoutManager)
+
+            return (0 until layoutManager.childCount)
+                .mapNotNull(layoutManager::getChildAt)
+                .minByOrNull { child -> abs(distanceToSnap(layoutManager, child)) }
+        }
+
+        private fun distanceToSnap(
+            layoutManager: RecyclerView.LayoutManager,
+            targetView: View
+        ): Int {
+            val rv = recyclerView
+            val isRtl = rv?.layoutDirection == RecyclerView.LAYOUT_DIRECTION_RTL
+            val itemCount = rv?.adapter?.itemCount ?: 0
+            val isLastItem = itemCount > 0 &&
+                layoutManager.getPosition(targetView) == itemCount - 1
+
+            return when {
+                isLastItem && isRtl ->
+                    layoutManager.getDecoratedLeft(targetView) - layoutManager.paddingLeft
+
+                isLastItem ->
+                    layoutManager.getDecoratedRight(targetView) -
+                        (layoutManager.width - layoutManager.paddingRight)
+
+                isRtl ->
+                    layoutManager.getDecoratedRight(targetView) -
+                        (layoutManager.width - layoutManager.paddingRight)
+
+                else ->
+                    layoutManager.getDecoratedLeft(targetView) - layoutManager.paddingLeft
+            }
+        }
+
         override fun onFling(velocityX: Int, velocityY: Int): Boolean {
             val rv = recyclerView ?: return false
             val lm = linearLayoutManager ?: return false

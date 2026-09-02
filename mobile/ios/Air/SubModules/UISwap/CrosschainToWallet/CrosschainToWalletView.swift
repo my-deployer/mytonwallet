@@ -126,12 +126,7 @@ struct CrosschainToWalletView: View {
 
     private var paymentHeader: some View {
         Text(
-            lang(
-                "$swap_cex_to_wallet_description",
-                arg1: DecimalAmount.fromDouble(payment.amount, payment.sellingToken).formatted(.none),
-                arg2: payment.sellingToken.chain.config.title,
-                arg3: remainingText
-            )
+            L10n.swapCexToWalletDescription(value: DecimalAmount.fromDouble(payment.amount, payment.sellingToken).formatted(.none), blockchain: payment.sellingToken.chain.config.title, time: remainingText)
         )
     }
 
@@ -140,9 +135,9 @@ struct CrosschainToWalletView: View {
             amountView
                 .padding(.top, 16)
             copyableField(
-                label: lang("Address for %blockchain% transfer", arg1: payment.sellingToken.chain.config.title),
+                label: L10n.addressForBlockchainTransfer(blockchain: payment.sellingToken.chain.config.title),
                 value: payment.payinAddress,
-                copyMessage: lang("%chain% Address Copied", arg1: payment.sellingToken.chain.title),
+                copyMessage: L10n.chainAddressCopied(chain: payment.sellingToken.chain.title),
                 isCentered: true
             )
             if let memo = payment.payinExtraId?.nilIfEmpty {
@@ -257,7 +252,7 @@ struct CrosschainToWalletView: View {
     private var transactionID: some View {
         if !payment.exchangerTxId.isEmpty {
             copyableField(
-                label: payment.providerName?.nilIfEmpty.map { lang("Swap ID for %provider%", arg1: $0) } ?? lang("Swap ID"),
+                label: payment.providerName?.nilIfEmpty.map { L10n.swapIdForProvider(provider: $0) } ?? lang("Swap ID"),
                 value: payment.exchangerTxId,
                 copyMessage: lang("Swap ID Copied"),
                 isCentered: false
@@ -274,12 +269,9 @@ struct CrosschainToWalletView: View {
     }
 
     private var supportText: some View {
-        let supportLabel = lang("$swap_cex_provider_support", arg1: payment.providerName?.nilIfEmpty ?? "")
+        let supportLabel = L10n.swapCexProviderSupport(provider: payment.providerName?.nilIfEmpty ?? "")
         return VStack(alignment: .leading, spacing: 6) {
-            Text(LocalizedStringKey(lang(
-                "$swap_cex_support",
-                arg1: markdownLink(text: supportLabel, url: URL.sanitizedHttpUrl(from: payment.supportUrl))
-            )))
+            Text(LocalizedStringKey(L10n.swapCexSupport(support: markdownLink(text: supportLabel, url: URL.sanitizedHttpUrl(from: payment.supportUrl)))))
                 .lineSpacing(3)
             if let emailLink = URL.sanitizedMailtoLink(email: payment.supportEmail) {
                 Text(lang("Email"))

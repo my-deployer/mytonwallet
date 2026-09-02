@@ -13,10 +13,34 @@ import WalletCoreTypes
 
 public var TokenStore: _TokenStore { _TokenStore.shared }
 private let HISTORY_DATA_STALENESS = 120.0
+private let TOKEN_DETAILS_CACHE_VALIDITY: TimeInterval = 15 * 60
+private let TOKEN_DETAILS_PRELOAD_LIMIT = 20
+private let TOKEN_DETAILS_CACHE_LIMIT_PER_ACCOUNT = 50
 private let log = Log("TokenStore")
 
-public struct TokenDetailsCacheEntry: Equatable, Sendable {
-    public let details: ApiTokenDetails?
+private struct TokenDetailsRequest: Sendable {
+    let id: UUID
+    let task: Task<ApiTokenDetails?, Error>
+}
+
+private struct TokenDetailsPreloadSnapshot: Sendable {
+    let accountId: String
+    let tokens: [ApiToken]
+}
+
+private struct TokenDetailsPreloadRequest: Sendable {
+    let id: UUID
+    let task: Task<Void, Never>
+}
+
+private struct TokenDetailsPreloadState: Sendable {
+    var isPending = false
+    var request: TokenDetailsPreloadRequest?
+}
+
+private struct TokenDetailsPersistenceRequest: Sendable {
+    let id: UUID
+    let task: Task<Void, Never>
 }
 
 @Perceptible
@@ -29,12 +53,22 @@ public final class _TokenStore: Sendable {
     private let _swapAssets: UnfairLock<[ApiToken]?> = .init(initialState: nil)
     private let _swapPairs: UnfairLock<[String: [MPair]]> = .init(initialState: [:])
     private let _currencyRates: UnfairLock<[String: MDouble]> = .init(initialState: [:])
-    private let _tokenDetails: UnfairLock<[String: TokenDetailsCacheEntry]> = .init(initialState: [:])
+    private let _tokenDetails: UnfairLock<TokenDetailsCache> = .init(initialState: TokenDetailsCache())
+    private let tokenDetailsRequests: UnfairLock<[String: TokenDetailsRequest]> = .init(initialState: [:])
+    private let isAppForeground: UnfairLock<Bool> = .init(initialState: true)
 
     private let sharedCache = SharedCache()
 
     @PerceptionIgnored
     private let updateTokensTask: UnfairLock<Task<Void, Never>?> = .init(initialState: nil)
+    @PerceptionIgnored
+    private let tokenDetailsPreloadState: UnfairLock<TokenDetailsPreloadState> = .init(initialState: .init())
+    @PerceptionIgnored
+    private let tokenDetailsMaintenanceTask: UnfairLock<Task<Void, Never>?> = .init(initialState: nil)
+    @PerceptionIgnored
+    private let tokenDetailsPersistenceRequest: UnfairLock<TokenDetailsPersistenceRequest?> = .init(initialState: nil)
+    @PerceptionIgnored
+    private let tokenDetailsDiskAccess: UnfairLock<Void> = .init(initialState: ())
     
     private init() {}
 
@@ -107,7 +141,10 @@ public final class _TokenStore: Sendable {
     public func loadFromCache() {
         loadTokensFromCache()
         loadSwapAssetsFromCache()
+        loadTokenDetailsFromCache()
         WalletCoreData.add(eventObserver: self)
+        startTokenDetailsMaintenance()
+        scheduleTokenDetailsPreload()
     }
     
     public func getToken(slug: String) -> ApiToken? {
@@ -265,6 +302,7 @@ public final class _TokenStore: Sendable {
         self.tokens = Self.defaultTokens
         self.swapAssets = nil
         self.swapPairs = [:]
+        clearTokenDetailsCache()
     }
     
     internal static let defaultTokens: [String: ApiToken] = [
@@ -327,17 +365,306 @@ public final class _TokenStore: Sendable {
     // MARK: - Cached token details
 
     public func cachedTokenDetails(tokenSlug: String) -> TokenDetailsCacheEntry? {
-        _tokenDetails.withLock { $0[tokenDetailsCacheKey(tokenSlug)] }
-    }
-
-    public func setCachedTokenDetails(tokenSlug: String, details: ApiTokenDetails?) {
-        _tokenDetails.withLock {
-            $0[tokenDetailsCacheKey(tokenSlug)] = TokenDetailsCacheEntry(details: details)
+        let language = LocalizationSupport.shared.langCode
+        let now = Date()
+        return _tokenDetails.withLock {
+            $0.cachedEntry(
+                language: language,
+                slug: tokenSlug,
+                now: now,
+                validity: TOKEN_DETAILS_CACHE_VALIDITY
+            )
         }
     }
 
-    private func tokenDetailsCacheKey(_ tokenSlug: String) -> String {
-        "\(LocalizationSupport.shared.langCode):\(tokenSlug)"
+    public func setCachedTokenDetails(tokenSlug: String, details: ApiTokenDetails?) {
+        storeCachedTokenDetails(
+            accountId: AccountStore.currentAccountId,
+            tokenSlug: tokenSlug,
+            details: details
+        )
+    }
+
+    public func refreshTokenDetails(accountId: String, token: ApiToken) async throws -> ApiTokenDetails? {
+        let language = LocalizationSupport.shared.langCode
+        rememberTokenDetails(accountId: accountId, slugs: [token.slug], promoteExisting: true)
+        return try await requestTokenDetails(language: language, token: token)
+    }
+
+    private func storeCachedTokenDetails(accountId: String, tokenSlug: String, details: ApiTokenDetails?) {
+        let language = LocalizationSupport.shared.langCode
+        rememberTokenDetails(accountId: accountId, slugs: [tokenSlug], promoteExisting: true)
+        updateTokenDetailsCache {
+            $0.storing(
+                language: language,
+                slug: tokenSlug,
+                details: details,
+                fetchedAt: .now
+            )
+        }
+    }
+
+    private func loadTokenDetailsFromCache() {
+        guard let loadedCache = AppStorageHelper.tokenDetailsCache() else { return }
+        let sanitizedCache = loadedCache.sanitized(
+            validAccountIds: Set(AccountStore.accountsById.keys),
+            limit: TOKEN_DETAILS_CACHE_LIMIT_PER_ACCOUNT,
+            now: .now,
+            validity: TOKEN_DETAILS_CACHE_VALIDITY
+        )
+        _tokenDetails.withLock { $0 = sanitizedCache }
+        if sanitizedCache != loadedCache {
+            scheduleTokenDetailsPersistence()
+        }
+    }
+
+    private func rememberTokenDetails(accountId: String, slugs: [String], promoteExisting: Bool) {
+        updateTokenDetailsCache {
+            $0.remembering(
+                accountId: accountId,
+                slugs: slugs,
+                limit: TOKEN_DETAILS_CACHE_LIMIT_PER_ACCOUNT,
+                promoteExisting: promoteExisting
+            ).removingExpired(now: .now, validity: TOKEN_DETAILS_CACHE_VALIDITY)
+        }
+    }
+
+    private func requestTokenDetails(language: String, token: ApiToken) async throws -> ApiTokenDetails? {
+        let requestKey = "\(language):\(token.slug)"
+        let request = tokenDetailsRequests.withLock { requests in
+            if let existingRequest = requests[requestKey] {
+                return existingRequest
+            }
+            let request = TokenDetailsRequest(
+                id: UUID(),
+                task: Task.detached(priority: .utility) {
+                    try await Api.fetchTokenDetails(asset: token.swapIdentifier, slug: token.slug)
+                }
+            )
+            requests[requestKey] = request
+            return request
+        }
+
+        do {
+            let details = try await request.task.value
+            if finishTokenDetailsRequest(key: requestKey, id: request.id) {
+                updateTokenDetailsCache {
+                    $0.storing(
+                        language: language,
+                        slug: token.slug,
+                        details: details,
+                        fetchedAt: .now
+                    )
+                }
+            }
+            return details
+        } catch {
+            _ = finishTokenDetailsRequest(key: requestKey, id: request.id)
+            throw error
+        }
+    }
+
+    private func finishTokenDetailsRequest(key: String, id: UUID) -> Bool {
+        tokenDetailsRequests.withLock { requests in
+            guard requests[key]?.id == id else { return false }
+            requests[key] = nil
+            return true
+        }
+    }
+
+    private func updateTokenDetailsCache(
+        _ transform: @Sendable (TokenDetailsCache) -> TokenDetailsCache
+    ) {
+        let didUpdate = _tokenDetails.withLock { cache in
+            let updatedCache = transform(cache)
+            if updatedCache != cache {
+                cache = updatedCache
+                return true
+            }
+            return false
+        }
+        if didUpdate {
+            scheduleTokenDetailsPersistence()
+        }
+    }
+
+    private func scheduleTokenDetailsPreload() {
+        guard DebugTokenInfoMock.preset == .disabled,
+              isAppForeground.withLock({ $0 })
+        else { return }
+        tokenDetailsPreloadState.withLock { state in
+            state.isPending = true
+            guard state.request == nil else { return }
+            let id = UUID()
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await self.runTokenDetailsPreloadWorker(id: id)
+            }
+            state.request = TokenDetailsPreloadRequest(id: id, task: task)
+        }
+    }
+
+    private func runTokenDetailsPreloadWorker(id: UUID) async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(for: .seconds(0.3))
+            } catch {
+                break
+            }
+            let shouldRun = tokenDetailsPreloadState.withLock { state in
+                guard state.request?.id == id else { return false }
+                state.isPending = false
+                return true
+            }
+            guard shouldRun else { return }
+
+            await preloadTokenDetails()
+
+            let shouldRunAgain = tokenDetailsPreloadState.withLock { state in
+                guard state.request?.id == id else { return false }
+                if state.isPending {
+                    return true
+                }
+                state.request = nil
+                return false
+            }
+            if !shouldRunAgain { return }
+        }
+        tokenDetailsPreloadState.withLock { state in
+            guard state.request?.id == id else { return }
+            state = TokenDetailsPreloadState()
+        }
+    }
+
+    private func cancelTokenDetailsPreload() {
+        tokenDetailsPreloadState.withLock { state in
+            state.request?.task.cancel()
+            state = TokenDetailsPreloadState()
+        }
+    }
+
+    private func preloadTokenDetails() async {
+        guard !Task.isCancelled,
+              DebugTokenInfoMock.preset == .disabled,
+              isAppForeground.withLock({ $0 }),
+              let snapshot = await tokenDetailsPreloadSnapshot()
+        else { return }
+
+        rememberTokenDetails(
+            accountId: snapshot.accountId,
+            slugs: snapshot.tokens.map(\.slug),
+            promoteExisting: false
+        )
+        for token in snapshot.tokens {
+            guard !Task.isCancelled,
+                  isAppForeground.withLock({ $0 }),
+                  AccountStore.accountId == snapshot.accountId
+            else { return }
+            guard cachedTokenDetails(tokenSlug: token.slug) == nil else { continue }
+            do {
+                _ = try await requestTokenDetails(
+                    language: LocalizationSupport.shared.langCode,
+                    token: token
+                )
+            } catch is CancellationError {
+                if Task.isCancelled { return }
+            } catch {}
+        }
+    }
+
+    @MainActor
+    private func tokenDetailsPreloadSnapshot() -> TokenDetailsPreloadSnapshot? {
+        guard let accountId = AccountStore.accountId,
+              let tokenBalances = BalanceDataStore.walletTokensData(accountId: accountId)?.allTokenBalances
+        else { return nil }
+
+        var seenSlugs = Set<String>()
+        let tokens = tokenBalances.compactMap { tokenBalance -> ApiToken? in
+            guard !tokenBalance.isStaking,
+                  seenSlugs.insert(tokenBalance.tokenSlug).inserted
+            else { return nil }
+            return self.tokens[tokenBalance.tokenSlug]
+        }.prefix(TOKEN_DETAILS_PRELOAD_LIMIT)
+        return TokenDetailsPreloadSnapshot(accountId: accountId, tokens: Array(tokens))
+    }
+
+    private func startTokenDetailsMaintenance() {
+        tokenDetailsMaintenanceTask.withLock { task in
+            guard task == nil else { return }
+            task = Task.detached(priority: .background) { [weak self] in
+                while !Task.isCancelled {
+                    do {
+                        try await Task.sleep(for: .seconds(60))
+                    } catch {
+                        return
+                    }
+                    guard let self, self.isAppForeground.withLock({ $0 }) else { continue }
+                    self.scheduleTokenDetailsPreload()
+                }
+            }
+        }
+    }
+
+    private func scheduleTokenDetailsPersistence() {
+        guard isAppForeground.withLock({ $0 }) else {
+            flushTokenDetailsPersistence()
+            return
+        }
+        tokenDetailsPersistenceRequest.withLock { request in
+            request?.task.cancel()
+            let id = UUID()
+            let task = Task.detached(priority: .background) { [weak self] in
+                do {
+                    try await Task.sleep(for: .seconds(0.2))
+                    try Task.checkCancellation()
+                    guard let self else { return }
+                    self.persistTokenDetails(id: id)
+                } catch {}
+            }
+            request = TokenDetailsPersistenceRequest(id: id, task: task)
+        }
+    }
+
+    private func persistTokenDetails(id: UUID) {
+        guard !Task.isCancelled else { return }
+        let cache = _tokenDetails.withLock { $0 }
+        guard !Task.isCancelled else { return }
+        tokenDetailsDiskAccess.withLock { _ in
+            guard !Task.isCancelled,
+                  tokenDetailsPersistenceRequest.withLock({ $0?.id == id })
+            else { return }
+            AppStorageHelper.save(tokenDetailsCache: cache)
+        }
+        tokenDetailsPersistenceRequest.withLock { request in
+            if request?.id == id {
+                request = nil
+            }
+        }
+    }
+
+    private func flushTokenDetailsPersistence() {
+        tokenDetailsPersistenceRequest.withLock { request in
+            request?.task.cancel()
+            request = nil
+        }
+        tokenDetailsDiskAccess.withLock { _ in
+            let cache = _tokenDetails.withLock { $0 }
+            AppStorageHelper.save(tokenDetailsCache: cache)
+        }
+    }
+
+    private func clearTokenDetailsCache() {
+        cancelTokenDetailsPreload()
+        tokenDetailsMaintenanceTask.withLock {
+            $0?.cancel()
+            $0 = nil
+        }
+        tokenDetailsRequests.withLock { requests in
+            requests.values.forEach { $0.task.cancel() }
+            requests.removeAll()
+        }
+        _tokenDetails.withLock { $0 = TokenDetailsCache() }
+        flushTokenDetailsPersistence()
     }
 
     // MARK: - Shared Cache
@@ -404,6 +731,7 @@ extension _TokenStore: WalletCoreData.EventsObserver {
                 WalletCoreData.notify(event: .tokensChanged)
                 scheduleSharedCacheUpdate(tokens: self.tokens, baseCurrency: currency, rates: self.currencyRates)
             }
+            scheduleTokenDetailsPreload()
 
         case .updateSwapTokens(let update):
             Task.detached(priority: .background) {
@@ -414,6 +742,33 @@ extension _TokenStore: WalletCoreData.EventsObserver {
                 TokenStore.swapAssets = tokens
                 WalletCoreData.notify(event: .swapTokensChanged)
             }
+
+        case .tokensChanged, .assetsAndActivityDataUpdated:
+            scheduleTokenDetailsPreload()
+
+        case .balanceChanged(let accountId):
+            if accountId == AccountStore.accountId {
+                scheduleTokenDetailsPreload()
+            }
+
+        case .accountChanged:
+            scheduleTokenDetailsPreload()
+
+        case .accountDeleted(let accountId):
+            updateTokenDetailsCache { $0.removingAccount(accountId) }
+
+        case .applicationWillEnterForeground:
+            isAppForeground.withLock { $0 = true }
+            scheduleTokenDetailsPreload()
+
+        case .applicationDidEnterBackground:
+            isAppForeground.withLock { $0 = false }
+            cancelTokenDetailsPreload()
+            flushTokenDetailsPersistence()
+
+        case .accountsReset:
+            clearTokenDetailsCache()
+
         default:
             break
         }
@@ -437,6 +792,8 @@ extension AppStorageHelper {
     private static let tokensCurrencyKey = "cache.tokens.currency"
     private static let tokensKey = "cache.tokens"
     private static let currencyRatesKey = "cache.currencyRates"
+    private static let tokenDetailsCacheURL = URL.cachesDirectory
+        .appending(components: "air", "token-details-cache.json")
     
     fileprivate static func save(baseCurrency: MBaseCurrency, tokens: [String: ApiToken], currencyRates: [String: MDouble]) {
         UserDefaults.standard.set(baseCurrency.rawValue, forKey: tokensCurrencyKey)
@@ -469,6 +826,35 @@ extension AppStorageHelper {
             return currencyRates
         }
         return nil
+    }
+
+    fileprivate static func save(tokenDetailsCache: TokenDetailsCache) {
+        guard !tokenDetailsCache.recentSlugsByAccountId.isEmpty else {
+            try? FileManager.default.removeItem(at: tokenDetailsCacheURL)
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(
+                at: tokenDetailsCacheURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder().encode(tokenDetailsCache)
+            try data.write(to: tokenDetailsCacheURL, options: .atomic)
+        } catch {
+            log.error("failed to save token details cache \(error, .public)")
+        }
+    }
+
+    fileprivate static func tokenDetailsCache() -> TokenDetailsCache? {
+        guard FileManager.default.fileExists(atPath: tokenDetailsCacheURL.path()) else { return nil }
+        do {
+            let data = try Data(contentsOf: tokenDetailsCacheURL)
+            return try JSONDecoder().decode(TokenDetailsCache.self, from: data)
+        } catch {
+            try? FileManager.default.removeItem(at: tokenDetailsCacheURL)
+            log.error("failed to decode token details cache \(error, .public)")
+            return nil
+        }
     }
     
     // MARK: - SwapAssets dict

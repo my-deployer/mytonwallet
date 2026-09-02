@@ -173,7 +173,7 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
         }
         private val tiles = LinkedHashMap<String, TileView>()
 
-        private var barIds = AppTabsManager.orderedTabIds.toMutableList()
+        private var barIds = AppTabsManager.orderedTabs.map { it.id }.toMutableList()
         var onOrderChanged: (() -> Unit)? = null
 
         private val barRect = Rect()
@@ -200,7 +200,7 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
             addView(barBackground)
             addView(paletteBackground)
             addView(separatorLabel)
-            AppTabsManager.registeredTabs.forEach { tab ->
+            AppTabsManager.selectableTabs.forEach { tab ->
                 tiles[tab.id] = TileView(tab).also(::addView)
             }
         }
@@ -222,7 +222,7 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
 
         fun resetToDefault() {
             if (draggedId != null || settling) return
-            barIds = AppTabsManager.defaultTabIds.toMutableList()
+            barIds = AppTabsManager.visibleDefaultTabIds.toMutableList()
             layoutTiles(animated = true)
             commitOrder()
         }
@@ -274,13 +274,13 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
 
         private fun paletteIds(): List<String> {
             val dragged = draggedId
-            return AppTabsManager.registeredTabs.map { it.id }
+            return AppTabsManager.selectableTabs.map { it.id }
                 .filter { it !in barIds && it != dragged }
         }
 
         /** Palette index the dragged tab would take (registered order among the future palette). */
         private fun palettePreviewIndex(id: String): Int =
-            AppTabsManager.registeredTabs.map { it.id }
+            AppTabsManager.selectableTabs.map { it.id }
                 .filter { it == id || it !in barIds }
                 .indexOf(id)
                 .coerceAtLeast(0)
@@ -502,7 +502,7 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
                 targetX = barSlotX(index, newBarIds.size)
                 targetY = barRect.top.toFloat()
             } else {
-                val paletteCount = AppTabsManager.registeredTabs.size - newBarIds.size
+                val paletteCount = AppTabsManager.selectableTabs.size - newBarIds.size
                 targetX = paletteSlotX(palettePreviewIndex(id), paletteCount)
                 targetY = paletteRect.top.toFloat()
             }
@@ -537,7 +537,7 @@ class CustomizeTabsVC(context: Context) : WViewController(context) {
 
         private fun commitOrder() {
             AppTabsManager.setTabIds(barIds)
-            barIds = AppTabsManager.orderedTabIds.toMutableList()
+            barIds = AppTabsManager.orderedTabs.map { it.id }.toMutableList()
             onOrderChanged?.invoke()
         }
     }

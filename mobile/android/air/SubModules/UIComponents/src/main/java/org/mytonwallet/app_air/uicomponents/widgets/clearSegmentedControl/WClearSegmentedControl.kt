@@ -9,8 +9,6 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
 import android.graphics.RectF
-import android.os.Handler
-import android.os.Looper
 import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
@@ -58,7 +56,9 @@ import org.mytonwallet.app_air.walletcontext.utils.colorWithAlpha
 class WClearSegmentedControl(
     context: Context,
     private val horizontalPaddingDp: Float = 11f,
-    private val isTransparent: Boolean = false
+    private val isTransparent: Boolean = false,
+    private val thumbHeightDp: Float = THUMB_HEIGHT,
+    private val showActiveTabArrow: Boolean = true
 ) : FrameLayout(context),
     WThemedView,
     WRecyclerViewAdapter.WRecyclerViewDataSource {
@@ -85,7 +85,6 @@ class WClearSegmentedControl(
     companion object {
         val ITEM_CELL = WCell.Type(2)
         private const val ANIMATION_DURATION = 200L
-        private const val CORNER_RADIUS = 16f
         private const val THUMB_HEIGHT = 32f
         private const val ITEM_SPACING = 6
         private const val DRAG_ELEVATION = 8f
@@ -99,6 +98,21 @@ class WClearSegmentedControl(
 
     var primaryTextColor = WColor.PrimaryText.color
     var secondaryTextColor = WColor.SecondaryText.color
+    var primaryTextColorOverride: Int? = null
+        set(value) {
+            field = value
+            primaryTextColor = value ?: defaultPrimaryTextColor()
+            recyclerView.invalidate()
+        }
+    var fillAvailableWidth: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            availableWidthForItems = if (value) width else 0
+            rvAdapter.reloadData()
+            requestLayout()
+        }
+    private var availableWidthForItems = 0
     private var currentPosition: Float = 0f
 
     // Used to animate dragMode enter/exit animations
@@ -337,6 +351,19 @@ class WClearSegmentedControl(
         )
     }
 
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val measuredWidth = if (
+            fillAvailableWidth &&
+            View.MeasureSpec.getMode(widthMeasureSpec) != View.MeasureSpec.UNSPECIFIED
+        ) {
+            View.MeasureSpec.getSize(widthMeasureSpec)
+        } else {
+            0
+        }
+        availableWidthForItems = measuredWidth
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w != oldw && oldw > 0) updateItemsTrailingViews()
@@ -369,7 +396,7 @@ class WClearSegmentedControl(
         }
 
         private fun drawThumbBackground(canvas: Canvas) {
-            canvas.drawRoundRect(rect, CORNER_RADIUS.dp, CORNER_RADIUS.dp, paint)
+            canvas.drawRoundRect(rect, thumbRadius, thumbRadius, paint)
         }
 
         private fun drawInThumb(canvas: Canvas) {
@@ -636,16 +663,14 @@ class WClearSegmentedControl(
         if (!isEnabled) return
         if (isValidIndex(index)) {
             items[index].onClick = onMenuPressed
-            Handler(Looper.getMainLooper()).post {
-                updateThumbPosition(
-                    position = currentPosition,
-                    targetPosition = currentPosition.toInt(),
-                    animated = false,
-                    force = true,
-                    isAnimatingToPosition = false
-                )
-                invalidate()
-            }
+            updateThumbPosition(
+                position = currentPosition,
+                targetPosition = currentPosition.toInt(),
+                animated = false,
+                force = true,
+                isAnimatingToPosition = false
+            )
+            invalidate()
         }
     }
 
@@ -697,8 +722,7 @@ class WClearSegmentedControl(
         if (LocaleController.isRTL && items.isNotEmpty()) (items.size - 1) - position else position
 
     override fun updateTheme() {
-        primaryTextColor =
-            if (isTransparent) Color.WHITE else WColor.PrimaryText.color
+        primaryTextColor = primaryTextColorOverride ?: defaultPrimaryTextColor()
         secondaryTextColor =
             if (isTransparent) Color.WHITE.colorWithAlpha(153) else WColor.SecondaryText.color
         if (paintColor == null) {
@@ -713,6 +737,18 @@ class WClearSegmentedControl(
         requestLayout()
     }
 
+    private fun defaultPrimaryTextColor(): Int =
+        if (isTransparent) Color.WHITE else WColor.PrimaryText.color
+
+    private fun itemMinimumWidth(): Int {
+        if (!fillAvailableWidth || availableWidthForItems == 0 || items.isEmpty()) return 0
+        val availableWidth = availableWidthForItems -
+            recyclerView.paddingStart -
+            recyclerView.paddingEnd -
+            items.size * ITEM_SPACING.dp
+        return (availableWidth / items.size).coerceAtLeast(0)
+    }
+
     override fun recyclerViewNumberOfSections(rv: RecyclerView): Int = 1
 
     override fun recyclerViewNumberOfItems(rv: RecyclerView, section: Int): Int = items.size
@@ -722,6 +758,7 @@ class WClearSegmentedControl(
 
     override fun recyclerViewCellView(rv: RecyclerView, cellType: WCell.Type): WCell =
         WClearSegmentedControlItemView(context).apply {
+            minimumWidthProvider = ::itemMinimumWidth
             layoutDirection =
                 if (LocaleController.isRTL) LAYOUT_DIRECTION_RTL else LAYOUT_DIRECTION_LTR
         }
@@ -741,7 +778,10 @@ class WClearSegmentedControl(
             item.arrowVisibility =
                 if (item.onClick != null &&
                     !isInDragMode &&
-                    ((!isAnimatingDragMode && isSelected) || item.onRemove != null)
+                    (
+                        (showActiveTabArrow && !isAnimatingDragMode && isSelected) ||
+                            item.onRemove != null
+                        )
                 ) {
                     1f
                 } else {
@@ -934,13 +974,13 @@ class WClearSegmentedControl(
     ): RectF {
         val scrollOffset = recyclerView.scrollX.toFloat()
         val w = calculateWidth(currentView, nextView, fraction, index, nextIndex)
-        val h = THUMB_HEIGHT.dp
+        val h = thumbHeightDp.dp
         val x = (
             currentView?.let {
                 calculateX(currentView, nextView, fraction, index, nextIndex, scrollOffset)
             } ?: ((nextView?.left ?: 0) - (w * (1 - fraction)))
             )
-        val y = recyclerView.height / 2f - CORNER_RADIUS.dp
+        val y = recyclerView.height / 2f - thumbRadius
 
         return RectF(x, y, x + w, y + h)
     }
@@ -972,15 +1012,18 @@ class WClearSegmentedControl(
         }
     } ?: nextView?.width?.toFloat() ?: 0f
 
+    private val thumbRadius: Float
+        get() = thumbHeightDp.dp / 2f
+
     private fun updatePaths(bounds: RectF) {
         rect.set(bounds.left, bounds.top, bounds.right, bounds.bottom)
 
         thumbPath.reset()
-        thumbPath.addRoundRect(rect, CORNER_RADIUS.dp, CORNER_RADIUS.dp, Path.Direction.CW)
+        thumbPath.addRoundRect(rect, thumbRadius, thumbRadius, Path.Direction.CW)
 
         fullPath.reset()
         fullPath.addRect(0f, 0f, width.toFloat(), height.toFloat(), Path.Direction.CW)
-        fullPath.addRoundRect(rect, CORNER_RADIUS.dp, CORNER_RADIUS.dp, Path.Direction.CCW)
+        fullPath.addRoundRect(rect, thumbRadius, thumbRadius, Path.Direction.CCW)
     }
 
     private fun updateItemArrowVisibility(
@@ -1010,6 +1053,7 @@ class WClearSegmentedControl(
                 )
                 var arrowVisibility = when {
                     item?.onClick == null -> 0f
+                    !showActiveTabArrow -> 0f
                     position == index && fraction < 0.5f -> 1f - fraction * 2f
                     position == nextIndex && fraction >= 0.5f -> (fraction - 0.5f) * 2f
                     else -> 0f

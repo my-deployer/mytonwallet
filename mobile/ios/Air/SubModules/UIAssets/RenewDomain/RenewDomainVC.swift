@@ -94,8 +94,8 @@ struct RenewDomainAuthHeader: ConfirmationContent {
 
     private var compactSubject: String {
         guard snapshot.nfts.count == 1 else {
-            return lang("%amount% NFTs", arg1: snapshot.nfts.count)
+            return L10n.amountNfts(amount: snapshot.nfts.count)
         }
-        return snapshot.nfts[0].name?.nilIfEmpty ?? lang("%amount% NFTs", arg1: 1)
+        return snapshot.nfts[0].name?.nilIfEmpty ?? L10n.amountNfts(amount: 1)
     }
 }

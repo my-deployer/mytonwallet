@@ -132,6 +132,7 @@ public final class SavedAddresses: Sendable {
 
     private func persist(values: [SavedAddress]) {
         @Dependency(\.savedAddresses) var savedAddressesStore
+        WalletCoreData.notify(event: .savedAddressesChanged(accountId: accountId))
         Task {
             await savedAddressesStore.persist(accountId: accountId, values: values)
         }

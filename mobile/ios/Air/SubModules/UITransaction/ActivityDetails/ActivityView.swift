@@ -328,7 +328,7 @@ struct ActivityView: View {
             } value: {
                 CopyableAddressText(
                     address: payinAddress,
-                    copyToastMessage: lang("%chain% Address Copied", arg1: fromToken.chain.title)
+                    copyToastMessage: L10n.chainAddressCopied(chain: fromToken.chain.title)
                 )
             }
         }
@@ -486,7 +486,7 @@ struct ActivityView: View {
            let transactionId = cex.transactionId.nilIfEmpty {
             let providerName = cex.providerName?.nilIfEmpty
             InsetDetailCell {
-                Text(providerName.map { lang("Swap ID for %provider%", arg1: $0) } ?? lang("Swap ID"))
+                Text(providerName.map { L10n.swapIdForProvider(provider: $0) } ?? lang("Swap ID"))
                     .foregroundStyle(Color.air.secondaryLabel)
                     .fixedSize(horizontal: false, vertical: true)
             } value: {

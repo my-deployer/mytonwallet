@@ -7,7 +7,6 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
@@ -37,6 +36,7 @@ import androidx.core.view.isGone
 import androidx.core.view.updateLayoutParams
 import com.facebook.drawee.backends.pipeline.Fresco
 import java.util.function.Consumer
+import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
 import org.mytonwallet.app_air.uicomponents.AnimationConstants
@@ -139,6 +139,55 @@ abstract class WWindow :
 
     private var activeAnimator: ValueAnimator? = null
 
+    // The ExpandFrom transition [activeAnimator] is currently presenting, so a dismiss that lands
+    // mid-flight can turn it around instead of snapping.
+    private var presentingExpandTransition: ExpandFromTransition? = null
+
+    // The animation each nav was presented with, so dismiss can mirror it (only animations that
+    // have a mirror are kept). Entries leave with their nav.
+    private val presentAnimations = HashMap<WNavigationController, PresentAnimation>()
+
+    // The origin view of an ExpandFrom present stays hidden for as long as the sheet is up.
+    private fun forgetNav(navigationController: WNavigationController?) {
+        val animation = presentAnimations.remove(navigationController ?: return)
+        (animation as? PresentAnimation.ExpandFrom)?.originView?.alpha = 1f
+        updateWindowClipping(except = navigationController)
+    }
+
+    // A nav is clipped to its own bounds only while the window clips its children. A floating
+    // bottom sheet dragged down must keep drawing below the nav's resting bottom edge, so the
+    // window stops clipping for as long as one is up.
+    private fun updateWindowClipping(except: WNavigationController? = null) {
+        windowView.clipChildren =
+            navigationControllers.none { it !== except && it.floatingSheetInset > 0 }
+    }
+
+    // Y a bottom sheet rests at once presented (sheets taller than the safe area stop 20dp below
+    // the top inset).
+    private fun bottomSheetRestingY(navigationController: WNavigationController): Int =
+        windowView.bottom - navigationController.floatingSheetBottomGap - min(
+            navigationController.height,
+            windowView.height - (systemBars?.top ?: 0) - 20.dp
+        )
+
+    // One-shot callbacks run when the next present() finishes, its animation included.
+    private val pendingPresentCompletions = ArrayList<() -> Unit>()
+
+    fun doOnNextPresentCompleted(action: () -> Unit) {
+        pendingPresentCompletions.add(action)
+    }
+
+    fun removeOnNextPresentCompleted(action: () -> Unit) {
+        pendingPresentCompletions.remove(action)
+    }
+
+    private fun notifyPresentCompleted() {
+        if (pendingPresentCompletions.isEmpty()) return
+        val actions = ArrayList(pendingPresentCompletions)
+        pendingPresentCompletions.clear()
+        actions.forEach { it() }
+    }
+
     var isWideLayout: Boolean = false
         protected set
 
@@ -201,6 +250,7 @@ abstract class WWindow :
     // PreferredFullScreen toggles between full screen and centered window, dim overlays appear /
     // disappear, and the screen behind is mounted/detached to match the new style.
     fun reapplyPresentedNavsLayout() {
+        updateWindowClipping()
         for (i in 1 until navigationControllers.size) {
             val nav = navigationControllers[i]
             nav.scaleX = 1f
@@ -552,15 +602,31 @@ abstract class WWindow :
         pendingTasks = null
     }
 
-    enum class PresentAnimation {
-        DEFAULT,
-        SCALE_IN
+    sealed class PresentAnimation {
+        object Default : PresentAnimation()
+        object ScaleIn : PresentAnimation()
+
+        /**
+         * Grows a bottom sheet out of [originView]: the sheet starts as a copy of the view (same
+         * frame, corner radius and look), then expands into its resting frame; dismiss plays it
+         * in reverse. Falls back to DEFAULT when the nav is not presented as a bottom sheet
+         * (tablet centered window, short wide window) or the view is not on screen.
+         *
+         * [cornerRadius] defaults to half the view's shorter side (circle / pill). [fillColor] is
+         * what the growing shape is painted with while it is larger than the view's snapshot;
+         * it defaults to the snapshot's dominant color.
+         */
+        class ExpandFrom(
+            val originView: View,
+            val cornerRadius: Float? = null,
+            val fillColor: Int? = null
+        ) : PresentAnimation()
     }
 
     // Called to present a new stack on top of previous ones
     fun present(
         navigationController: WNavigationController,
-        presentAnimation: PresentAnimation = PresentAnimation.DEFAULT,
+        presentAnimation: PresentAnimation = PresentAnimation.Default,
         animated: Boolean = true,
         onCompletion: (() -> Unit)? = null
     ) {
@@ -614,10 +680,16 @@ abstract class WWindow :
         windowView.addView(
             navigationController,
             ViewGroup.LayoutParams(
-                MATCH_PARENT,
+                if (navigationController.isBottomSheet) {
+                    navigationController.floatingSheetWidth(windowView.width)
+                } else {
+                    MATCH_PARENT
+                },
                 if (navigationController.isBottomSheet) 0 else MATCH_PARENT
             )
         )
+        navigationController.x = navigationController.floatingSheetInset.toFloat()
+        updateWindowClipping()
         navigationController.alpha = 0f
         navigationController.y = windowView.bottom.toFloat()
         val wasAnimating = isAnimating
@@ -635,10 +707,7 @@ abstract class WWindow :
                 } else if (shouldPresentFullScreen) {
                     0
                 } else {
-                    windowView.bottom - min(
-                        navigationController.height,
-                        windowView.height - (systemBars?.top ?: 0) - 20.dp
-                    )
+                    bottomSheetRestingY(navigationController)
                 }
             if (!animated || !WGlobalStorage.getAreAnimationsActive() || wasAnimating) {
                 overlayView?.alpha = 1f
@@ -648,11 +717,65 @@ abstract class WWindow :
                 removePrevNavigationControllersFromHierarchy()
                 navAnimation = NavAnimation.NONE
                 onCompletion?.invoke()
+                notifyPresentCompleted()
                 return@doOnLayout
             }
             activeAnimator?.cancel()
-            when (presentAnimation) {
-                PresentAnimation.DEFAULT -> {
+            // The transition captures the nav's resting frame, so the nav must already be there.
+            val expandTransition = (presentAnimation as? PresentAnimation.ExpandFrom)
+                ?.takeIf { navigationController.isBottomSheet }
+                ?.let {
+                    navigationController.y = finalY.toFloat()
+                    ExpandFromTransition.create(this, navigationController, it)
+                }
+            val effectiveAnimation =
+                if (presentAnimation is PresentAnimation.ExpandFrom && expandTransition == null) {
+                    PresentAnimation.Default
+                } else {
+                    presentAnimation
+                }
+            when (effectiveAnimation) {
+                is PresentAnimation.ExpandFrom -> {
+                    navigationController.alpha = 1f
+                    presentAnimations[navigationController] = effectiveAnimation
+                    // Tapping outside already dismisses while the sheet is still growing.
+                    overlayView?.setOnClickListener {
+                        dismissLastNav()
+                    }
+                    presentingExpandTransition = expandTransition
+                    // Only the incoming nav is shielded, so the tap can reach the dim overlay.
+                    unblockTouches()
+                    navigationController.blockTouches()
+                    activeAnimator = expandTransition!!.run(
+                        from = 0f,
+                        to = 1f,
+                        onFrame = { expansion ->
+                            overlayView?.alpha = expansion.coerceIn(0f, 1f)
+                        },
+                        onCancel = {
+                            presentingExpandTransition = null
+                            navigationController.unblockTouches()
+                            if (!navigationController.isDismissed) {
+                                navigationController.viewDidAppear()
+                            }
+                            activeAnimator = null
+                            navAnimation = NavAnimation.NONE
+                        },
+                        onEnd = {
+                            presentingExpandTransition = null
+                            navigationController.unblockTouches()
+                            overlayView?.alpha = 1f
+                            navigationController.viewDidAppear()
+                            removePrevNavigationControllersFromHierarchy()
+                            activeAnimator = null
+                            navAnimation = NavAnimation.NONE
+                            onCompletion?.invoke()
+                            notifyPresentCompleted()
+                        }
+                    )
+                }
+
+                PresentAnimation.Default -> {
                     activeAnimator = ValueAnimator.ofInt(
                         finalY + 48.dp,
                         finalY
@@ -686,6 +809,7 @@ abstract class WWindow :
                                 activeAnimator = null
                                 navAnimation = NavAnimation.NONE
                                 onCompletion?.invoke()
+                                notifyPresentCompleted()
                             }
 
                             WGlobalStorage.incDoNotSynchronize()
@@ -693,7 +817,7 @@ abstract class WWindow :
                         }
                 }
 
-                PresentAnimation.SCALE_IN -> {
+                PresentAnimation.ScaleIn -> {
                     navigationController.y = finalY.toFloat()
                     activeAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
                         duration = AnimationConstants.QUICK_ANIMATION
@@ -727,6 +851,7 @@ abstract class WWindow :
                             activeAnimator = null
                             navAnimation = NavAnimation.NONE
                             onCompletion?.invoke()
+                            notifyPresentCompleted()
                         }
 
                         WGlobalStorage.incDoNotSynchronize()
@@ -738,16 +863,17 @@ abstract class WWindow :
     }
 
     // Dismiss a specific nav from the memory and hierarchy
-    fun dismissNav(navigationController: WNavigationController?) {
+    // [animated] only applies to the topmost nav; a nav underneath is removed outright.
+    fun dismissNav(navigationController: WNavigationController?, animated: Boolean = true) {
         navigationControllers.indexOf(navigationController).let { it ->
             if (it == -1) return@let
-            dismissNav(it)
+            dismissNav(it, animated)
         }
     }
 
-    fun dismissNav(index: Int) {
+    fun dismissNav(index: Int, animated: Boolean = true) {
         if (index == navigationControllers.size - 1) {
-            dismissLastNav()
+            dismissLastNav(animated = animated)
             return
         }
         val overlay = navigationControllerOverlays[index]
@@ -756,6 +882,7 @@ abstract class WWindow :
             willBeDismissed()
             onDestroy()
         }
+        forgetNav(navigationController)
         navigationControllers.removeAt(index)
         navigationControllerOverlays.removeAt(index)
         windowView.removeView(overlay)
@@ -793,9 +920,15 @@ abstract class WWindow :
             navigationControllers.getOrNull(navigationControllers.size - 2)
         val skipPrevNavAnimation =
             navAnimation == NavAnimation.PRESENTING && prevNavigationController?.parent != null
+        // An ExpandFrom present caught mid-flight is turned around from where it is.
+        val interruptedTransition = presentingExpandTransition?.takeIf {
+            navAnimation == NavAnimation.PRESENTING &&
+                animation == DismissAnimation.DEFAULT &&
+                animated && WGlobalStorage.getAreAnimationsActive()
+        }
         when (navAnimation) {
             NavAnimation.PRESENTING -> {
-                activeAnimator?.cancel()
+                if (interruptedTransition == null) activeAnimator?.cancel()
             }
 
             NavAnimation.DISMISSING -> {
@@ -813,6 +946,7 @@ abstract class WWindow :
         fun animationEnded() {
             navigationController?.visibility = View.GONE
             navigationController?.onDestroy()
+            forgetNav(navigationController)
             navigationControllers.removeAt(navigationControllers.lastIndex)
             if (navigationControllerOverlays.isNotEmpty()) {
                 navigationControllerOverlays.removeAt(navigationControllerOverlays.lastIndex)
@@ -835,25 +969,83 @@ abstract class WWindow :
             animationEnded()
             return true
         }
+        val wasPresenting = navAnimation == NavAnimation.PRESENTING
         navAnimation = NavAnimation.DISMISSING
         val startAlpha = navigationController?.alpha ?: 1f
-        when (animation) {
-            DismissAnimation.DEFAULT -> {
-                activeAnimator?.cancel()
-                activeAnimator = ValueAnimator.ofInt(
-                    navigationController?.y?.toInt() ?: 0,
-                    (navigationController?.y?.toInt() ?: 0) + 48.dp
+        // A sheet that grew out of a button springs back into it, unless it was dragged away from
+        // its resting frame (the behavior moves the top VC's view inside the nav), is still
+        // mid-presentation, or the button is gone.
+        val collapseTransition =
+            (presentAnimations[navigationController] as? PresentAnimation.ExpandFrom)
+                ?.takeIf {
+                    animation == DismissAnimation.DEFAULT && !wasPresenting &&
+                        navigationController?.isBottomSheet == true &&
+                        abs(
+                            navigationController.y - bottomSheetRestingY(navigationController)
+                        ) < 1f &&
+                        (navigationController.viewControllers.lastOrNull()?.view?.top ?: 0) == 0
+                }
+                ?.let { ExpandFromTransition.create(this, navigationController!!, it) }
+        // Unless the sheet springs back into it, the origin view of an ExpandFrom present fades
+        // in alongside the dismiss.
+        val expandOriginView =
+            (presentAnimations[navigationController] as? PresentAnimation.ExpandFrom)?.originView
+        when {
+            interruptedTransition != null -> {
+                presentingExpandTransition = null
+                activeAnimator = interruptedTransition.reverse(
+                    activeAnimator!!,
+                    onFrame = { expansion ->
+                        lastOverlay?.alpha = expansion.coerceIn(0f, 1f)
+                    },
+                    onCancel = { animationEnded() },
+                    onEnd = { animationEnded() }
                 )
+            }
+
+            collapseTransition != null -> {
+                activeAnimator?.cancel()
+                activeAnimator = collapseTransition.run(
+                    from = 1f,
+                    to = 0f,
+                    onFrame = { expansion ->
+                        lastOverlay?.alpha = expansion.coerceIn(0f, 1f) * startOverlayAlpha
+                    },
+                    onCancel = { animationEnded() },
+                    onEnd = { animationEnded() }
+                )
+            }
+
+            animation == DismissAnimation.DEFAULT -> {
+                activeAnimator?.cancel()
+                expandOriginView?.fadeIn(AnimationConstants.NAV_DISMISS)
+                val startY = navigationController?.y?.toInt() ?: 0
+                val floating =
+                    navigationController != null && navigationController.floatingSheetInset > 0
+                val slide = if (floating) {
+                    val sheetTop =
+                        navigationController.viewControllers.lastOrNull()?.view?.top ?: 0
+                    (windowView.bottom - startY - sheetTop).coerceAtLeast(48.dp)
+                } else {
+                    48.dp
+                }
+                activeAnimator = ValueAnimator.ofInt(startY, startY + slide)
                     .apply {
                         duration = AnimationConstants.NAV_DISMISS
-                        interpolator = WInterpolator.emphasizedAccelerate
+                        interpolator = if (floating) {
+                            WInterpolator.emphasizedDecelerate
+                        } else {
+                            WInterpolator.emphasizedAccelerate
+                        }
 
                         addUpdateListener { updatedAnimation ->
                             val fraction = updatedAnimation.animatedFraction
                             val updatedValue = updatedAnimation.animatedValue as Int
                             lastOverlay?.alpha = (1 - fraction) * startOverlayAlpha
                             navigationController?.y = updatedValue.toFloat()
-                            navigationController?.alpha = startAlpha * (1 - fraction)
+                            if (!floating) {
+                                navigationController?.alpha = startAlpha * (1 - fraction)
+                            }
                         }
                         addListener(object : AnimatorListenerAdapter() {
                             override fun onAnimationEnd(animation: Animator) {
@@ -868,7 +1060,7 @@ abstract class WWindow :
                     }
             }
 
-            DismissAnimation.SCALE_OUT -> {
+            else -> {
                 val prevNavigationController = navigationControllers[navigationControllers.size - 2]
                 if (!skipPrevNavAnimation) {
                     prevNavigationController.scaleX = 0.95f
@@ -876,6 +1068,7 @@ abstract class WWindow :
                 }
                 lastOverlay?.alpha = 0f
                 activeAnimator?.cancel()
+                expandOriginView?.fadeIn(AnimationConstants.QUICK_ANIMATION)
                 activeAnimator = ValueAnimator.ofInt(0, 1).apply {
                     duration = AnimationConstants.QUICK_ANIMATION
 
@@ -934,6 +1127,7 @@ abstract class WWindow :
             navigationControllers[navigationControllers.size - 2].viewWillAppear()
         }
         windowView.removeView(navigationControllers.lastOrNull())
+        forgetNav(navigationControllers.lastOrNull())
         navigationControllers.removeAt(navigationControllers.lastIndex)
         navigationControllerOverlays.removeAt(navigationControllerOverlays.lastIndex)
         windowView.removeView(overlay)
@@ -1066,7 +1260,8 @@ abstract class WWindow :
             }
 
             NavAnimation.NONE,
-            NavAnimation.DISMISSING -> {}
+            NavAnimation.DISMISSING -> {
+            }
         }
         addPrevNavigationControllersToHierarchy()
     }

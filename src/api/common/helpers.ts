@@ -1,4 +1,3 @@
-import type * as tonSdk from '../chains/ton';
 import type { StoredDappsState } from '../dappProtocols/storage';
 import type { ApiDbSseConnection } from '../db';
 import type { StorageKey } from '../storages/types';
@@ -16,7 +15,6 @@ import { buildLocalTxId } from '../../util/activities';
 import { areDeepEqual } from '../../util/areDeepEqual';
 import { assert } from '../../util/assert';
 import { logDebugError } from '../../util/logs';
-import { toBase64Address } from '../chains/ton/util/tonCore';
 import { getEnvironment } from '../environment';
 import * as migrations from '../migrations';
 import { storage } from '../storages';
@@ -97,9 +95,9 @@ export function isUpdaterAlive(onUpdate: OnApiUpdate) {
   return currentOnUpdate === onUpdate;
 }
 
-export async function tryMigrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, accountIds?: string[]) {
+export async function tryMigrateStorage(onUpdate: OnApiUpdate, accountIds?: string[]) {
   try {
-    const result = await migrateStorage(onUpdate, ton, accountIds);
+    const result = await migrateStorage(onUpdate, accountIds);
     // Not a state migration: runs on EVERY boot (including when the version is already current) and self-gates
     // by build flavor and its own storage marker. See `coreTwins.ts` for why it must not ride stateVersion.
     await purgeCoreTwins(onUpdate);
@@ -113,12 +111,23 @@ export async function tryMigrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSd
   }
 }
 
-export async function migrateStorage(onUpdate: OnApiUpdate, ton: typeof tonSdk, accountIds?: string[]) {
+export async function migrateStorage(onUpdate: OnApiUpdate, accountIds?: string[]) {
   let version = Number(await storage.getItem('stateVersion', true));
 
   if (version === actualStateVersion) {
     return;
   }
+
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  // Legacy TON storage-migration utilities, loaded via guarded `require` so that a `NO_TON` build (which has
+  // no legacy TON storage to migrate) drops `chains/ton` entirely via dead-code elimination.
+  const ton = (process.env.NO_TON !== '1'
+    ? require('../chains/ton')
+    : undefined) as typeof import('../chains/ton');
+  const { toBase64Address } = (process.env.NO_TON !== '1'
+    ? require('../chains/ton/util/tonCore')
+    : {}) as typeof import('../chains/ton/util/tonCore');
+  /* eslint-enable @typescript-eslint/no-require-imports */
 
   if (IS_AIR_APP && !version) {
     if (await storage.getItem('accounts' as StorageKey, true)) {

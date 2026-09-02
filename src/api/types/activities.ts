@@ -66,6 +66,7 @@ export type ApiFetchActivitySliceOptions = {
   toTimestamp?: number;
   fromTimestamp?: number;
   limit?: number;
+  signal?: AbortSignal;
 };
 
 export type ApiDecryptCommentOptions = {

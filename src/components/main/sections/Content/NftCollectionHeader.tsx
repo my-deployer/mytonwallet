@@ -8,7 +8,6 @@ import type { DropdownItem } from '../../../ui/Dropdown';
 import {
   GETGEMS_BASE_MAINNET_URL,
   GETGEMS_BASE_TESTNET_URL,
-  IS_FEATURE_LIMITED,
   NFT_FRAGMENT_COLLECTIONS,
   RENEWABLE_TON_DNS_COLLECTIONS,
   TELEGRAM_GIFTS_SUPER_COLLECTION,
@@ -137,7 +136,7 @@ function NftCollectionHeader({
             days: formatRelativeDays(lang, dnsExpireInDays!),
           }) as string,
       } satisfies DropdownItem<MenuHandler>,
-      !IS_FEATURE_LIMITED && {
+      {
         name: 'Hide All',
         value: 'hideAll',
       } satisfies DropdownItem<MenuHandler>,

@@ -22,6 +22,7 @@ export async function fetchActivitySlice({
   toTimestamp,
   fromTimestamp,
   limit,
+  signal,
 }: ApiFetchActivitySliceOptions): Promise<ApiActivity[]> {
   const { network } = parseAccountId(accountId);
   const { address } = await fetchStoredWallet(accountId, 'tron');
@@ -34,6 +35,7 @@ export async function fetchActivitySlice({
       toTimestamp,
       fromTimestamp,
       limit,
+      signal,
     );
     return activities;
   } else {
@@ -43,6 +45,7 @@ export async function fetchActivitySlice({
       toTimestamp,
       fromTimestamp,
       limit,
+      signal,
     );
   }
 }
@@ -54,6 +57,7 @@ export async function getTokenActivitySlice(
   toTimestamp?: number,
   fromTimestamp?: number,
   limit?: number,
+  signal?: AbortSignal,
 ): Promise<{ activities: ApiActivity[]; hasMore: boolean }> {
   let activities: ApiActivity[];
   let rawCount: number;
@@ -64,7 +68,7 @@ export async function getTokenActivitySlice(
       max_timestamp: toTimestamp ? toTimestamp - SEC : undefined,
       limit,
       search_internal: false, // The parsing is not supported and not needed currently
-    });
+    }, signal);
     rawCount = rawTransactions.length;
     activities = rawTransactions
       .map((rawTx) => parseRawTrxTransaction(address, rawTx))
@@ -76,7 +80,7 @@ export async function getTokenActivitySlice(
       min_timestamp: fromTimestamp ? fromTimestamp + SEC : undefined,
       max_timestamp: toTimestamp ? toTimestamp - SEC : undefined,
       limit,
-    });
+    }, signal);
     rawCount = rawTransactions.length;
     activities = rawTransactions.map((rawTx) => parseRawTrc20Transaction(address, rawTx));
   }
@@ -98,13 +102,14 @@ async function getAllActivitySlice(
   toTimestamp?: number,
   fromTimestamp?: number,
   limit?: number,
+  signal?: AbortSignal,
 ) {
   const tokenSlugs = getTokenSlugs(network);
   const txsBySlug: Record<string, ApiActivity[]> = {};
 
   await Promise.all(tokenSlugs.map(async (slug) => {
     const { activities: txs } = await getTokenActivitySlice(
-      network, address, slug, toTimestamp, fromTimestamp, limit,
+      network, address, slug, toTimestamp, fromTimestamp, limit, signal,
     );
 
     if (txs.length) {
@@ -146,11 +151,12 @@ async function getTrxTransactions(
     max_timestamp?: number;
     search_internal?: boolean;
   } = {},
+  signal?: AbortSignal,
 ): Promise<any[]> {
   const baseUrl = NETWORK_CONFIG[network].apiUrl;
   const url = new URL(`${baseUrl}/v1/accounts/${address}/transactions`);
 
-  const result = await fetchJson(url.toString(), queryParams);
+  const result = await fetchJson(url.toString(), queryParams, { signal });
 
   return result.data;
 }
@@ -222,11 +228,12 @@ export async function getTrc20Transactions(
     only_to?: boolean;
     only_from?: boolean;
   } = {},
+  signal?: AbortSignal,
 ): Promise<any[]> {
   const baseUrl = NETWORK_CONFIG[network].apiUrl;
   const url = new URL(`${baseUrl}/v1/accounts/${address}/transactions/trc20`);
 
-  const result = await fetchJson(url.toString(), queryParams);
+  const result = await fetchJson(url.toString(), queryParams, { signal });
 
   return result.data;
 }

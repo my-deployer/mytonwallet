@@ -145,7 +145,7 @@ public func getMaxSwapAmount(_ input: MaxSwapAmountInput) -> BigInt? {
         return maxAmountFromBackend
     }
 
-    guard input.swapType != .crosschainToWallet, let tokenBalance = input.tokenBalance else {
+    guard input.swapType.cexTopology != .toWallet, let tokenBalance = input.tokenBalance else {
         return nil
     }
 
@@ -156,7 +156,7 @@ public func getMaxSwapAmount(_ input: MaxSwapAmountInput) -> BigInt? {
             return nil
         }
 
-        if input.swapType != .onChain {
+        if input.swapType.route == .cex {
             maxAmount -= fullNetworkFee.token ?? .zero
         }
 
@@ -245,7 +245,7 @@ private func shouldSwapBeGasless(
     dieselStatus: DieselStatus?,
     nativeTokenInBalance: BigInt?
 ) -> Bool {
-    guard swapType == .onChain else { return false }
+    guard swapType.route == .dex else { return false }
     guard !tokenIn.isNative else { return false }
     guard let dieselStatus, dieselStatus != .notAvailable else { return false }
     guard let networkFee, let nativeTokenInBalance else { return false }

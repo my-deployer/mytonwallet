@@ -78,10 +78,17 @@ class SearchHistoryCell(context: Context) :
     }
 
     var isLastItem = false
+    private var hasOpaqueBackground = true
 
     @SuppressLint("SetTextI18n")
-    fun configure(site: MExploreHistory.VisitedSite, isLastItem: Boolean, onTap: () -> Unit) {
+    fun configure(
+        site: MExploreHistory.VisitedSite,
+        isLastItem: Boolean,
+        hasOpaqueBackground: Boolean = true,
+        onTap: () -> Unit
+    ) {
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         setOnClickListener {
             onTap()
         }
@@ -97,8 +104,14 @@ class SearchHistoryCell(context: Context) :
     }
 
     @SuppressLint("SetTextI18n")
-    fun configure(site: MExploreHistory.HistoryItem, isLastItem: Boolean, onTap: () -> Unit) {
+    fun configure(
+        site: MExploreHistory.HistoryItem,
+        isLastItem: Boolean,
+        hasOpaqueBackground: Boolean = true,
+        onTap: () -> Unit
+    ) {
         this.isLastItem = isLastItem
+        this.hasOpaqueBackground = hasOpaqueBackground
         setOnClickListener {
             onTap()
         }
@@ -114,7 +127,7 @@ class SearchHistoryCell(context: Context) :
 
     override fun updateTheme() {
         setBackgroundColor(
-            WColor.Background.color,
+            if (hasOpaqueBackground) WColor.Background.color else WColor.Transparent.color,
             0f,
             if (isLastItem) ViewConstants.BLOCK_RADIUS.dp else 0f
         )

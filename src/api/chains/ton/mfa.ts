@@ -1,4 +1,7 @@
-import { Address, contractAddress, WalletContractV5R1 } from '@ton/ton';
+import { Address, contractAddress } from '@ton/core';
+import { WalletContractV5R1 } from '@ton/ton/dist/wallets/WalletContractV5R1';
+
+import type { ApiNetwork } from '../../types';
 
 import { parseAccountId } from '../../../util/account';
 import { logDebugError } from '../../../util/logs';
@@ -6,10 +9,16 @@ import { sendExternal } from './util/sendExternal';
 import { getSigner } from './util/signer';
 import { getTonClient } from './util/tonCore';
 import { getContractCode, MfaExtension, mfaExtensionConfigToCell } from './contracts/MfaExtension';
+import { resolveMfaExtensionAddress } from './contracts/util';
 import { fetchStoredChainAccount } from '../../common/accounts';
 import { withoutTransferConcurrency } from '../../common/preventTransferConcurrency';
 import { resolveTransactionError } from './transfer';
 import { getTonWallet, getWalletInfo } from './wallet';
+
+/** Resolves the MFA extension address from a string wallet address (universal-interface friendly). */
+export function resolveExtensionAddress(network: ApiNetwork, walletAddress: string) {
+  return resolveMfaExtensionAddress(network, Address.parse(walletAddress));
+}
 
 export async function createRemoveMfaExtensionPayload(accountId: string, enclaveToken?: string) {
   const account = await fetchStoredChainAccount(accountId, 'ton');

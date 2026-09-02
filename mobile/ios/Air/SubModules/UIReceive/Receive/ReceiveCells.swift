@@ -24,7 +24,7 @@ struct AddressCell: View {
             .multilineTextAlignment(.leading)
 
         Button {
-            AppActions.showToast(icon: .animatedCopy, message: lang("%chain% Address Copied", arg1: chain.title))
+            AppActions.showToast(icon: .animatedCopy, message: L10n.chainAddressCopied(chain: chain.title))
             Haptics.play(.lightTap)
             UIPasteboard.general.string = address
         } label: {

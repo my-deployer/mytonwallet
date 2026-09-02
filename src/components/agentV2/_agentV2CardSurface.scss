@@ -1,0 +1,11 @@
+@mixin standard {
+  width: min(28rem, 100%);
+  padding: 1rem 1.125rem;
+  border: 0.0625rem solid var(--color-borders);
+  border-radius: 1.25rem;
+
+  color: var(--color-black);
+
+  background: var(--color-background-second);
+  box-shadow: 0 0.5rem 1.75rem rgba(0, 0, 0, 0.08);
+}

@@ -62,6 +62,7 @@ interface StateProps {
   isComplete?: boolean;
   isViewMode: boolean;
   apiError?: string;
+  initialAmount?: bigint | 'all';
   tokens?: UserToken[];
   tokenBySlug?: Record<string, ApiTokenWithPrice>;
   stakingState?: ApiStakingState;
@@ -90,6 +91,7 @@ function StakingInitial({
   isComplete,
   isViewMode,
   apiError,
+  initialAmount,
   tokens,
   tokenBySlug,
   stakingState,
@@ -106,7 +108,10 @@ function StakingInitial({
   const lang = useLang();
 
   const [isSafeInfoModalOpen, openSafeInfoModal, closeSafeInfoModal] = useFlag();
-  const [amount, setAmount] = useState<bigint | undefined>();
+  const [amount, setAmount] = useState<bigint | undefined>(
+    typeof initialAmount === 'bigint' ? initialAmount : undefined,
+  );
+  const [isInitialAmountApplied, setIsInitialAmountApplied] = useState(initialAmount !== 'all');
   let isIncorrectAmount = false;
   let isInsufficientBalance = false;
   let isInsufficientFee = false;
@@ -167,6 +172,12 @@ function StakingInitial({
     }
     return bigintMax(0n, value);
   })();
+
+  useEffect(() => {
+    if (isInitialAmountApplied || initialAmount !== 'all' || !token) return;
+    setAmount(maxAmount);
+    setIsInitialAmountApplied(true);
+  }, [initialAmount, isInitialAmountApplied, maxAmount, token]);
 
   const title = getStakingTitle(stakingType);
 
@@ -455,6 +466,7 @@ export default memo(
         state,
         isLoading,
         error: apiError,
+        initialAmount,
       } = global.currentStaking;
 
       const states = currentAccountId ? selectAccountStakingStates(global, currentAccountId) : undefined;
@@ -467,6 +479,7 @@ export default memo(
         tokens,
         tokenBySlug,
         apiError,
+        initialAmount,
         stakingState,
         states,
         shouldUseNominators: accountState?.staking?.shouldUseNominators,

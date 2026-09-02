@@ -65,7 +65,7 @@ struct ImportSuccessView: View {
     
     @ViewBuilder
     var description: some View {
-        let line1 = successKind == .created ? lang("$wallet_create_done") : lang("$wallet_import_done", arg1: importedAccountsCount)
+        let line1 = successKind == .created ? lang("$wallet_create_done") : L10n.walletImportDone(count: importedAccountsCount)
         let line2 = successKind != .importedView ? lang("$wallet_done_description") : ""
         let text = [line1, line2].filter { !$0.isEmpty }.joined(separator: "\n\n")
         Text(LocalizedStringKey(text))

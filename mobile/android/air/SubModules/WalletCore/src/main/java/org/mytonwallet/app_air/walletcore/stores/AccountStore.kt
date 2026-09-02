@@ -256,6 +256,7 @@ object AccountStore : IStore {
             StakingStore.setStakingState(removingAccountId, null)
             BalanceStore.removeBalances(removingAccountId)
             PortfolioStore.removeAccount(removingAccountId)
+            TokenStore.removeTokenDetailsAccount(removingAccountId)
             WCacheStorage.clean(removingAccountId)
             notifyEvent(WalletEvent.AccountRemoved(removingAccountId))
             onCompletion?.invoke(done, error)

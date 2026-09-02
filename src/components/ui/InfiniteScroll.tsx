@@ -21,6 +21,7 @@ type OwnProps = {
   className?: string;
   items?: any[];
   itemSelector?: string;
+  loadMoreStrategy?: 'anchorMovement' | 'scrollDirection';
   preloadBackwards?: number;
   sensitiveArea?: number;
   withAbsolutePositioning?: boolean;
@@ -45,6 +46,9 @@ type OwnProps = {
 const DEFAULT_LIST_SELECTOR = '.ListItem';
 const DEFAULT_PRELOAD_BACKWARDS = 20;
 const DEFAULT_SENSITIVE_AREA = 800;
+const SCROLL_GESTURE_END_DELAY = 150;
+
+type ScrollDirection = 'up' | 'down';
 
 const InfiniteScroll: FC<OwnProps> = ({
   ref,
@@ -52,6 +56,7 @@ const InfiniteScroll: FC<OwnProps> = ({
   className,
   items,
   itemSelector = DEFAULT_LIST_SELECTOR,
+  loadMoreStrategy = 'anchorMovement',
   preloadBackwards = DEFAULT_PRELOAD_BACKWARDS,
   sensitiveArea = DEFAULT_SENSITIVE_AREA,
   withAbsolutePositioning,
@@ -83,7 +88,11 @@ const InfiniteScroll: FC<OwnProps> = ({
     isScrollTopJustUpdated?: boolean;
     currentAnchor?: HTMLDivElement | undefined;
     currentAnchorTop?: number;
+    lastScrollTop?: number;
+    wheelDirection?: ScrollDirection;
+    wheelDirectionResetTimer?: ReturnType<typeof setTimeout>;
   }>({});
+  const shouldTrackScrollDirection = loadMoreStrategy === 'scrollDirection';
 
   const [loadMoreBackwards, loadMoreForwards] = useMemo(() => {
     if (!onLoadMore) {
@@ -165,7 +174,7 @@ const InfiniteScroll: FC<OwnProps> = ({
     if (!prevItems?.length) return;
 
     requestForcedReflow(() => {
-      let newScrollTop: number;
+      let newScrollTop: number | undefined;
 
       if (state.currentAnchor && Array.from(listItemElements).includes(state.currentAnchor)) {
         const { scrollTop } = scrollContainer;
@@ -189,33 +198,53 @@ const InfiniteScroll: FC<OwnProps> = ({
       }
 
       return () => {
-        resetScroll(scrollContainer, newScrollTop);
+        resetScroll(scrollContainer, newScrollTop, shouldTrackScrollDirection);
 
+        if (shouldTrackScrollDirection && newScrollTop !== undefined) state.lastScrollTop = newScrollTop;
         state.isScrollTopJustUpdated = true;
       };
     });
   }, [
     items, itemSelector, noScrollRestore, noScrollRestoreOnTop, cacheBuster, withAbsolutePositioning,
-    scrollContainerClosest,
+    scrollContainerClosest, shouldTrackScrollDirection,
   ]);
 
   const handleScroll = useLastCallback((e: UIEvent<HTMLDivElement>) => {
     if (loadMoreForwards && loadMoreBackwards) {
+      const state = stateRef.current;
       const {
         isScrollTopJustUpdated, currentAnchor, currentAnchorTop,
-      } = stateRef.current;
-      const listItemElements = stateRef.current.listItemElements!;
-
-      if (isScrollTopJustUpdated) {
-        stateRef.current.isScrollTopJustUpdated = false;
-        return;
-      }
-
+      } = state;
+      const listItemElements = state.listItemElements!;
       const listLength = listItemElements.length;
       const scrollContainer = scrollContainerClosest
         ? containerRef.current!.closest<HTMLDivElement>(scrollContainerClosest)!
         : containerRef.current!;
       const { scrollTop, scrollHeight, offsetHeight } = scrollContainer;
+      const previousScrollTop = state.lastScrollTop;
+      if (shouldTrackScrollDirection) state.lastScrollTop = scrollTop;
+
+      if (isScrollTopJustUpdated) {
+        state.isScrollTopJustUpdated = false;
+        if (shouldTrackScrollDirection) onScroll?.(e);
+        return;
+      }
+
+      const wheelDirection = shouldTrackScrollDirection ? state.wheelDirection : undefined;
+      if (wheelDirection) {
+        clearTimeout(state.wheelDirectionResetTimer);
+        state.wheelDirectionResetTimer = setTimeout(() => {
+          state.wheelDirection = undefined;
+          state.wheelDirectionResetTimer = undefined;
+        }, SCROLL_GESTURE_END_DELAY);
+      }
+
+      const isMovingUp = wheelDirection
+        ? wheelDirection === 'up'
+        : previousScrollTop !== undefined && scrollTop < previousScrollTop;
+      const isMovingDown = wheelDirection
+        ? wheelDirection === 'down'
+        : previousScrollTop !== undefined && scrollTop > previousScrollTop;
 
       let top = 0;
       let bottom = scrollHeight;
@@ -243,16 +272,15 @@ const InfiniteScroll: FC<OwnProps> = ({
         const nextAnchor = listItemElements[0];
         if (nextAnchor) {
           const nextAnchorTop = nextAnchor.getBoundingClientRect().top;
-          const newAnchorTop = currentAnchor?.offsetParent && currentAnchor !== nextAnchor
+          const observedAnchorTop = currentAnchor?.offsetParent && currentAnchor !== nextAnchor
             ? currentAnchor.getBoundingClientRect().top
             : nextAnchorTop;
-          const isMovingUp = (
-            currentAnchor && currentAnchorTop !== undefined && newAnchorTop > currentAnchorTop
-          );
-
-          if (isMovingUp) {
-            stateRef.current.currentAnchor = nextAnchor;
-            stateRef.current.currentAnchorTop = nextAnchorTop;
+          const shouldLoadMore = shouldTrackScrollDirection
+            ? isMovingUp
+            : Boolean(currentAnchor && currentAnchorTop !== undefined && observedAnchorTop > currentAnchorTop);
+          if (shouldLoadMore) {
+            state.currentAnchor = nextAnchor;
+            state.currentAnchorTop = nextAnchorTop;
             isUpdated = true;
             loadMoreForwards();
           }
@@ -263,16 +291,15 @@ const InfiniteScroll: FC<OwnProps> = ({
         const nextAnchor = listItemElements[listLength - 1];
         if (nextAnchor) {
           const nextAnchorTop = nextAnchor.getBoundingClientRect().top;
-          const newAnchorTop = currentAnchor?.offsetParent && currentAnchor !== nextAnchor
+          const observedAnchorTop = currentAnchor?.offsetParent && currentAnchor !== nextAnchor
             ? currentAnchor.getBoundingClientRect().top
             : nextAnchorTop;
-          const isMovingDown = (
-            currentAnchor && currentAnchorTop !== undefined && newAnchorTop < currentAnchorTop
-          );
-
-          if (isMovingDown) {
-            stateRef.current.currentAnchor = nextAnchor;
-            stateRef.current.currentAnchorTop = nextAnchorTop;
+          const shouldLoadMore = shouldTrackScrollDirection
+            ? isMovingDown
+            : Boolean(currentAnchor && currentAnchorTop !== undefined && observedAnchorTop < currentAnchorTop);
+          if (shouldLoadMore) {
+            state.currentAnchor = nextAnchor;
+            state.currentAnchorTop = nextAnchorTop;
             isUpdated = true;
             loadMoreBackwards();
           }
@@ -281,13 +308,13 @@ const InfiniteScroll: FC<OwnProps> = ({
 
       if (!isUpdated) {
         if (currentAnchor?.offsetParent) {
-          stateRef.current.currentAnchorTop = currentAnchor.getBoundingClientRect().top;
+          state.currentAnchorTop = currentAnchor.getBoundingClientRect().top;
         } else {
           const nextAnchor = listItemElements[0];
 
           if (nextAnchor) {
-            stateRef.current.currentAnchor = nextAnchor;
-            stateRef.current.currentAnchorTop = nextAnchor.getBoundingClientRect().top;
+            state.currentAnchor = nextAnchor;
+            state.currentAnchorTop = nextAnchor.getBoundingClientRect().top;
           }
         }
       }
@@ -297,6 +324,24 @@ const InfiniteScroll: FC<OwnProps> = ({
       onScroll(e);
     }
   });
+
+  const handleWheel = useLastCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    if (shouldTrackScrollDirection && e.deltaY) {
+      const state = stateRef.current;
+      state.wheelDirection = e.deltaY < 0 ? 'up' : 'down';
+      clearTimeout(state.wheelDirectionResetTimer);
+      state.wheelDirectionResetTimer = setTimeout(() => {
+        state.wheelDirection = undefined;
+        state.wheelDirectionResetTimer = undefined;
+      }, SCROLL_GESTURE_END_DELAY);
+    }
+
+    onWheel?.(e);
+  });
+
+  useEffect(() => () => {
+    clearTimeout(stateRef.current.wheelDirectionResetTimer);
+  }, []);
 
   useLayoutEffect(() => {
     if (!scrollContainerClosest) return undefined;
@@ -318,7 +363,7 @@ const InfiniteScroll: FC<OwnProps> = ({
       ref={containerRef}
       className={className}
       onScroll={handleScroll}
-      onWheel={onWheel}
+      onWheel={handleWheel}
       teactFastList={!noFastList && !withAbsolutePositioning}
       onKeyDown={onKeyDown}
       onDragOver={onDragOver}

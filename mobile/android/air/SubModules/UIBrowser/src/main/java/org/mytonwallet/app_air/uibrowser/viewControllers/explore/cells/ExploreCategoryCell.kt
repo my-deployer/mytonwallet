@@ -112,7 +112,7 @@ class ExploreCategoryCell(
     }
 
     private val titleLabel = WLabel(context).apply {
-        setStyle(14f, WFont.Medium)
+        setStyle(12f, WFont.Medium)
     }
 
     private val outerContainerView = WView(context).apply {
@@ -122,7 +122,7 @@ class ExploreCategoryCell(
             toTop(containerView, 16f)
             toCenterX(containerView, 8f)
             setDimensionRatio(containerView.id, "1:1")
-            topToBottom(titleLabel, containerView, 8f)
+            topToBottom(titleLabel, containerView, 3f)
             toCenterX(titleLabel)
             toBottom(titleLabel, 4f)
         }
@@ -150,24 +150,24 @@ class ExploreCategoryCell(
     }
 
     private var category: MExploreCategory? = null
-    private var isTopLeft: Boolean = false
-    private var isTopRight: Boolean = false
     private var isBottomLeft: Boolean = false
     private var isBottomRight: Boolean = false
     fun configure(
         category: MExploreCategory?,
         isLeading: Boolean,
         isTrailing: Boolean,
-        isTopLeading: Boolean,
-        isTopTrailing: Boolean,
+        isFirstRow: Boolean,
+        isLastRow: Boolean,
         isBottomLeading: Boolean,
         isBottomTrailing: Boolean
     ) {
         this.category = category
-        this.isTopLeft = isTopLeading
-        this.isTopRight = isTopTrailing
         this.isBottomLeft = isBottomLeading
         this.isBottomRight = isBottomTrailing
+        outerContainerView.setConstraints {
+            toTop(containerView, if (isFirstRow) 4f else 15f)
+            toBottom(titleLabel, if (isLastRow) 19f else 4f)
+        }
 
         setPaddingLocalized(
             if (isLeading) ViewConstants.HORIZONTAL_PADDINGS.dp else 0,
@@ -252,8 +252,8 @@ class ExploreCategoryCell(
         titleLabel.setTextColor(WColor.PrimaryText.color)
         outerContainerView.setBackgroundColorLocalized(
             WColor.Background.color,
-            if (isTopLeft) ViewConstants.BLOCK_RADIUS.dp else 0f,
-            if (isTopRight) ViewConstants.BLOCK_RADIUS.dp else 0f,
+            0f,
+            0f,
             if (isBottomRight) ViewConstants.BLOCK_RADIUS.dp else 0f,
             if (isBottomLeft) ViewConstants.BLOCK_RADIUS.dp else 0f
         )

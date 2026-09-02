@@ -118,7 +118,7 @@ function RenewDomainModal({
           </div>
           {!!newExpireTimestamp && (
             <div className={styles.headerDate}>
-              {lang('Until %date%', {
+              {lang('$until_date_capitalized', {
                 date: [formatFullDay(lang.code!, newExpireTimestamp), formatTime(newExpireTimestamp)].join(', '),
               })}
             </div>
@@ -179,7 +179,7 @@ function RenewDomainModal({
             text={
               domainNfts.length === 1 && Boolean(domainNfts[0]?.name)
                 ? domainNfts[0]?.name
-                : lang('$domains_amount %1$d', domainNfts.length, 'i')
+                : lang('$domains_amount %count%', domainNfts.length, 'i')
             }
             className={!getDoesUsePinPad() ? styles.transactionBanner : undefined}
           />

@@ -13,29 +13,20 @@ import type {
 import type { TOKEN_CARD_COLORS } from './components/main/helpers/cardColors';
 import type { AutolockValueType, LangCode, LangItem } from './global/types';
 
+import { parseAgentOverride } from './util/agent/agentOverride';
+
 export const APP_ENV = process.env.APP_ENV || 'production';
 
-export const IS_CORE_WALLET = process.env.IS_CORE_WALLET === '1';
 export const IS_GRAM_WALLET = process.env.IS_GRAM_WALLET === '1';
-// Both flags together form the wallet.ton.org combo build: Gram branding over Core behavior.
-// Brand-axis code must check IS_GRAM_WALLET first, then IS_TON_BRAND; behavior/storage code keeps using IS_CORE_WALLET.
-export const IS_TON_BRAND = IS_CORE_WALLET && !IS_GRAM_WALLET;
-// The third brand. Cards, MYCOIN vesting and the tips channel are My Wallet products that neither the Gram nor the
-// TON Wallet brand carries, so they hang off this axis rather than off the identity or feature ones (Air agrees).
-export const IS_MY_WALLET_BRAND = !IS_GRAM_WALLET && !IS_TON_BRAND;
-// The trimmed-down product is the legacy TON Wallet (extension and the pre-Gram web app): no swaps, staking,
-// ramps, multi-account, Ledger, BIP39 or locale choice. Gram Wallet Web keeps Core identity (storage key, jsbridge,
-// domain) but ships the full feature set, so feature gates must check this axis, never IS_CORE_WALLET.
-export const IS_FEATURE_LIMITED = IS_TON_BRAND;
-export const APP_NAME = process.env.APP_NAME
-  || (IS_GRAM_WALLET ? 'Gram Wallet' : IS_TON_BRAND ? 'TON Wallet' : 'My Wallet');
+export const APP_NAME = process.env.APP_NAME || (IS_GRAM_WALLET ? 'Gram Wallet' : 'My Wallet');
 export const APP_VERSION = process.env.APP_VERSION!;
 export const APP_COMMIT_HASH = process.env.APP_COMMIT_HASH!;
 export const APP_ENV_MARKER = APP_ENV === 'staging' ? 'Beta' : APP_ENV === 'development' ? 'Dev' : undefined;
-export const EXTENSION_NAME = IS_TON_BRAND ? 'TON Wallet' : 'My Wallet • Crypto & Web3';
-export const EXTENSION_DESCRIPTION = IS_TON_BRAND
-  ? 'Set up your own TON Wallet on The Open Network'
-  : 'Self-custodial wallet for TON, TRON, Solana, Ethereum and more. Swap, stake, buy crypto, manage NFTs and explore dapps.';
+export const EXTENSION_NAME = IS_GRAM_WALLET ? 'Gram Wallet' : 'My Wallet • Crypto & Web3';
+export const EXTENSION_DESCRIPTION = IS_GRAM_WALLET
+  ? 'Set up your own Gram Wallet on The Open Network'
+  : 'Self-custodial wallet for TON, TRON, Solana, Ethereum and more. '
+    + 'Swap, stake, buy crypto, manage NFTs and explore dapps.';
 
 export const DEBUG = APP_ENV !== 'production' && APP_ENV !== 'perf' && APP_ENV !== 'test';
 export const DEBUG_MORE = false;
@@ -60,8 +51,8 @@ export const IS_HEADLESS = process.env.IS_HEADLESS === '1';
 
 export const ELECTRON_HOST_URL = 'https://dumb-host';
 export const INACTIVE_MARKER = '[Inactive]';
-export const PRODUCTION_URL = IS_CORE_WALLET ? 'https://wallet.ton.org' : 'https://web.mywallet.io';
-export const BETA_URL = IS_CORE_WALLET ? 'https://beta.wallet.ton.org' : 'https://beta.mywallet.io';
+export const PRODUCTION_URL = IS_GRAM_WALLET ? 'https://wallet.ton.org' : 'https://web.mywallet.io';
+export const BETA_URL = IS_GRAM_WALLET ? 'https://beta.wallet.ton.org' : 'https://beta.mywallet.io';
 // Beta desktop auto-update feed base. This is BOTH the staging gate poll base and the value baked
 // into app-update.yml by the generic electron-builder provider - the two must agree.
 export const BETA_UPDATE_URL = 'https://s3.mywallet.io/public/desktop-beta';
@@ -100,18 +91,8 @@ export const PIN_LENGTH = 4;
 export const SHOULD_CLEANUP_LEGACY_AUTH = false;
 export const NATIVE_BIOMETRICS_PROMPT_KEY = 'confirm an action in My Wallet';
 
-/**
- * If `true`, a wallet created by this build gets a TON-specific mnemonic, which can never derive a foreign address.
- * Generation only: importing a BIP39 phrase works on every build. Those two used to be the same flag, which made
- * the restriction a trap - a phrase minted by a fuller build of the same product would have become unimportable
- * here the moment that build was rolled back to this one.
- */
-export const SHOULD_GENERATE_TON_MNEMONIC = IS_FEATURE_LIMITED;
-
 export const MNEMONIC_COUNT = 24;
-// A TON-native build mints 24-word phrases, so it offers 24 first while still accepting the 12-word BIP39 ones a
-// rollback might have to restore; the multichain builds lead with 12, matching what they mint.
-export const MNEMONIC_COUNTS = SHOULD_GENERATE_TON_MNEMONIC ? [24, 12] : [12, 24];
+export const MNEMONIC_COUNTS = [12, 24];
 
 export const PRIVATE_KEY_HEX_LENGTH = 64;
 export const MNEMONIC_CHECK_COUNT = 3;
@@ -140,7 +121,9 @@ export const WHOLE_PART_DELIMITER = ' '; // https://www.compart.com/en/unicode
 export const DEFAULT_SLIPPAGE_VALUE = 5;
 
 export const GLOBAL_STATE_CACHE_DISABLED = false;
-export const GLOBAL_STATE_CACHE_KEY = IS_CORE_WALLET
+// Gram Wallet Web serves the existing wallet.ton.org population, so it must keep reading
+// the storage keys the users' state is saved under - changing them would orphan it.
+export const GLOBAL_STATE_CACHE_KEY = IS_GRAM_WALLET
   ? 'tonwallet-global-state'
   : IS_EXPLORER
     ? 'explorer-global-state'
@@ -215,8 +198,8 @@ export const MW_NEWS_CHANNEL_NAME: Partial<Record<LangCode, string>> = {
   ru: 'MyWalletRus',
 };
 export const MW_TIPS_CHANNEL_NAME: Partial<Record<LangCode, string>> = {
-  en: 'MyTonWalletTips',
-  ru: 'MyTonWalletTipsRu',
+  en: 'MyWalletTips',
+  ru: 'MyWalletTipsRu',
 };
 export const NFT_MARKETPLACE_TITLES: Record<ApiNftMarketplace, string> = {
   getgems: 'Getgems',
@@ -245,6 +228,8 @@ export const MULTISEND_DAPP_URL = process.env.MULTISEND_DAPP_URL || 'https://mul
 export const PORTFOLIO_DAPP_URL = process.env.PORTFOLIO_DAPP_URL || 'https://portfolio.mywallet.io/';
 export const PORTFOLIO_API_URL = process.env.PORTFOLIO_API_URL || 'https://api-portfolio.mywallet.io/api';
 export const AGENT_API_URL = process.env.AGENT_API_URL || 'https://agent.mywallet.io/api';
+export const AGENT_OVERRIDE = parseAgentOverride(process.env.AGENT_OVERRIDE ?? 'v1');
+export const AGENT_V2_QUOTA_STATUS_ENABLED = process.env.AGENT_V2_QUOTA_STATUS_ENABLED === '1';
 
 export const NFT_MARKETPLACE_URL = 'https://opensea.io/';
 export const NFT_MARKETPLACE_TITLE = NFT_MARKETPLACE_TITLES.opensea;
@@ -270,7 +255,7 @@ export const PROXY_HOSTS = process.env.PROXY_HOSTS;
 export const TINY_TRANSFER_MAX_COST = 0.01;
 
 export const IMAGE_CACHE_NAME = IS_EXPLORER ? 'explorer-image' : 'mtw-image';
-export const LANG_CACHE_NAME = 'mtw-lang-336';
+export const LANG_CACHE_NAME = 'mtw-lang-354';
 
 export const LANG_LIST: LangItem[] = [{
   langCode: 'en',
@@ -334,8 +319,6 @@ export const LANG_LIST: LangItem[] = [{
   rtl: true,
 }];
 
-export const IS_STAKING_DISABLED = IS_FEATURE_LIMITED;
-
 // Blacklist-style feature flags (default unset = feature ON). Each is substituted at build time by
 // `EnvironmentPlugin`, so it both drives Webpack dead-code elimination (drops code + npm deps) and is
 // readable at runtime to silence behaviour/network for anything still bundled.
@@ -343,13 +326,19 @@ export const NO_TON = process.env.NO_TON === '1';
 export const NO_TRON = process.env.NO_TRON === '1';
 export const NO_SOLANA = process.env.NO_SOLANA === '1';
 export const NO_EVM = process.env.NO_EVM === '1';
-export const NO_WALLETCONNECT = process.env.NO_WALLETCONNECT === '1';
-export const NO_SWAP = process.env.NO_SWAP === '1';
-export const NO_STAKING = process.env.NO_STAKING === '1';
-export const NO_PORTFOLIO = process.env.NO_PORTFOLIO === '1';
-export const NO_MFA = process.env.NO_MFA === '1';
+/**
+ * Standalone SDK builds, embedded by third-party apps that ship their own UI, so nothing in the UI layer
+ * reads this flag.
+ *
+ * What stays is a plain wallet: accounts, transfers, tokens, activities, NFTs, domains and TON Connect.
+ * Swap, staking, MFA, WalletConnect, the explore catalogue, portfolio history, push notifications, legacy
+ * (pre-Enclave) auth, the Agent, encrypted comments and the receive-screen backgrounds all go — their
+ * methods leave the dispatch table and their modules leave the bundle.
+ *
+ * `NO_LEDGER` stays a separate axis: hardware wallet support is orthogonal to the extras.
+ */
+export const NO_EXTRA_FEATURES = process.env.NO_EXTRA_FEATURES === '1';
 export const NO_LEDGER = process.env.NO_LEDGER === '1';
-export const NO_NOTIFICATIONS = process.env.NO_NOTIFICATIONS === '1';
 export const VALIDATION_PERIOD_MS = 65_536_000; // 18.2 h.
 export const ONE_TON = 1_000_000_000n;
 export const DEFAULT_FEE = 15_000_000n; // 0.015 TON
@@ -385,7 +374,7 @@ export const MIN_ACTIVE_STAKING_REWARDS = 100_000_000n; // 0.1 MY
 export const STAKING_SLUG_PREFIX = 'staking-';
 
 export const TONCONNECT_PROTOCOL_VERSION = 2;
-export const TONCONNECT_WALLET_JSBRIDGE_KEY = IS_CORE_WALLET ? 'tonwallet' : 'mytonwallet';
+export const TONCONNECT_WALLET_JSBRIDGE_KEY = IS_GRAM_WALLET ? 'gramwallet' : 'mytonwallet';
 export const EMBEDDED_DAPP_BRIDGE_CHANNEL = 'embedded-dapp-bridge';
 
 export const NFT_FRAGMENT_COLLECTIONS = [
@@ -792,7 +781,7 @@ export const SWAP_DEX_LABELS: Record<ApiSwapDexLabel, string> = {
   ston: 'STON.fi',
 };
 
-export const ACTIVE_TAB_STORAGE_KEY = IS_CORE_WALLET
+export const ACTIVE_TAB_STORAGE_KEY = IS_GRAM_WALLET
   ? 'tw-active-tab'
   : IS_EXPLORER
     ? 'explorer-active-tab'
@@ -800,11 +789,11 @@ export const ACTIVE_TAB_STORAGE_KEY = IS_CORE_WALLET
 
 export const INDEXED_DB_NAME = IS_EXPLORER ? 'explorer-keyval-store' : 'keyval-store';
 export const INDEXED_DB_STORE_NAME = 'keyval';
+export const AGENT_WALLET_SENSITIVE_CACHE_DATABASE_NAME = 'mytonwallet-agent-v2-sensitive-cache';
 
 export const WINDOW_PROVIDER_CHANNEL = 'windowProvider';
-export const WINDOW_PROVIDER_PORT = `${IS_CORE_WALLET ? 'TonWallet' : 'MyWallet'}_popup_reversed`;
+export const WINDOW_PROVIDER_PORT = `${IS_GRAM_WALLET ? 'GramWallet' : 'MyWallet'}_popup_reversed`;
 
-export const SHOULD_SHOW_ALL_ASSETS_AND_ACTIVITY = IS_FEATURE_LIMITED;
 export const PORTRAIT_MIN_ASSETS_TAB_VIEW = 6;
 
 export const DEFAULT_PRICE_CURRENCY = 'USD';
@@ -1006,13 +995,12 @@ export const HELP_CENTER_URL = {
   },
 };
 
-const ALL_TON_DNS_ZONES = [
+export const TON_DNS_ZONES = [
   {
     suffixes: ['ton'],
     baseFormat: /^([-\da-z]+\.){0,2}[-\da-z]{4,126}$/i,
     resolver: 'EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz',
     collectionName: 'TON DNS Domains',
-    isUnofficial: false,
     isRenewable: true,
     isLinkable: true,
     isTelemint: false,
@@ -1022,7 +1010,6 @@ const ALL_TON_DNS_ZONES = [
     baseFormat: /^([-\da-z]+\.){0,2}[-_\da-z]{4,32}$/i,
     resolver: 'EQCA14o1-VWhS2efqoh_9M1b_A9DtKTuoqfmkn83AbJzwnPi',
     collectionName: 'Telegram Usernames',
-    isUnofficial: false,
     isRenewable: false,
     isLinkable: true,
     isTelemint: true,
@@ -1032,7 +1019,6 @@ const ALL_TON_DNS_ZONES = [
     baseFormat: /^([-\da-z]+\.){0,2}[\da-z]{1,24}$/i,
     resolver: 'EQBWG4EBbPDv4Xj7xlPwzxd7hSyHMzwwLB5O6rY-0BBeaixS',
     collectionName: 'VIP DNS Domains',
-    isUnofficial: true,
     isRenewable: false,
     isLinkable: true,
     isTelemint: false,
@@ -1042,16 +1028,11 @@ const ALL_TON_DNS_ZONES = [
     baseFormat: /^([-\da-z]+\.){0,2}[-\da-z]{1,127}$/i,
     resolver: 'EQAic3zPce496ukFDhbco28FVsKKl2WUX_iJwaL87CBxSiLQ',
     collectionName: 'GRAM DNS Domains',
-    isUnofficial: true,
     isRenewable: false,
     isLinkable: true,
     isTelemint: false,
   },
 ] as const;
-
-export const TON_DNS_ZONES = IS_FEATURE_LIMITED
-  ? ALL_TON_DNS_ZONES.filter(({ isUnofficial }) => !isUnofficial)
-  : ALL_TON_DNS_ZONES;
 
 export const RENEWABLE_TON_DNS_COLLECTIONS = new Set<string>(
   TON_DNS_ZONES.filter((zone) => zone.isRenewable).map((zone) => zone.resolver),

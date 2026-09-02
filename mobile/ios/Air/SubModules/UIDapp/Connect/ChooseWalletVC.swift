@@ -65,7 +65,7 @@ public class ChooseWalletVC: WViewController, UICollectionViewDelegate {
         
         let headerRegistration = UICollectionView.SupplementaryRegistration<UICollectionViewCell>(elementKind: UICollectionView.elementKindSectionHeader) { [host] supplementaryView, _, _ in
             var content = UIListContentConfiguration.groupedHeader()
-            content.text = lang("Wallet to use on %host%", arg1: host)
+            content.text = L10n.walletToUseOnHost(host: host)
             content.textProperties.color = .air.secondaryLabel
             supplementaryView.contentConfiguration = content
         }

@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import { ApiCommonError, ApiTransactionDraftError, ApiTransactionError } from '../../types';
 
+import { raceWithAbortSignal } from '../../../util/abortSignal';
 import { parseAccountId } from '../../../util/account';
 import { bigintMultiplyToNumber } from '../../../util/bigint';
 import { getChainConfig } from '../../../util/chain';
@@ -50,6 +51,7 @@ const feeEstimateCache = new Map<string, FeeEstimateCacheEntry>();
 export async function checkTransactionDraft(
   chain: EVMChain,
   options: ApiCheckTransactionDraftOptions,
+  signal?: AbortSignal,
 ): Promise<ApiCheckTransactionDraftResult> {
   const {
     accountId, amount, toAddress, tokenAddress, payload,
@@ -89,9 +91,12 @@ export async function checkTransactionDraft(
       payload,
     });
 
+    const feePromise = signal
+      ? estimateEvmFee(provider, feeEstimateTransaction, signal)
+      : getCachedEvmFeeEstimate(provider, feeCacheKey, feeEstimateTransaction);
     const [nativeBalance, fee] = await Promise.all([
-      getWalletBalance(chain, network, address),
-      getCachedEvmFeeEstimate(provider, feeCacheKey, feeEstimateTransaction),
+      raceWithAbortSignal(() => getWalletBalance(chain, network, address), signal),
+      feePromise,
     ]);
 
     const nativeTokenSlug = getChainConfig(chain).nativeToken.slug;
@@ -110,9 +115,10 @@ export async function checkTransactionDraft(
 
     if (amount !== undefined) {
       if (tokenAddress) {
-        const [tokenBalance] = await Promise.all([
-          getErc20Balance(network, chain, address, tokenAddress),
-        ]);
+        const tokenBalance = await raceWithAbortSignal(
+          () => getErc20Balance(network, chain, address, tokenAddress),
+          signal,
+        );
 
         const isEnoughNative = nativeBalance >= fee;
         const isEnoughToken = tokenBalance >= amount;
@@ -131,6 +137,7 @@ export async function checkTransactionDraft(
 
     return result;
   } catch (err) {
+    if (signal) throw err;
     logDebugError(`evm:${chain}:checkTransactionDraft`, err);
 
     return {
@@ -247,11 +254,15 @@ export async function submitGasfullTransfer(
   }
 }
 
-export async function estimateEvmFee(provider: EvmProvider, txRequest: TransactionRequest): Promise<bigint> {
-  const [gasLimit, feeData] = await Promise.all([
+export async function estimateEvmFee(
+  provider: EvmProvider,
+  txRequest: TransactionRequest,
+  signal?: AbortSignal,
+): Promise<bigint> {
+  const [gasLimit, feeData] = await raceWithAbortSignal(() => Promise.all([
     provider.estimateGas(txRequest),
     provider.getFeeData(),
-  ]);
+  ]), signal);
 
   // Prefer EIP-1559 maxFeePerGas for a conservative upper-bound estimate or use fallback to legacy gasPrice.
   const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;

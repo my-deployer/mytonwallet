@@ -360,6 +360,13 @@ func makeMigrator() -> DatabaseMigrator {
                 .defaults(to: true)
         }
     }
+    migrator.registerMigration("v26") { db in
+        try db.alter(table: "settings") { t in
+            t.add(column: "homeActivityLimit", .integer)
+                .notNull()
+                .defaults(to: 5)
+        }
+    }
 
     return migrator
 }

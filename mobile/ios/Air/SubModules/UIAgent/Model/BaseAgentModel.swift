@@ -22,7 +22,7 @@ class BaseAgentModel {
 
     weak var delegate: AgentModelDelegate?
     var isActive = false
-    
+
     private var orderedItemIDs: [AgentItemID] = []
     private var itemsByID: [AgentItemID: AgentTimelineItem] = [:]
     private var availableHints: [AgentHint] = []
@@ -372,11 +372,11 @@ class BaseAgentModel {
         guard isPersistenceEnabled else { return }
         persistStableTimelineIfNeeded(messages: persistedMessages)
     }
-    
+
     func persistStableTimelineIfNeeded(messages: [AgentMessage]) {
         assertionFailure("Override this")
     }
-    
+
     func loadPersistedTimeline() -> [AgentTimelineItem] {
         assertionFailure("Override this")
         return []
@@ -460,7 +460,7 @@ class BaseAgentModel {
 
         return items
     }
-    
+
     func formattedDate(for timestamp: Date) -> (date: String, time: String) {
         let dateText = timestamp.formatted(.dateTime.year(.defaultDigits).month(.wide).day())
         let timeText = timestamp.formatted(
@@ -470,7 +470,7 @@ class BaseAgentModel {
         )
         return (dateText, timeText)
     }
-    
+
     private func makeDateTimeSystemMessage(for timestamp: Date) -> AgentMessage {
         let (date, time) = formattedDate(for: timestamp)
         return AgentMessage(

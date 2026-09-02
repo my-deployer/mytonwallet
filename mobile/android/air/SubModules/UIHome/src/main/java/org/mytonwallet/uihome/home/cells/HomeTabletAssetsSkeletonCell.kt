@@ -136,6 +136,7 @@ class HomeTabletAssetsSkeletonCell(context: Context) :
         }
 
         private fun buildTokenRows() {
+            val rows = mutableListOf<Triple<WBaseView, WBaseView, WBaseView>>()
             for (i in 0 until TOKEN_ROWS) {
                 val circle = WBaseView(context)
                 val title = WBaseView(context)
@@ -155,8 +156,14 @@ class HomeTabletAssetsSkeletonCell(context: Context) :
                         14.dp
                     )
                 )
-                val top = i * TOKEN_ROW_HEIGHT
-                card.setConstraints {
+                rows.add(Triple(circle, title, subtitle))
+                skeletons.add(circle to SkeletonCell.CIRCLE_SKELETON_RADIUS)
+                skeletons.add(title to SkeletonCell.TITLE_SKELETON_RADIUS)
+                skeletons.add(subtitle to SkeletonCell.SUBTITLE_SKELETON_RADIUS)
+            }
+            card.setConstraints {
+                rows.forEachIndexed { i, (circle, title, subtitle) ->
+                    val top = i * TOKEN_ROW_HEIGHT
                     toTopPx(circle, top + 6.dp)
                     toStart(circle, 13f)
                     toTopPx(title, top + 12.dp)
@@ -164,13 +171,19 @@ class HomeTabletAssetsSkeletonCell(context: Context) :
                     toTopPx(subtitle, top + 34.dp)
                     toStart(subtitle, 68f)
                 }
-                skeletons.add(circle to SkeletonCell.CIRCLE_SKELETON_RADIUS)
-                skeletons.add(title to SkeletonCell.TITLE_SKELETON_RADIUS)
-                skeletons.add(subtitle to SkeletonCell.SUBTITLE_SKELETON_RADIUS)
             }
         }
 
         private fun buildNftGrid() {
+            data class NftItem(
+                val image: WBaseView,
+                val title: WBaseView,
+                val subtitle: WBaseView,
+                val rowTop: Int,
+                val boxLeft: Int
+            )
+
+            val nftItems = mutableListOf<NftItem>()
             for (r in 0 until NFT_ROWS) {
                 val rowTop = NFT_ITEM_INSET_Y + r * nftRowHeight
                 for (c in 0 until NFT_COLUMNS) {
@@ -183,19 +196,22 @@ class HomeTabletAssetsSkeletonCell(context: Context) :
                     card.addView(image, LayoutParams(nftImageSize, nftImageSize))
                     card.addView(title, LayoutParams(titleW, NFT_TITLE_HEIGHT))
                     card.addView(subtitle, LayoutParams(subtitleW, NFT_SUBTITLE_HEIGHT))
-                    val titleTop = rowTop + nftImageSize + NFT_TITLE_TOP_GAP
-                    val subtitleTop = titleTop + NFT_TITLE_HEIGHT + NFT_SUBTITLE_GAP
-                    card.setConstraints {
-                        toTopPx(image, rowTop)
-                        toStartPx(image, boxLeft)
-                        toTopPx(title, titleTop)
-                        toStartPx(title, boxLeft + 4.dp)
-                        toTopPx(subtitle, subtitleTop)
-                        toStartPx(subtitle, boxLeft + 4.dp)
-                    }
+                    nftItems.add(NftItem(image, title, subtitle, rowTop, boxLeft))
                     skeletons.add(image to NFT_ITEM_RADIUS)
                     skeletons.add(title to SkeletonCell.TITLE_SKELETON_RADIUS)
                     skeletons.add(subtitle to SkeletonCell.SUBTITLE_SKELETON_RADIUS)
+                }
+            }
+            card.setConstraints {
+                nftItems.forEach { item ->
+                    val titleTop = item.rowTop + nftImageSize + NFT_TITLE_TOP_GAP
+                    val subtitleTop = titleTop + NFT_TITLE_HEIGHT + NFT_SUBTITLE_GAP
+                    toTopPx(item.image, item.rowTop)
+                    toStartPx(item.image, item.boxLeft)
+                    toTopPx(item.title, titleTop)
+                    toStartPx(item.title, item.boxLeft + 4.dp)
+                    toTopPx(item.subtitle, subtitleTop)
+                    toStartPx(item.subtitle, item.boxLeft + 4.dp)
                 }
             }
         }

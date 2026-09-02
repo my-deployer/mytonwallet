@@ -2,6 +2,7 @@ import type { NftItem } from 'tonapi-sdk-js';
 import type { Base58EncodedBytes } from '@solana/kit';
 
 import type { LangCode } from '../../global/types';
+import type { AgentOverride } from '../../util/agent/agentOverride';
 import type { ApiTonWalletVersion } from '../chains/ton/types';
 import type { DappProtocolType } from '../dappProtocols';
 import type { ApiStorageConfig } from '../storages/types';
@@ -35,6 +36,7 @@ export interface ApiInitArgs {
   isElectron?: boolean;
   isIosApp?: boolean;
   isAndroidApp?: boolean;
+  agentOverride?: AgentOverride;
   langCode?: LangCode;
   referrer?: string;
   channel?: string;
@@ -169,7 +171,10 @@ export interface ApiNft {
   ownerAddress?: string;
   name?: string;
   address: string;
-  /** Absent when the data source has no proxied preview, and then the UI shows a placeholder instead */
+  // An indexer preview, which is already the outcome of its moderation. The raw metadata URL is used
+  // only for the collections whose author is known: the whitelisted ones and our own cards.
+  // Absent means there is no such source, and the UI shows a placeholder instead of the raw URL,
+  // which points to a host the NFT author controls
   thumbnail?: string;
   image?: string;
   description?: string;
@@ -182,6 +187,8 @@ export interface ApiNft {
   isScam?: boolean;
   /** Set when the collection matched no trust signal. Absent means the NFT is verified or was never checked (other chains) */
   isUnverified?: true;
+  // The indexer already serves blurred images for these, so this flag is informational
+  isNsfw?: boolean;
   metadata: ApiNftMetadata;
   interface: ApiNftInterface;
   compression?: {

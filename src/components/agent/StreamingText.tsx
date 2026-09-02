@@ -1,5 +1,7 @@
 import React, { memo } from '../../lib/teact/teact';
 
+import type { MarkdownProfile } from '../../util/renderMarkdown';
+
 import buildClassName from '../../util/buildClassName';
 
 import useStreamingText from './hooks/useStreamingText';
@@ -15,6 +17,9 @@ interface OwnProps {
   shouldAnimate: boolean;
   revealSessionKey?: string;
   shouldRevealFromStart?: boolean;
+  shouldCommitMarkdownTail: boolean;
+  areLinksEnabled: boolean;
+  markdownProfile?: MarkdownProfile;
   onRevealStart?: NoneToVoidFunction;
   onRevealProgress?: NoneToVoidFunction;
   onRevealComplete?: NoneToVoidFunction;
@@ -27,6 +32,9 @@ function StreamingText({
   shouldAnimate,
   revealSessionKey,
   shouldRevealFromStart = false,
+  shouldCommitMarkdownTail,
+  areLinksEnabled,
+  markdownProfile = 'legacy',
   onRevealStart,
   onRevealProgress,
   onRevealComplete,
@@ -58,6 +66,9 @@ function StreamingText({
         contentRef={contentRef}
         text={visibleText}
         phase={visualPhase}
+        shouldCommitMarkdownTail={shouldCommitMarkdownTail}
+        areLinksEnabled={areLinksEnabled}
+        markdownProfile={markdownProfile}
       />
       <span
         ref={revealEdgeLayerRef}

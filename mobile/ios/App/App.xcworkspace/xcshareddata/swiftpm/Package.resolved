@@ -1,5 +1,5 @@
 {
-  "originHash" : "f0f6bf278a72dd99c45354c71f642bd3d36de7b4c341b81b9beef4581f8352c8",
+  "originHash" : "4ec426fab50adb2d3b878e4f2427e493b7c7d456751774e3c930bfda86be9c61",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -35,14 +35,6 @@
       "state" : {
         "revision" : "fd16d76fd8b9a976d88bfb6cacc05ca8d19c91b6",
         "version" : "1.1.0"
-      }
-    },
-    {
-      "identity" : "dgcharts",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mytonwallet-org/DGCharts",
-      "state" : {
-        "revision" : "86929ffb26280d49777e8b2c2311daa419747a49"
       }
     },
     {

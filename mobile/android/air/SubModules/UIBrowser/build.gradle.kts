@@ -16,6 +16,8 @@ dependencies {
     implementation(libs.fresco)
     implementation(libs.blurview)
     implementation(project("$airSubModulePath:Icons"))
+    implementation(project("$airSubModulePath:UIAgent"))
+    implementation(project("$airSubModulePath:UIAssets"))
     implementation(project("$airSubModulePath:UIInAppBrowser"))
     implementation(project("$airSubModulePath:UISettings"))
     implementation(project("$airSubModulePath:UIComponents"))

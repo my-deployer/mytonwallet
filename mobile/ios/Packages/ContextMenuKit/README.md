@@ -14,6 +14,7 @@ It is packaged as a standalone Swift package with:
 - iOS 16+ fallback material background
 - UIKit and SwiftUI source attachment APIs
 - optional source cloning via portal views
+- optional iOS 26 source-replacement zoom popovers
 
 ## Requirements
 
@@ -45,6 +46,7 @@ The main public entry points are:
 - `ContextMenuBackdropStyle`
 - `ContextMenuVerticalPlacementBehavior`
 - `ContextMenuStyle`
+- `ContextMenuPresentationMode`
 - `ContextMenuInteraction`
 - `ContextMenuInteractionTriggers`
 - `ContextMenuSourcePortal`
@@ -68,6 +70,28 @@ let interaction = ContextMenuInteraction(triggers: [.tap, .longPress]) { sourceV
 
 interaction.attach(to: button)
 ```
+
+On iOS 26 and later, a menu can use UIKit's arrowless source-replacement
+popover. Earlier iOS versions resolve this mode to the standard overlay:
+
+```swift
+let interaction = ContextMenuInteraction(
+    triggers: [.tap, .longPress],
+    presentationMode: .zoomPopover,
+    activationViewProvider: { _ in visibleSourceView }
+) { _ in
+    configuration
+}
+
+interaction.attach(to: hitView)
+```
+
+The visible transition source can be any `UIView`; it does not need to use
+Liquid Glass. Internally, the iOS 26 host exposes that view through a retained
+`UIBarButtonItem(customView:)` source item, allowing `UIPopoverPresentationController`
+to own the native replace/restore lifecycle. It does not install a second zoom
+transition. Backdrop and source-portal rendering remain specific to the overlay
+fallback because UIKit owns the popover's chrome and presentation.
 
 SwiftUI sources use the modifier:
 

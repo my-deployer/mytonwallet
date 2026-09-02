@@ -3,7 +3,8 @@ import WalletContext
 
 @MainActor struct OnchainSwapExecutor {
     func performSwap(
-        swapEstimate: ApiSwapEstimateResponse?,
+        swapEstimate: ApiSwapDexEstimateResponse?,
+        swapMode: ApiSwapMode,
         confirmation: SwapConfirmationAmounts,
         maxAmount: BigInt?,
         slippage: Double,
@@ -31,10 +32,6 @@ import WalletContext
             swapEstimate: swapEstimate,
             account: account
         )
-        guard let fromAmount = swapEstimate.fromAmount, let toAmount = swapEstimate.toAmount else {
-            throw SdkError.unexpected(message: "Missing swap estimate amount", context: swapEstimate)
-        }
-
         let swapBuildRequest = ApiSwapBuildRequest(
             from: swapEstimate.from,
             to: swapEstimate.to,
@@ -42,12 +39,13 @@ import WalletContext
             historyAddress: historyAddress,
             dexLabel: swapEstimate.dexLabel,
             dexRouterLabel: swapEstimate.dexRouterLabel,
-            fromAmount: fromAmount,
-            toAmount: toAmount,
+            fromAmount: swapEstimate.fromAmount,
+            toAmount: swapEstimate.toAmount,
             toMinAmount: swapEstimate.toMinAmount,
             slippage: slippage,
             shouldTryDiesel: shouldTryDiesel,
             swapVersion: nil,
+            swapMode: swapMode,
             walletVersion: account.version,
             routes: swapEstimate.routes,
             networkFee: swapEstimate.realNetworkFee,

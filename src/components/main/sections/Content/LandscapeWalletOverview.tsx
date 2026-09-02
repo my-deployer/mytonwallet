@@ -211,6 +211,7 @@ function LandscapeWalletOverview({
                 isActive
                 isWidget
                 isStretched={shouldStretchCell}
+                scrollContainerSelector={SCROLL_CONTAINER_SELECTOR}
               />
             </OverviewCell>
           )}
@@ -242,6 +243,7 @@ function LandscapeWalletOverview({
                   isActive
                   isWidget
                   isStretched={shouldStretchCell}
+                  scrollContainerSelector={SCROLL_CONTAINER_SELECTOR}
                   collection={collection}
                 />
               </OverviewCell>

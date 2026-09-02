@@ -10,7 +10,7 @@ struct OnchainSwapFeeStatus {
 @MainActor struct OnchainSwapValidator {
     func validationIssue(
         input: SwapValidationInput,
-        swapEstimate: ApiSwapEstimateResponse?,
+        swapEstimate: ApiSwapDexEstimateResponse?,
         account: SwapAccountSnapshot
     ) -> SwapIssue? {
         guard let swapEstimate else {
@@ -26,7 +26,7 @@ struct OnchainSwapFeeStatus {
         }
 
         let feeStatus = feeStatus(input: input, swapEstimate: swapEstimate, account: account)
-        let notEnoughForFee = swapEstimate.toAmount?.value == 0 && !feeStatus.isNativeFeeCovered
+        let notEnoughForFee = swapEstimate.toAmount.value == 0 && !feeStatus.isNativeFeeCovered
         if notEnoughForFee {
             return .notEnoughToken(sellingToken)
         }
@@ -56,7 +56,7 @@ struct OnchainSwapFeeStatus {
 
     func requiresDieselAuthorization(
         input: SwapValidationInput,
-        swapEstimate: ApiSwapEstimateResponse?,
+        swapEstimate: ApiSwapDexEstimateResponse?,
         account: SwapAccountSnapshot
     ) -> Bool {
         guard let swapEstimate else {
@@ -68,7 +68,7 @@ struct OnchainSwapFeeStatus {
 
     func shouldTryDiesel(
         input: SwapValidationInput,
-        swapEstimate: ApiSwapEstimateResponse?,
+        swapEstimate: ApiSwapDexEstimateResponse?,
         account: SwapAccountSnapshot
     ) -> Bool {
         guard let swapEstimate else {
@@ -79,7 +79,7 @@ struct OnchainSwapFeeStatus {
 
     func feeStatus(
         input: SwapValidationInput,
-        swapEstimate: ApiSwapEstimateResponse,
+        swapEstimate: ApiSwapDexEstimateResponse,
         account: SwapAccountSnapshot
     ) -> OnchainSwapFeeStatus {
         let sellingToken = input.sellingToken

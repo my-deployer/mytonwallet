@@ -82,6 +82,21 @@ fun Date.formatDateAndTime(period: MHistoryTimePeriod): String {
 
 fun Date.formatTime(): String = formatDateAndTime("HH:mm")
 
+// Time of day for today, otherwise the calendar date; the year is added outside the current year.
+fun Date.formatTimeOrDate(): String {
+    val now = Date()
+    if (isSameDayAs(now)) return formatTime()
+    val isDayBeforeMonth = WDateFormatter.isDayBeforeMonth(WBaseStorage.getActiveLanguage())
+    return formatDateAndTime(
+        when {
+            isDayBeforeMonth && isSameYearAs(now) -> "d MMM"
+            isDayBeforeMonth -> "d MMM yyyy"
+            isSameYearAs(now) -> "MMM d"
+            else -> "MMM d, yyyy"
+        }
+    )
+}
+
 fun Date.timeAgo(template: String = "\$ago"): String {
     val diffInMillis = System.currentTimeMillis() - time
 
@@ -94,17 +109,17 @@ fun Date.timeAgo(template: String = "\$ago"): String {
     return when {
         seconds < 60 -> LocaleController.getString("just now")
 
-        minutes < 60 -> LocaleController.getFormattedString(
+        minutes < 60 -> LocaleController.getStringWithKeyValues(
             template,
             listOf(
-                LocaleController.getPlural(minutes.toInt(), "minute")
+                "%time%" to LocaleController.getPlural(minutes.toInt(), "minute")
             )
         )
 
-        hours < 24 -> LocaleController.getFormattedString(
+        hours < 24 -> LocaleController.getStringWithKeyValues(
             template,
             listOf(
-                LocaleController.getPlural(hours.toInt(), "hour")
+                "%time%" to LocaleController.getPlural(hours.toInt(), "hour")
             )
         )
 

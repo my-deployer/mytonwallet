@@ -69,6 +69,7 @@ export function getSwapEstimateResetParams(global: GlobalState) {
 
   return {
     ...amountReset,
+    quotedAmountOut: undefined,
     amountOutMin: '0',
     priceImpact: 0,
     errorType: undefined,

@@ -193,10 +193,14 @@ export class TextRevealController {
     this.phase = 'draining';
     this.finalizationStartTime = now;
     this.finalizationStartCount = this.revealedCount;
-    this.finalizationDuration = clamp(
+    const boundedFinalizeDuration = clamp(
       backlog / FINALIZE_VELOCITY_CEILING,
       MINIMUM_FINALIZE_TIME_SECONDS,
       MAXIMUM_FINALIZE_TIME_SECONDS,
+    );
+    this.finalizationDuration = Math.max(
+      boundedFinalizeDuration,
+      backlog / VELOCITY_CEILING,
     );
   }
 

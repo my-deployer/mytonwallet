@@ -55,10 +55,15 @@ data class MTokenBalance(
             return valueCompare
         }
 
-        val sameBalancePriorityCompare =
-            other.priorityOrder.compareTo(this.priorityOrder)
-        if (sameBalancePriorityCompare != 0) {
-            return sameBalancePriorityCompare
+        val thisOrder = this.priorityOrder
+        val otherOrder = other.priorityOrder
+        if (thisOrder != -1 && otherOrder != -1) {
+            val orderCompare = thisOrder.compareTo(otherOrder)
+            if (orderCompare != 0) return orderCompare
+        } else if (thisOrder != -1) {
+            return -1
+        } else if (otherOrder != -1) {
+            return 1
         }
 
         val thisSlug = this.token ?: ""
@@ -79,15 +84,17 @@ data class MTokenBalance(
             TON_USDT_TESTNET_SLUG
         )
 
-        private val MYTONWALLET_PRIORITY_ORDER: List<String>
-            get() = MBlockchain.supportedChains.map { it.nativeSlug }
+        private val MYTONWALLET_PRIORITY_ORDER: List<String> by lazy {
+            MBlockchain.supportedChains.map { it.nativeSlug }
+        }
 
-        private val PRIORITY_ORDER: List<String>
-            get() = if (ApplicationContextHolder.isGramApp) {
+        private val PRIORITY_ORDER: List<String> by lazy {
+            if (ApplicationContextHolder.isGramApp) {
                 GRAM_PRIORITY_ORDER
             } else {
                 MYTONWALLET_PRIORITY_ORDER
             }
+        }
 
         // Factory method to create an instance from JSON
         fun fromJson(json: JSONObject): MTokenBalance {
